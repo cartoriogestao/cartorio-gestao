@@ -157,6 +157,7 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("DOI", "ri_doi", AMA, antigo="DOI — Receita Federal", termos="receita federal declaracao"),
              _i("CTP", "ri_ctp", AMA, antigo="CTP — prefeituras", termos="prefeitura sefin"),
              _i("ONR: índice real e editais", "ri_onr_painel", antigo="ONR — índice real e editais"),
+             _i("ONR: painel de conformidade", "ri_onr_conformidade", AMA, antigo="ONR — painel de conformidade", termos="provimento 143 195 itn 003 adpf 743 cronograma corregedoria"),
              _i("ONR: endereços a conferir", "ri_onr_enderecos", AMU, antigo="ONR — endereços a conferir"),
              _i("Exportação ONR", "ri_onr", AM),
              _i("Indicador Real: o arquivo inteiro", "onr_ir", AM, antigo="Indicador Real — o arquivo inteiro", termos="xml acervo onr"),

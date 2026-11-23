@@ -1,0 +1,248 @@
+{% extends 'base.html' %}
+{# O PAINEL DE CONFORMIDADE DO ONR (RI010, 23/11/2026, `onr_conformidade`): o declarado ao
+   ONR (digitado), o que existe no sistema, o entregue com prova e o que falta — lado a
+   lado. Declarado sem lastro é divergência, nunca «cumprido». Esta tela não envia nada,
+   não entra no ONR e não chama a API. #}
+{% macro n(v) %}{% if v is none %}—{% else %}{{ '{:,}'.format(v).replace(',', '.') }}{% endif %}{% endmacro %}
+{% macro dia(t) %}{% if t %}{{ t[8:10] }}/{{ t[5:7] }}/{{ t[:4] }}{% endif %}{% endmacro %}
+{% macro simnao(v) %}{% if v is none %}—{% elif v == 1 %}Sim{% else %}Não{% endif %}{% endmacro %}
+{% block title %}ONR — painel de conformidade{% endblock %}
+{% block heading %}<h1>ONR — painel de conformidade</h1>{% endblock %}
+{% block content %}
+{% set cor_do_veredito = {'DIVERGENTE': 'critica', 'FALTA': 'alta', 'SEM_DECLARACAO': '', 'INCOMPLETO': '', 'EM_DIA': 'ok', 'EM_DIA_NO_PAINEL': 'ok'} %}
+
+<section class="panel">
+  <p>O <strong>Painel ADPF 743</strong> não aparece no login da serventia. Aqui ficam, lado a lado,
+  o que foi <strong>declarado ao ONR</strong> (digitado por quem leu a tela, com data e origem), o que
+  <strong>existe no sistema</strong>, o que foi <strong>entregue com prova</strong> e o que <strong>falta</strong>.
+  Número declarado sem lastro aparece como <strong>divergência</strong>, nunca como cumprido.
+  <strong>Esta tela não envia nada ao ONR</strong>, não entra no portal e não chama a API.</p>
+  <p class="small muted">Medido em {{ dia(p.medido_em[:10]) }} às {{ p.medido_em[11:16] }}, nas tabelas desta serventia.
+  As regras do painel do ONR citadas abaixo são as <em>observadas</em> no anexo da Circular, e não norma.</p>
+  <p>
+    <a class="button" href="{{ url_for('ri_onr_conformidade_quadro') }}">Quadro para imprimir (anexo à resposta da Corregedoria)</a>
+    <a class="button" href="{{ url_for('ri_onr_conformidade_quadro_papel') }}">Quadro em PDF</a>
+    <a href="{{ url_for('gestor_checklist', area='RI') }}">Checklist de gestão — RI</a>
+  </p>
+</section>
+
+{% for e in p.erros %}<div class="notice critical">{{ e }}. O que não foi medido não está em dia.</div>{% endfor %}
+{% if p.resumo.sem_declaracao == 3 %}
+<div class="notice">Nenhum número foi lançado ainda. Digite abaixo o que a tela do Ofício Eletrônico («Cronograma de Dados – CNJ»)
+e o anexo da Circular mostram: sem isso o painel só sabe o que existe e o que foi entregue.</div>
+{% endif %}
+
+{% for o in p.obrigacoes %}
+<section class="panel" id="{{ o.codigo|lower }}">
+  <div class="panel-head">
+    <h2>{{ o.nome }}
+      <span class="badge {{ cor_do_veredito.get(o.veredito, '') }}">{{ o.rotulo_do_veredito }}</span></h2>
+  </div>
+  <p class="small">
+    {% if o.painel.situacao %}Pela regra <em>observada</em> do painel do ONR: <strong>{{ o.painel.situacao|lower }}</strong> — {{ o.painel.texto }}.
+    {% else %}Painel do ONR: {{ o.painel.texto }}.{% endif %}
+    {% if o.codigo == 'PROV195' %}O sistema não guarda polígono: a prova está no Mapa do ONR, não aqui.{% endif %}
+  </p>
+
+  <div class="table-wrap">
+  <table>
+    <tr><th>Número</th><th>Declarado ao ONR<br><small class="muted">digitado: data, origem e quem</small></th>
+        <th>Existe no sistema</th><th>Entregue com prova</th><th>Falta</th><th>Situação</th></tr>
+    {% for c in o.colunas %}
+    <tr>
+      <td>{{ c.rotulo }}{% if c.declarado_por == 'ONR' %}<br><small class="muted">o que o painel do ONR mostra</small>{% endif %}</td>
+      <td>
+        {% if c.declarado %}
+          <strong>{% if c.tipo == 'SIMNAO' %}{{ simnao(c.declarado.valor) }}{% else %}{{ n(c.declarado.valor) }}{% endif %}</strong>
+          <br><small class="muted">lido em {{ dia(c.declarado.lido_em) }} · {{ c.declarado.origem }}<br>lançado por {{ c.declarado.lancado_por }} em {{ dia(c.declarado.lancado_em[:10]) }}{% if c.declarado.observacao %}<br>{{ c.declarado.observacao }}{% endif %}</small>
+        {% else %}<span class="muted">não lançado</span>{% endif %}
+      </td>
+      <td>
+        {% if c.sistema.valor is none %}<span class="muted">não mede</span>{% else %}{{ n(c.sistema.valor) }}{% endif %}
+        <br><small class="muted">{{ c.sistema.nota }}</small>
+      </td>
+      <td>
+        {% if c.tipo == 'SIMNAO' %}<span class="muted">vale a coluna do número</span>
+        {% elif c.entregue.valor is none %}<span class="muted">sem prova</span>
+        {% else %}<strong>{{ n(c.entregue.valor) }}</strong>{% endif %}
+        {% for f in c.entregue.fontes if c.tipo != 'SIMNAO' %}
+          <br><small class="muted">{{ f.rotulo }}: {{ n(f.valor) }}{% if f.data %} ({{ dia(f.data) }}){% endif %} — {{ f.onde }}</small>
+        {% endfor %}
+        {% if c.entregue.em_andamento %}<br><small class="muted">{{ n(c.entregue.em_andamento) }} em andamento (enviado ou processando, sem aceite): não conta</small>{% endif %}
+        {% if c.entregue.nao_importado %}<br><small class="muted">{{ n(c.entregue.nao_importado) }} «não importado» pelo ONR</small>{% endif %}
+        {% if c.entregue.nota %}<br><small class="muted">{{ c.entregue.nota }}</small>{% endif %}
+      </td>
+      <td>{% if c.falta is none %}<span class="muted">—</span>{% else %}<strong>{{ n(c.falta) }}</strong>
+        <br><small class="muted">{{ c.nota_da_falta }}{% if c.referencia is not none %} (referência {{ n(c.referencia) }}){% endif %}</small>{% endif %}</td>
+      <td>
+        {% set s = c.situacao %}
+        {% if s == 'NAO_DECLARADO' %}<span class="muted">sem declaração</span>
+        {% elif s in ('SEM_LASTRO', 'ACIMA_DO_TOTAL', 'ACIMA_DO_SISTEMA') %}<span class="badge critica">{{ {'SEM_LASTRO': 'declarado sem lastro', 'ACIMA_DO_TOTAL': 'soma acima do total', 'ACIMA_DO_SISTEMA': 'acima do que o sistema tem'}[s] }}</span>
+        {% elif s == 'ABAIXO_DA_ENTREGA' %}<span class="badge alta">declarado abaixo da entrega</span>
+        {% elif s == 'DIFERE_DO_SISTEMA' %}<span class="badge alta">difere do sistema</span>
+        {% elif s == 'CONFERE' %}<span class="badge ok">confere</span>
+        {% elif s == 'NO_PAINEL' %}<span class="badge">no painel; lastro fora do sistema</span>
+        {% elif s == 'ZERO_NO_PAINEL' %}<span class="badge alta">zero no painel</span>
+        {% else %}<span class="muted">declarado</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+
+  {% if o.divergencias %}
+  <h3>Divergências e ajustes</h3>
+  <ul>
+    {% for d in o.divergencias %}
+    <li><span class="badge {{ 'critica' if d.gravidade == 'DIVERGENCIA' else 'alta' }}">{{ 'divergência' if d.gravidade == 'DIVERGENCIA' else 'ajuste' }}</span>
+      {{ d.titulo }}<br><small class="muted">{{ d.detalhe }}</small>
+      {% if pode_lancar and d.gravidade == 'DIVERGENCIA' %}
+        — <a href="{{ url_for('ri_onr_conformidade', obrigacao=o.codigo, coluna=d.coluna, titulo=d.titulo[:150]) }}#nova-pendencia">abrir pendência</a>
+      {% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if o.veredito in ('FALTA', 'DIVERGENTE') and not o.pendencias %}
+  <div class="notice">Ninguém tem responsável e prazo registrados para esta obrigação. {% if pode_lancar %}<a href="{{ url_for('ri_onr_conformidade', obrigacao=o.codigo) }}#nova-pendencia">Abrir pendência</a>.{% endif %}</div>
+  {% endif %}
+</section>
+{% endfor %}
+
+<section class="panel" id="pendencias">
+  <div class="panel-head"><h2>Pendências ({{ p.pendencias|length }} abertas)</h2></div>
+  <p class="small muted">Cada pendência precisa de responsável, prazo, número de protocolo do ONR e comprovante anexado
+  (a Circular só aceita impedimento demonstrado, e a alegação não suspende a obrigação).</p>
+  {% if p.pendencias %}
+  <div class="table-wrap"><table>
+    <tr><th>O que falta</th><th>Responsável</th><th>Prazo</th><th>Protocolo do ONR</th><th>Comprovante</th><th></th></tr>
+    {% for x in p.pendencias %}
+    <tr>
+      <td>{{ x.titulo }}<br><small class="muted">{{ x.rotulo_da_obrigacao }}{% if x.observacao %} · {{ x.observacao }}{% endif %}<br>aberta por {{ x.criada_por }} em {{ dia(x.criada_em[:10]) }}</small></td>
+      <td>{% if x.sem_responsavel %}<span class="badge alta">sem responsável</span>{% else %}{{ x.responsavel }}{% endif %}</td>
+      <td>{% if x.sem_prazo %}<span class="badge alta">sem prazo</span>{% else %}{{ dia(x.prazo) }}{% if x.vencida %} <span class="badge critica">vencida</span>{% elif x.dias_para_o_prazo is not none and x.dias_para_o_prazo <= 2 %} <span class="badge alta">vence em {{ x.dias_para_o_prazo }} dia(s)</span>{% endif %}{% endif %}</td>
+      <td>{% if x.sem_protocolo %}<span class="badge alta">sem protocolo</span>{% else %}{{ x.protocolo_onr }}{% endif %}</td>
+      <td>{% for a in x.anexos %}<a href="{{ url_for('attachment_download', attachment_id=a.id) }}">{{ a.original_name }}</a><br><small class="muted">sha-256 {{ a.sha256[:12] }}…</small><br>{% else %}<span class="badge alta">sem comprovante</span>{% endfor %}</td>
+      <td>
+        {% if pode_lancar %}
+        <details><summary>Atualizar</summary>
+          <form method="post" action="{{ url_for('ri_onr_conformidade_pendencia_atualizar', pendencia_id=x.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>Responsável <input name="responsavel" value="{{ x.responsavel or '' }}" maxlength="120"></label>
+            <label>Prazo <input type="date" name="prazo" value="{{ x.prazo or '' }}"></label>
+            <label>Protocolo do ONR <input name="protocolo_onr" value="{{ x.protocolo_onr or '' }}" maxlength="60"></label>
+            <label>Observação <input name="observacao" value="{{ x.observacao or '' }}" maxlength="500"></label>
+            <button type="submit">Salvar</button>
+          </form>
+          <form method="post" enctype="multipart/form-data" action="{{ url_for('ri_onr_conformidade_comprovante', pendencia_id=x.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>Comprovante (PDF, JPG ou PNG) <input type="file" name="arquivo" accept=".pdf,.jpg,.jpeg,.png" required></label>
+            <button type="submit">Anexar</button>
+          </form>
+          <form method="post" action="{{ url_for('ri_onr_conformidade_pendencia_encerrar', pendencia_id=x.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>Encerrar como <select name="situacao"><option value="CONCLUIDA">concluída</option><option value="CANCELADA">cancelada</option></select></label>
+            <label>Motivo <input name="motivo" required maxlength="300"></label>
+            <button type="submit">Encerrar</button>
+          </form>
+        </details>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="muted">Nenhuma pendência aberta.</p>{% endif %}
+
+  {% if pode_lancar %}
+  <h3 id="nova-pendencia">Nova pendência</h3>
+  {% set pre = request.args %}
+  <form method="post" action="{{ url_for('ri_onr_conformidade_pendencia') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Obrigação <select name="obrigacao" required>
+      {% for cod, nome in obrigacoes %}<option value="{{ cod }}" {% if pre.get('obrigacao') == cod %}selected{% endif %}>{{ nome }}</option>{% endfor %}
+    </select></label>
+    <input type="hidden" name="coluna" value="{{ pre.get('coluna', '') }}">
+    <label>O que falta fazer <input name="titulo" required maxlength="200" size="60" value="{{ pre.get('titulo', '') }}"></label>
+    <label>Responsável <input name="responsavel" maxlength="120"></label>
+    <label>Prazo <input type="date" name="prazo"></label>
+    <label>Protocolo do ONR <input name="protocolo_onr" maxlength="60"></label>
+    <label>Observação <input name="observacao" maxlength="500" size="50"></label>
+    <button type="submit">Abrir pendência</button>
+  </form>
+  {% endif %}
+
+  {% if encerradas %}
+  <h3>Encerradas recentemente</h3>
+  <ul class="small">{% for x in encerradas %}<li>{{ x.titulo }} — {{ x.situacao|lower }} em {{ dia((x.encerrada_em or '')[:10]) }} por {{ x.encerrada_por }}: {{ x.encerrada_motivo }}</li>{% endfor %}</ul>
+  {% endif %}
+</section>
+
+{% if pode_lancar %}
+<section class="panel" id="declarado">
+  <div class="panel-head"><h2>Lançar o que foi declarado (ou o que o painel mostra)</h2></div>
+  <p class="small muted">Digite o número como está na tela de origem, com a data em que o leu. Lançar de novo substitui o anterior
+  (o histórico fica). Isto não altera nada no ONR.</p>
+  <form method="post" action="{{ url_for('ri_onr_conformidade_declarar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Número <select name="coluna" required>
+      {% for cod, d in colunas.items() %}<option value="{{ cod }}">{{ nomes[d.obrigacao] }} — {{ d.rotulo }}</option>{% endfor %}
+    </select></label>
+    <label>Valor (número, ou Sim/Não) <input name="valor" required maxlength="12" size="10"></label>
+    <label>Lido em <input type="date" name="lido_em" required></label>
+    <label>De onde saiu <input name="origem" required maxlength="200" size="55" list="origens"
+        placeholder="Cronograma de Dados – CNJ (Ofício Eletrônico), linha Total"></label>
+    <datalist id="origens">{% for cod, d in colunas.items() %}<option value="{{ d.origem }}">{% endfor %}</datalist>
+    <label>Observação <input name="observacao" maxlength="500" size="40"></label>
+    <button type="submit">Lançar</button>
+  </form>
+  {% if historico %}
+  <details><summary>Histórico dos lançamentos ({{ historico|length }})</summary>
+  <div class="table-wrap"><table>
+    <tr><th>#</th><th>Número</th><th>Valor</th><th>Lido em</th><th>Origem</th><th>Lançado por</th><th></th></tr>
+    {% for h in historico %}
+    <tr {% if h.anulado_em %}class="muted"{% endif %}>
+      <td>{{ h.id }}</td><td>{{ colunas[h.coluna].rotulo if h.coluna in colunas else h.coluna }}</td>
+      <td>{% if colunas[h.coluna].tipo == 'SIMNAO' %}{{ simnao(h.valor) }}{% else %}{{ n(h.valor) }}{% endif %}</td>
+      <td>{{ dia(h.lido_em) }}</td><td>{{ h.origem }}</td><td>{{ h.lancado_por }} em {{ dia(h.lancado_em[:10]) }}</td>
+      <td>{% if h.anulado_em %}anulado por {{ h.anulado_por }}: {{ h.anulado_motivo }}
+        {% else %}<form method="post" action="{{ url_for('ri_onr_conformidade_anular_declaracao', declaracao_id=h.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input name="motivo" placeholder="motivo" required maxlength="300"><button type="submit">Anular</button></form>{% endif %}</td>
+    </tr>{% endfor %}
+  </table></div></details>
+  {% endif %}
+</section>
+
+<section class="panel" id="provas">
+  <div class="panel-head"><h2>Informar uma importação feita no portal do ONR</h2></div>
+  <p class="small muted">Para o que o titular importou pelo portal («Envio de Indicador Real» e semelhantes) e o sistema não vê sozinho.
+  O portal diz que o arquivo fica <em>Processando</em> por horas ou dias: <strong>só «Importado» conta como entregue com prova</strong>.</p>
+  <form method="post" action="{{ url_for('ri_onr_conformidade_prova') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Número <select name="coluna" required>
+      {% for cod in com_prova %}<option value="{{ cod }}">{{ nomes[colunas[cod].obrigacao] }} — {{ colunas[cod].rotulo }}</option>{% endfor %}
+    </select></label>
+    <label>Quantas <input name="quantos" required maxlength="9" size="8"></label>
+    <label>Situação no portal <select name="situacao" required>
+      {% for cod, nome in situacoes_da_prova.items() %}<option value="{{ cod }}">{{ nome }}</option>{% endfor %}
+    </select></label>
+    <label>Vista em <input type="date" name="visto_em" required></label>
+    <label>Protocolo do ONR <input name="protocolo_onr" maxlength="60"></label>
+    <label>Descrição <input name="descricao" maxlength="300" size="40"></label>
+    <button type="submit">Informar</button>
+  </form>
+  {% if provas %}
+  <div class="table-wrap"><table>
+    <tr><th>#</th><th>Número</th><th>Quantas</th><th>Situação</th><th>Vista em</th><th>Protocolo</th><th>Lançado por</th><th></th></tr>
+    {% for h in provas %}
+    <tr {% if h.anulado_em %}class="muted"{% endif %}>
+      <td>{{ h.id }}</td><td>{{ colunas[h.coluna].rotulo if h.coluna in colunas else h.coluna }}</td><td>{{ n(h.quantos) }}</td>
+      <td>{{ situacoes_da_prova.get(h.situacao, h.situacao) }}</td><td>{{ dia(h.visto_em) }}</td><td>{{ h.protocolo_onr or '—' }}</td>
+      <td>{{ h.lancado_por }} em {{ dia(h.lancado_em[:10]) }}</td>
+      <td>{% if h.anulado_em %}anulada por {{ h.anulado_por }}: {{ h.anulado_motivo }}
+        {% else %}<form method="post" action="{{ url_for('ri_onr_conformidade_anular_prova', prova_id=h.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input name="motivo" placeholder="motivo" required maxlength="300"><button type="submit">Anular</button></form>{% endif %}</td>
+    </tr>{% endfor %}
+  </table></div>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

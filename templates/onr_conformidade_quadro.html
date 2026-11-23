@@ -1,0 +1,89 @@
+<!doctype html>
+{# O QUADRO PARA ANEXAR À RESPOSTA DA CORREGEDORIA (RI010) — página própria, sem o menu, porque é
+   papel: a mesma página serve a tela, o «Imprimir» do navegador e o PDF (`papel=True` tira a
+   barra de cima). Só números, datas, origens e nomes de quem lançou: nada de teor de ato nem de
+   parte. Cada número traz a data e a origem dele. #}
+{% macro n(v) %}{% if v is none %}—{% else %}{{ '{:,}'.format(v).replace(',', '.') }}{% endif %}{% endmacro %}
+{% macro dia(t) %}{% if t %}{{ t[8:10] }}/{{ t[5:7] }}/{{ t[:4] }}{% endif %}{% endmacro %}
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Quadro de conformidade ONR — {{ p.hoje }}</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 10.5pt; color: #111; margin: 1.5cm; }
+  h1 { font-size: 15pt; margin: 0 0 .2em; }
+  h2 { font-size: 12pt; margin: 1.3em 0 .3em; border-bottom: 1px solid #999; }
+  table { border-collapse: collapse; width: 100%; margin: .3em 0 .8em; }
+  th, td { border: 1px solid #bbb; padding: 3px 5px; vertical-align: top; text-align: left; font-size: 8.8pt; }
+  th { background: #eee; }
+  .muted { color: #444; font-size: 8.3pt; }
+  .aviso { border: 2px solid #b36b00; background: #fff6e5; padding: .5em .8em; margin: .6em 0; font-size: 9.5pt; }
+  .sem-lastro { color: #8a1c1c; font-weight: bold; }
+  .barra { background: #f2f2f2; border: 1px solid #ccc; padding: .5em .8em; margin-bottom: 1em; }
+  .barra a, .barra button { margin-right: 1em; }
+  tr { page-break-inside: avoid; }
+  @media print { .barra { display: none; } body { margin: 0; } }
+</style>
+</head>
+<body>
+{% if not papel %}
+<div class="barra">
+  <a href="{{ url_for('ri_onr_conformidade') }}">← Painel de conformidade</a>
+  <button type="button" onclick="window.print()">Imprimir</button>
+  <a href="{{ url_for('ri_onr_conformidade_quadro_papel') }}">Baixar em PDF</a>
+</div>
+{% endif %}
+
+<h1>Quadro de conformidade perante o ONR</h1>
+<p>{{ serventia.get('unit_name') or 'Serventia' }}{% set cns = serventia.get('ri_cns') or serventia.get('serventia_cns') %}{% if cns %} — CNS {{ cns }}{% endif %}<br>
+Provimento CNJ 143/2023, Provimento CNJ 195/2025 e ITN 003 (ADPF 743; Circular COGEX 243/2026).</p>
+<p class="muted">Emitido em {{ emitido_em }} por {{ emitido_por }}. Medição do sistema em {{ dia(p.medido_em[:10]) }} às {{ p.medido_em[11:16] }}.
+O que o sistema conta (coluna «Existe») e o que ele prova (coluna «Entregue») sai das tabelas desta serventia na data da medição.
+O que foi «declarado» foi <strong>digitado</strong> por quem leu a tela de origem, na data indicada.</p>
+<div class="aviso"><strong>Leitura do quadro.</strong> O número declarado ao ONR não é prova de entrega. Cada linha mostra o declarado,
+o que existe no sistema, o que foi entregue com prova (só indicador aceito pela fila do ONR, carga levada pelo IPS, CSL2 comprovado
+ou importação informada como «Importado») e o que falta. Os números do painel do ONR (polígonos e ITN 003) são os que o ONR mostra;
+o sistema desta serventia não tem canal próprio de entrega para eles, e o quadro diz isso em vez de afirmar entrega.</div>
+
+{% for o in p.obrigacoes %}
+<h2>{{ o.nome }} — {{ o.rotulo_do_veredito }}</h2>
+{% if o.painel.situacao %}<p class="muted">Regra observada do painel do ONR (não é norma): {{ o.painel.situacao|lower }} — {{ o.painel.texto }}.</p>{% endif %}
+<table>
+  <tr><th>Número</th><th>Declarado ao ONR<br>(data, origem, quem lançou)</th><th>Existe no sistema</th><th>Entregue com prova</th><th>Falta</th></tr>
+  {% for c in o.colunas %}
+  <tr>
+    <td>{{ c.rotulo }}</td>
+    <td>{% if c.declarado %}
+      <strong>{% if c.tipo == 'SIMNAO' %}{{ 'Sim' if c.declarado.valor == 1 else 'Não' }}{% else %}{{ n(c.declarado.valor) }}{% endif %}</strong>
+      {% if c.situacao in ('SEM_LASTRO', 'ACIMA_DO_TOTAL', 'ACIMA_DO_SISTEMA') %}<span class="sem-lastro"> — sem lastro</span>{% endif %}
+      <br><span class="muted">lido em {{ dia(c.declarado.lido_em) }} · {{ c.declarado.origem }} · lançado por {{ c.declarado.lancado_por }} em {{ dia(c.declarado.lancado_em[:10]) }}</span>
+      {% else %}não lançado{% endif %}</td>
+    <td>{% if c.sistema.valor is none %}não mede{% else %}{{ n(c.sistema.valor) }}{% endif %}<br><span class="muted">{{ c.sistema.nota }} — {{ dia(p.medido_em[:10]) }}</span></td>
+    <td>{% if c.tipo == 'SIMNAO' %}vale o número da coluna correspondente
+      {% else %}{% if c.entregue.valor is none %}sem prova{% else %}<strong>{{ n(c.entregue.valor) }}</strong>{% endif %}
+      {% for f in c.entregue.fontes %}<br><span class="muted">{{ f.rotulo }}: {{ n(f.valor) }}{% if f.data %} ({{ dia(f.data) }}){% endif %} — {{ f.onde }}</span>{% endfor %}
+      {% if c.entregue.em_andamento %}<br><span class="muted">{{ n(c.entregue.em_andamento) }} em andamento (sem aceite): não contado</span>{% endif %}{% endif %}</td>
+    <td>{% if c.falta is none %}—{% else %}<strong>{{ n(c.falta) }}</strong><br><span class="muted">{{ c.nota_da_falta }}</span>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% if o.divergencias %}
+<p><strong>Divergências e ajustes:</strong></p>
+<ul>{% for d in o.divergencias %}<li>{{ 'Divergência' if d.gravidade == 'DIVERGENCIA' else 'Ajuste' }}: {{ d.titulo }}. <span class="muted">{{ d.detalhe }}</span></li>{% endfor %}</ul>
+{% endif %}
+{% endfor %}
+
+<h2>Pendências e providências</h2>
+{% if p.pendencias %}
+<table>
+  <tr><th>O que falta</th><th>Obrigação</th><th>Responsável</th><th>Prazo</th><th>Protocolo do ONR</th><th>Comprovante</th></tr>
+  {% for x in p.pendencias %}
+  <tr><td>{{ x.titulo }}</td><td>{{ x.rotulo_da_obrigacao }}</td><td>{{ x.responsavel or 'não definido' }}</td>
+      <td>{{ dia(x.prazo) if x.prazo else 'sem prazo' }}</td><td>{{ x.protocolo_onr or 'sem protocolo' }}</td>
+      <td>{% for a in x.anexos %}{{ a.original_name }} <span class="muted">(sha-256 {{ a.sha256[:16] }})</span><br>{% else %}sem comprovante anexado{% endfor %}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p>Nenhuma pendência aberta registrada no sistema na data da emissão.</p>{% endif %}
+<p class="muted">Este quadro foi gerado pelo sistema da serventia. Não foi enviado ao ONR nem a qualquer órgão por ele.</p>
+</body>
+</html>

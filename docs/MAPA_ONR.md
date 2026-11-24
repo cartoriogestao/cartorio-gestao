@@ -152,6 +152,36 @@ O contrário também vale: a ponte apaga tabela com `CASCADE` (como o SQLite,
 que apagava mesmo com outra apontando), e apagar uma dessas três leva a VIEW
 junto, em silêncio. A subida seguinte a recria; o `GRANT`, não.
 
+## O passo do georreferenciamento no ato (RI011, S8)
+
+O art. 343-F, II, do Código Nacional de Normas (Prov. CNJ 195/2025) manda o
+oficial, ao **abrir matrícula** ou **atualizar, corrigir ou alterar a descrição
+perimetral**, analisar o mosaico no SIG-RI: erro de fechamento do polígono e
+sobreposição com outros imóveis.
+
+O sistema não consulta o SIG-RI. O que ele faz é **o passo**, em
+`ri_georref.py`: o formulário de abrir matrícula e o de lavrar ato trazem a
+pergunta «conferiu o mosaico?» (conferi sem ocorrência · conferi, há ocorrência ·
+imóvel sem coordenadas · conferirei depois), e a resposta fica gravada com o
+**nome de quem respondeu e a hora**, ao lado do ato — como a consulta à CNIB.
+
+- **Avisa, não bloqueia.** Em branco, «depois» ou sessão de robô, o ato sai e a
+  conferência fica **PENDENTE**, com aviso na tela. A pendente aparece na ficha
+  («Georreferenciamento — mosaico no SIG-RI») e em
+  *Registro de Imóveis → Georreferenciamento — a conferir*, e se resolve depois
+  por uma linha nova; a antiga não se reescreve.
+- **Quais atos pedem o passo:** a abertura de matrícula (ficha de acervo não) e as
+  naturezas que mexem no perímetro — loteamento, usucapião, desmembramento,
+  unificação, remembramento, atualização de confrontação, retificação de área,
+  novas divisas — e os modelos de georreferenciamento e de unificação. A lista
+  é `ri_georref.CODIGOS_QUE_PEDEM`, **do oficial**: qualquer outro ato também
+  pode ser conferido, o campo está em todos.
+- **Conferência é de pessoa.** Conta de robô não confere (como na afirmação
+  expressa): a linha nasce PENDENTE, sem nome de máquina.
+- **O que ficou de fora:** o inciso III do mesmo artigo (em *qualquer* ato,
+  averiguar especialidade, disponibilidade e unicidade pelo SIG-RI) e o inciso I
+  (alimentar o SIG-RI com os perímetros).
+
 ## O que FALTA (trabalho futuro)
 
 O que está acima é a parte que já era do Gestão. Para o sistema gerar o

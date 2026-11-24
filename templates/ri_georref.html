@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Georreferenciamento a conferir{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Georreferenciamento a conferir</h1>
+  <a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Matrículas</a>
+</div>
+
+{#  O passo é do art. 343-F, II, do Código Nacional de Normas (Prov. CNJ 195/2025): ao abrir matrícula ou
+    mexer na descrição perimetral, o oficial analisa o mosaico no SIG-RI — erro de fechamento do polígono e
+    sobreposição com outros imóveis. O sistema NÃO consulta o SIG-RI: grava quem declarou ter conferido, e
+    quando. Esta lista é o que ficou «pendente» (em branco, «conferirei depois» ou sessão de robô). Avisa,
+    não bloqueia: o ato já foi lavrado. #}
+
+<section class="panel">
+  <div class="panel-head"><span>{{ pendentes|length }}
+    conferência{{ '' if pendentes|length == 1 else 's' }} pendente{{ '' if pendentes|length == 1 else 's' }}</span>
+    <span class="small muted">{{ GEO.DISPOSITIVO }}</span></div>
+  <div style="padding:14px">
+    {% if not pendentes %}
+    <p><strong>Nada pendente.</strong> Todo ato que abriu matrícula ou mexeu no perímetro tem a conferência do
+      mosaico declarada por alguém — ou a ficha ainda não passou por esse passo.</p>
+    {% else %}
+    <table class="table">
+      <thead><tr><th>Matrícula</th><th>Ato</th><th>Natureza</th><th>Quando</th><th>Quem lavrou</th><th></th></tr></thead>
+      <tbody>
+      {% for c in pendentes %}
+        <tr>
+          <td>{{ c.matricula_numero }}{% if c.matricula_complemento %}-{{ c.matricula_complemento }}{% endif %}</td>
+          <td>{{ c.ato_rotulo or '—' }}{% if c.ocasiao == 'ABERTURA' %} <small class="muted">(abertura)</small>{% endif %}</td>
+          <td class="small">{{ c.natureza_titulo or '—' }}</td>
+          <td class="small">{{ (c.conferido_em or '')[:16].replace('T', ' ') }}</td>
+          <td class="small">{{ c.conferido_por or '—' }}</td>
+          <td><a class="button" href="{{ url_for('ri_ficha', matricula_id=c.matricula_id) }}#georreferenciamento">Conferir na ficha</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

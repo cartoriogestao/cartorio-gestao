@@ -1,0 +1,27 @@
+{#- O PASSO DO GEORREFERENCIAMENTO (RI011) — art. 343-F, II, do Código Nacional de Normas (Prov. CNJ 195/2025).
+    Os campos `georref_situacao` e `georref_obs` vão com o formulário de lavrar o ato e com o de abrir
+    matrícula; quem os lê é `ri_georref`. O sistema não consulta o SIG-RI: grava o que a pessoa declara,
+    com o nome dela e a hora. AVISA, NÃO BLOQUEIA — em branco, o ato sai e a conferência fica pendente.
+
+    Os rótulos abaixo repetem `ri_georref.ROTULOS` DE PROPÓSITO: a macro não depende de contexto (as telas
+    que a importam são montadas em teste sobre moldura vazia). `tests/test_ri_georref.py` compara os dois. #}
+{% macro passo(passo_da_tela="", obrigatorio=False, atual="") %}
+<div class="span2 georref-passo"{% if passo_da_tela %} data-passo="{{ passo_da_tela }}"{% endif %} style="border:1px solid var(--borda,#ccd);padding:8px 12px;border-radius:6px">
+  <div><strong>Georreferenciamento — mosaico no SIG-RI</strong>
+    {% if obrigatorio %}<span class="obrigatorio">— este ato pede o passo</span>{% endif %}</div>
+  <small class="muted">Art. 343-F, II, do Código Nacional de Normas (Prov. CNJ 195/2025): ao abrir matrícula ou
+    alterar a descrição perimetral, analisar o mosaico no SIG-RI — erro de fechamento do polígono e
+    sobreposição com outros imóveis. O sistema grava o que você declara, com seu nome e a hora;
+    <strong>não consulta o SIG-RI nem trava o ato</strong>.</small>
+  <label>Conferência
+    <select name="georref_situacao">
+      <option value="">— não respondi (fica pendente)</option>
+      <option value="SEM_OCORRENCIA"{% if atual == "SEM_OCORRENCIA" %} selected{% endif %}>Conferi o mosaico: sem erro de fechamento e sem sobreposição</option>
+      <option value="COM_OCORRENCIA"{% if atual == "COM_OCORRENCIA" %} selected{% endif %}>Conferi o mosaico: há ocorrência (descreva abaixo)</option>
+      <option value="NAO_GEORREFERENCIADO"{% if atual == "NAO_GEORREFERENCIADO" %} selected{% endif %}>O imóvel não tem coordenadas (não georreferenciado): não há mosaico a conferir</option>
+      <option value="PENDENTE"{% if atual == "PENDENTE" %} selected{% endif %}>Conferirei depois</option>
+    </select></label>
+  <label>Observação <small>— obrigatória se houver ocorrência: qual erro, qual matrícula vizinha</small>
+    <input name="georref_obs" maxlength="500" autocomplete="off"></label>
+</div>
+{% endmacro %}

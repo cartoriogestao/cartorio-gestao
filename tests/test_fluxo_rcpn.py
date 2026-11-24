@@ -1274,6 +1274,91 @@ def test_o_lancamento_a_margem_sai_selado_e_entra_na_certidao(
     assert "Não há." not in papel.split("ANOTAÇÕES/AVERBAÇÕES", 1)[1][:60]
 
 
+def test_a_retificacao_sem_item_marcado_sela_so_o_14_10(balcao):
+    """P006 (19/11/2026): a retificação lançada pelo protocolo do pacote, sem
+    marcar o item, pedia um selo por item do protocolo — a certidão e a
+    averbação inclusive, todos pelo caminho `/retificacao`. O selo é o do ato
+    (14.10); a averbação e a certidão do mesmo pacote ficam para os atos delas."""
+    assento, _ato, _ = _lavrar(balcao, "NASCIMENTO", _form_nascimento(),
+                               folha=FOLHAS[0])
+    _emitir(balcao, assento["id"], folha_seguranca=FOLHAS[0])
+    p = _abrir_protocolo(balcao, interessado="BEATRIZ EXEMPLO DE SOUZA",
+                         codigos=("14.5.1", "14.4.1", "14.10"))
+    antes = len(_pedidos_de_selo(balcao))
+    teor = ("Retificação de teste: consta que o registrado PEDRO EXEMPLO DOS "
+            "SANTOS teve a grafia do prenome corrigida.")
+    r = _post(balcao, f"/rcpn/{assento['id']}/retificar",
+              f"/rcpn/{assento['id']}/lancar", tipo="RETIFICACAO", teor=teor,
+              fundamento="LRP art. 110, erro de grafia",
+              protocolo_id=str(p["id"]))
+    lanc = _um(balcao, "SELECT * FROM rc_atos WHERE assento_id = %s AND "
+                       "tipo = 'RETIFICACAO'", (assento["id"],))
+    assert lanc and (lanc["selo"] or "").strip(), _avisos(r.get_data(as_text=True))
+    pedidos = _pedidos_de_selo(balcao)[antes:]
+    assert [x["codigoAto"] for x in pedidos] == ["14.10"], pedidos
+    assert pedidos[0]["caminho"].endswith("/selo/civil/nascimento/retificacao")
+    _item_gasto_pelo_ato(balcao, p, "14.10", tabela="rc_atos", ato_id=lanc["id"])
+    for livre in ("14.5.1", "14.4.1"):
+        item = _um(balcao, "SELECT usado_em FROM cx_protocolo_atos WHERE id = %s",
+                   (p["itens"][livre],))
+        assert item["usado_em"] is None, livre
+
+
+def test_a_anotacao_sem_o_14_7_no_protocolo_nao_leva_o_item_de_outro_ato(balcao):
+    """P006 (23/11/2026): a anotação num protocolo sem 14.7 reservava o 14.10
+    da retificação. Sem o item do ato, o selo não é pedido, o ato não fica, e
+    nenhuma marca «aguardando cobertura» sobra de um ato que não existe."""
+    assento, _ato, _ = _lavrar(balcao, "NASCIMENTO", _form_nascimento(),
+                               folha=FOLHAS[0])
+    p = _abrir_protocolo(balcao, interessado="BEATRIZ EXEMPLO DE SOUZA",
+                         codigos=("14.10",))
+    antes = len(_pedidos_de_selo(balcao))
+    r = _post(balcao, f"/rcpn/{assento['id']}/anotar",
+              f"/rcpn/{assento['id']}/lancar", tipo="ANOTACAO",
+              teor="Anotação de teste do casamento do registrado.",
+              protocolo_id=str(p["id"]))
+    html = r.get_data(as_text=True)
+    assert "14.7" in _avisos(html), _avisos(html)
+    assert len(_pedidos_de_selo(balcao)) == antes
+    assert not _um(balcao, "SELECT id FROM rc_atos WHERE assento_id = %s AND "
+                           "tipo = 'ANOTACAO'", (assento["id"],))
+    item = _um(balcao, "SELECT usado_em FROM cx_protocolo_atos WHERE id = %s",
+               (p["itens"]["14.10"],))
+    assert item["usado_em"] is None
+    assert not _um(balcao, "SELECT 1 AS um FROM cx_selo_aguardando s WHERE "
+                           "s.tabela = 'rc_atos' AND NOT EXISTS (SELECT 1 FROM "
+                           "rc_atos r WHERE r.id = s.ato_id)")
+
+
+def test_a_averbacao_no_assento_com_folha_de_verso_vai_ao_selo_com_o_numero(balcao):
+    """P006: o acervo importado guarda a folha como no livro («117v»), e o
+    Tribunal recusa `dadosSelo.folha` com mais de 3 caracteres — as averbações
+    de CPF de 12/11 a 23/11/2026. Vai só o número da folha."""
+    assento, _ato, _ = _lavrar(balcao, "NASCIMENTO", _form_nascimento(),
+                               folha=FOLHAS[0])
+    linha = _um(balcao, "SELECT dados_json FROM rc_assentos WHERE id = %s",
+                (assento["id"],))
+    dados = json.loads(linha["dados_json"] or "{}")
+    dados["folha"] = "117v"
+    with balcao["db"].transaction() as con:
+        banco(con).escrever("UPDATE rc_assentos SET dados_json = %s WHERE id = %s",
+                            (json.dumps(dados), assento["id"]))
+    p = _abrir_protocolo(balcao, interessado="BEATRIZ EXEMPLO DE SOUZA",
+                         codigos=("14.4.1",))
+    r = _post(balcao, f"/rcpn/{assento['id']}/averbar",
+              f"/rcpn/{assento['id']}/lancar", tipo="AVERBACAO",
+              teor="Averbação de teste: o registrado teve o nome alterado.",
+              natureza_averbacao="outra", fundamento="LRP art. 29",
+              **_do_protocolo(p, "14.4.1"))
+    lanc = _um(balcao, "SELECT * FROM rc_atos WHERE assento_id = %s AND "
+                       "tipo = 'AVERBACAO' ORDER BY id DESC LIMIT 1",
+               (assento["id"],))
+    assert lanc and (lanc["selo"] or "").strip(), _avisos(r.get_data(as_text=True))
+    pedido = _pedidos_de_selo(balcao)[-1]
+    assert pedido["caminho"].endswith("/averbacao"), pedido
+    assert pedido["dadosSelo"]["folha"] == "117", pedido
+
+
 def test_averbacao_gratuita_sela_isenta_e_guarda_o_comprovante(balcao):
     """A gratuidade por pessoa (custas.GRATUIDADES_POR_PESSOA, LRP art. 30, §
     1º): sem protocolo pago, o selo sai GRATUITO com o motivo escrito, e o

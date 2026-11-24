@@ -801,3 +801,70 @@ def test_marcador_inserir_no_teor_da_ficha_e_critico(con):
     achados = [a for a in _regras(GC.conferir(con, HOJE), "MODELO_NAO_PREENCHIDO")
                if a["chave"] == f"MARCADOR:ri_matriculas:{mid}"]
     assert len(achados) == 1 and "[INSERIR" in achados[0]["detalhe"]
+
+
+# ---------------------------------------------- ficha provisória encerrada (G002)
+
+def _ficha_com_marcador(con, *, numero="990001", origem="IMPORTACAO",
+                        situacao="ENCERRADA", encerrada=1):
+    mid = _matricula(con, numero)
+    con.execute("""UPDATE ri_matriculas SET data_abertura='2026-09-23', origem=?,
+                       situacao=?, encerrada=?, teor='CCIR: [INSERIR DADO]' WHERE id=?""",
+                (origem, situacao, encerrada, mid))
+    return mid
+
+
+def _cobrada(con, tabela, i) -> bool:
+    chave = f"MARCADOR:{tabela}:{i}"
+    return any(a["chave"] == chave
+               for a in _regras(GC.conferir(con, HOJE), "MODELO_NAO_PREENCHIDO"))
+
+
+@pytest.mark.parametrize("situacao,encerrada", [("ENCERRADA", 1), ("ENCERRADA", 0), ("ATIVA", 1)])
+def test_ficha_provisoria_encerrada_sem_ato_nao_e_cobrada(con, situacao, encerrada):
+    mid = _ficha_com_marcador(con, situacao=situacao, encerrada=encerrada)
+    assert not _cobrada(con, "ri_matriculas", mid)
+
+
+@pytest.mark.parametrize("origem,situacao,encerrada", [
+    ("IMPORTACAO", "ATIVA", 0),     # ficha ativa ainda se corrige
+    ("MANUAL", "ENCERRADA", 1),     # não veio da importação
+    ("EOFICIO", "ENCERRADA", 1),    # idem
+])
+def test_ficha_fora_da_excecao_continua_cobrada(con, origem, situacao, encerrada):
+    mid = _ficha_com_marcador(con, origem=origem, situacao=situacao, encerrada=encerrada)
+    assert _cobrada(con, "ri_matriculas", mid)
+
+
+def test_ficha_encerrada_com_ato_continua_cobrada(con):
+    mid = _ficha_com_marcador(con)
+    _ri_ato(con, mid)
+    assert _cobrada(con, "ri_matriculas", mid)
+
+
+def test_minuta_na_ficha_provisoria_continua_cobrada(con):
+    mid = _ficha_com_marcador(con)
+    minuta = int(con.execute(
+        """INSERT INTO ri_minutas (matricula_id, tipo, numero_pretendido, teor, situacao,
+               criado_em) VALUES (?, 'AV', 3, 'Averbação: [INSERIR DADO]', 'A_REVISAR', ?)""",
+        (mid, AGORA)).lastrowid)
+    assert not _cobrada(con, "ri_matriculas", mid)
+    assert _cobrada(con, "ri_minutas", minuta)
+    assert len(_regras(GC.conferir(con, HOJE), "MINUTA_EM_FICHA_ENCERRADA")) == 1
+
+
+def test_achado_da_ficha_provisoria_fecha_e_reabre_na_rodada(con):
+    mid = _ficha_com_marcador(con)
+    chave = f"MARCADOR:ri_matriculas:{mid}"
+    GR.gravar_achados(con, [GC._achado(chave, "MODELO_NAO_PREENCHIDO", "CRITICO",
+                                       "RI_QUALIFICACAO", "ficha", "marcador", None, "")], HOJE)
+    resolvido = lambda: con.execute("SELECT resolvido_em FROM ge_achados WHERE chave = ?",
+                                    (chave,)).fetchone()[0]
+    assert resolvido() is None
+
+    GR.gravar_achados(con, GC.conferir(con, HOJE), HOJE)
+    assert resolvido() is not None, "a rodada seguinte fecha o achado sozinha"
+
+    _ri_ato(con, mid)
+    GR.gravar_achados(con, GC.conferir(con, HOJE), HOJE)
+    assert resolvido() is None, "se a ficha ganhar ato, a cobrança volta"

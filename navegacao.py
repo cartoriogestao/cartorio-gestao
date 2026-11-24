@@ -155,7 +155,9 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("Modelos", "livro3_modelos", antigo="Livro 3 — modelos (ficha e certidão)"),)),
          ("Consulta", (
              _i("Indicador Real", "ri_indicador_real"),
-             _i("Indicador Pessoal", "ri_indicador_pessoal"),)),
+             _i("Indicador Pessoal", "ri_indicador_pessoal"),
+             _i("Georreferenciamento a conferir", "ri_georref_pendentes", antigo="Georreferenciamento — a conferir",
+                termos="mosaico sigri sig-ri poligono 343-f perimetro"),)),
          ("Centrais e obrigações", (
              _i("DOI", "ri_doi", AMA, antigo="DOI — Receita Federal", termos="receita federal declaracao"),
              _i("CTP", "ri_ctp", AMA, antigo="CTP — prefeituras", termos="prefeitura sefin"),

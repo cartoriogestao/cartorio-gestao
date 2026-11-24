@@ -193,9 +193,37 @@ def serventia_de(settings: Mapping[str, Any]) -> tuple[Serventia | None, list[st
         faltam.append("o nome do município da serventia")
     if len(codigo) != 7 or (uf_codigo is not None and not codigo.startswith(str(uf_codigo))):
         faltam.append("o código IBGE do município da serventia, com 7 dígitos e da mesma UF")
+    outros, erros_outros = _outros_municipios(settings.get("ri_municipios_ibge"), uf_codigo)
+    faltam.extend(erros_outros)
     if faltam:
         return None, faltam
-    return Serventia(cns=cns, uf=uf, uf_codigo=uf_codigo, municipios={cidade: int(codigo)}), []
+    return Serventia(cns=cns, uf=uf, uf_codigo=uf_codigo, municipios={**outros, cidade: int(codigo)}), []
+
+
+def _outros_municipios(bruto: Any, uf_codigo: int | None) -> tuple[dict[str, int], list[str]]:
+    """Os outros municípios da circunscrição: `ri_municipios_ibge` = {"Nome": código IBGE}.
+
+    A CIRCUNSCRIÇÃO PODE TER MAIS DE UM MUNICÍPIO, e a ficha do segundo era recusada porque só a
+    sede tinha código. O código vem da configuração, e não daqui: é o oficial quem diz o que a
+    circunscrição abrange. Configuração torta recusa o arquivo inteiro, em vez de sumir com as fichas.
+    """
+    if bruto is None or not _texto(bruto):
+        return {}, []
+    try:
+        lido = json.loads(bruto) if isinstance(bruto, str) else bruto
+    except ValueError:
+        lido = None
+    if not isinstance(lido, Mapping):
+        return {}, ['«ri_municipios_ibge» tem de ser {"Nome do município": código IBGE}']
+    saida: dict[str, int] = {}
+    erros: list[str] = []
+    for nome, codigo in lido.items():
+        digitos = _digitos(codigo)
+        if not chave(nome) or len(digitos) != 7 or (uf_codigo is not None and not digitos.startswith(str(uf_codigo))):
+            erros.append(f"o código IBGE de «{_texto(nome)}» em «ri_municipios_ibge», com 7 dígitos e da mesma UF")
+        else:
+            saida[chave(nome)] = int(digitos)
+    return saida, erros
 
 
 # ------------------------------------------------------------ o registro
@@ -245,10 +273,12 @@ def montar_registro(m: Mapping[str, Any], casa: Serventia) -> tuple[dict | None,
         motivos.append(f"O logradouro («{_texto(m.get('logradouro')) or 'vazio'}») não começa por um tipo "
                        "do manual seguido do nome.")
 
-    uf = _texto(m.get("uf")).upper()
+    cidade = casa.municipios.get(chave(m.get("cidade")))
+    # O MUNICÍPIO JÁ DIZ A UF: o código IBGE de 7 dígitos começa pelo da UF. Ficha sem UF e com um
+    # município da circunscrição não fica de fora por isso. UF escrita e diferente continua recusada.
+    uf = _texto(m.get("uf")).upper() or (casa.uf if cidade is not None else "")
     if uf != casa.uf:
         motivos.append(f"A UF da ficha («{uf or 'vazia'}») não é a da serventia.")
-    cidade = casa.municipios.get(chave(m.get("cidade")))
     if cidade is None:
         motivos.append(f"O município da ficha («{_texto(m.get('cidade')) or 'vazio'}») não tem código IBGE "
                        "configurado nesta serventia.")

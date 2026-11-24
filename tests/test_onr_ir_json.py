@@ -155,3 +155,37 @@ def test_a_configuracao_completa_monta_a_serventia():
     casa, faltam = J.serventia_de({"ri_cns": "00.000-0", "ri_uf": "sp", "ri_cidade": "Cidade Exemplo",
                                    "ibge_uf": "35", "ibge_municipio": "00001"})
     assert not faltam and casa.cns == "000000" and casa.municipios == {"cidade exemplo": 3500001}
+
+
+CONFIG_DOIS = {"ri_cns": "000000", "ri_uf": "SP", "ri_cidade": "Cidade Exemplo", "ibge_uf": "35",
+               "ibge_municipio": "00001", "ri_municipios_ibge": '{"Riacho Fundo": 3500002}'}
+
+
+def test_o_segundo_municipio_da_circunscricao_entra_pela_configuracao():
+    casa, faltam = J.serventia_de(CONFIG_DOIS)
+    assert not faltam and casa.municipios == {"riacho fundo": 3500002, "cidade exemplo": 3500001}
+    registro, motivos = J.montar_registro(ficha(cidade="Riacho Fundo"), casa)
+    assert not motivos and registro["CIDADE"] == 3500002 and registro["UF"] == 35
+    assert not J.validar_registro(registro, casa)
+
+
+@pytest.mark.parametrize("bruto", ['{"Riacho Fundo": 3300002}', '{"Riacho Fundo": "35"}', "Riacho Fundo=3500002", "[1]"])
+def test_segundo_municipio_torto_recusa_a_configuracao(bruto):
+    casa, faltam = J.serventia_de({**CONFIG_DOIS, "ri_municipios_ibge": bruto})
+    assert casa is None and any("ri_municipios_ibge" in x for x in faltam)
+
+
+def test_sem_segundo_municipio_configurado_a_ficha_dele_continua_de_fora():
+    casa, _ = J.serventia_de({k: v for k, v in CONFIG_DOIS.items() if k != "ri_municipios_ibge"})
+    registro, motivos = J.montar_registro(ficha(cidade="Riacho Fundo"), casa)
+    assert registro is None and any("município" in m for m in motivos)
+
+
+def test_a_uf_em_branco_sai_do_municipio_da_circunscricao():
+    registro, motivos = J.montar_registro(ficha(uf=""), CASA)
+    assert not motivos and registro["UF"] == 35 and registro["CIDADE"] == 3500000
+
+
+def test_uf_em_branco_e_municipio_desconhecido_continua_recusada():
+    registro, motivos = J.montar_registro(ficha(uf="", cidade="Outra"), CASA)
+    assert registro is None and any("UF" in m for m in motivos) and any("município" in m for m in motivos)

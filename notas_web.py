@@ -5666,6 +5666,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             "SELECT * FROM nt_ato_imoveis WHERE ato_id=%s ORDER BY ordem, id",
             (ato_id,))] if a["tipo"] == "ESCRITURA" else []
         return render_template("notas_ato.html", a=dict(a), partes=partes,
+                               teor_da_previa=NT.sem_marca_de_assinaturas(a["teor"]),
+                               marca_assinaturas=NT.MARCA_ASSINATURAS,
                                imoveis_do_ato=imoveis_do_ato,
                                agente_do_ato=agente_do_ato,
                                lugar=lugar, fases_da_ficha=fases_da_ficha,

@@ -564,7 +564,7 @@ def test_o_termo_do_rcpn_nao_roda_script_na_folha(casa):
 def test_nenhuma_tela_de_teor_voltou_ao_safe():
     """O `|safe` nestas variáveis era a porta; o filtro é `sem_script`."""
     telas = RAIZ / "templates"
-    for nome, variavel in (("notas_ato.html", "a.teor"),
+    for nome, variavel in (("notas_ato.html", "teor_da_previa"),
                            ("notas_certidao.html", "certidao.teor"),
                            ("ri_como_ficara.html", "a.teor or ''"),
                            ("ri_como_ficara.html", "rascunho.teor or ''"),

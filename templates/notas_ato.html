@@ -706,8 +706,11 @@
       {# A PRÉVIA MOSTRA O TEOR COMO ELE ESTÁ GRAVADO, e não uma segunda
          montagem: uma versão «parecida» divergiria no primeiro conserto, e a
          tela passaria a mostrar uma coisa e o papel a levar outra. #}
-      <div class="teor-previa" data-teor-previa>
-        {% if a.teor %}{{ a.teor | sem_script }}
+      {# A MARCA INTERNA NÃO APARECE NA PRÉVIA (G002, 23/11/2026): ela separa o
+         teor do bloco de assinaturas e fica só na caixa, que é o dado gravado.
+         O script da prévia corta a mesma marca, lida de `data-teor-oculta`. #}
+      <div class="teor-previa" data-teor-previa data-teor-oculta="{{ marca_assinaturas }}">
+        {% if a.teor %}{{ teor_da_previa | sem_script }}
         {% else %}<p class="muted">Sem teor ainda. Monte com as partes, escreva
           ao lado, ou traga de um arquivo.</p>{% endif %}
       </div>

@@ -68,12 +68,28 @@ Documentos —, além do protocolo geral e caixa, do selo eletrônico, das remes
 | Perfil | No sistema | Para quem | Em linhas gerais |
 |---|---|---|---|
 | Administrador | ADMIN | o oficial ou quem ele designar | tudo: configurações, usuários, selador, Centrais, atualizações e os atos reservados ao titular (por exemplo, encerrar matrícula) |
+| Suporte de TI | TI | quem cuida do sistema e das máquinas | tudo o que o administrador vê e faz, **menos selar atos** |
 | Gerente | MANAGER | quem coordena o balcão | telas de gestão e acompanhamento, além do trabalho do balcão |
 | Escrevente | USER | o balcão | os atos do dia a dia nas atribuições liberadas |
 | Auditor | AUDITOR | quem confere ou fiscaliza | consulta telas e relatórios, **sem praticar ato** |
 
 Uma opção ausente no menu pode decorrer do perfil ou de um módulo fechado pela
 administração. O administrador nunca fica trancado do lado de fora.
+
+**O perfil TI** (decisão do titular, 24/11/2026) é para quem dá suporte ao
+sistema: abre as mesmas telas e o mesmo menu do administrador — usuários,
+configurações, selador, relatórios, Centrais, projetos — e pode abrir fichas,
+conferir e consultar. **Ele não sela atos**: o botão de selar aparece
+desabilitado, e o servidor recusa com «O papel TI não sela atos» todo caminho
+que pede, digita, amarra ou libera selo — inclusive o «selar de novo», a
+etiqueta dos selos externos, a liberação do selo sem cobertura e o
+desligamento da trava do selo pago. Reimprimir a segunda via de um papel já
+selado não pede selo e continua com ele. O ato que o TI lavra
+fica pendente de selo, e um escrevente o sela. Essa regra não tem chave em
+Configurações. O TI também **não promove ninguém a administrador**, nem a si
+mesmo, não troca o próprio perfil e não altera a conta de um administrador
+(perfil, senha, ativação, função ou marca de robô); cria e edita usuários dos
+outros perfis, inclusive outro TI. Na auditoria ele aparece como TI.
 
 ---
 

@@ -16,9 +16,9 @@
 {% macro pessoa(prefixo, titulo, explicacao='', com_nome_pos=false, form={},
                  nome_obrigatorio=false, perfil='completo',
                  data_obrigatoria=false, pode_declarar_ausente=false,
-                 copiar_de=[]) %}
+                 copiar_de=[], pode_retirar=false) %}
 <details class="panel" style="grid-column:1/-1"
-         {% if nome_obrigatorio or form.get(prefixo ~ '_nome') %}open{% endif %}>
+         {% if nome_obrigatorio or form.get(prefixo ~ '_nome') or form.get('retirar_' ~ prefixo) %}open{% endif %}>
   <summary class="panel-head" style="cursor:pointer">
     <span>{{ titulo }}</span>
     <small>{% if nome_obrigatorio %}dados principais{% else %}abrir para preencher{% endif %}</small>
@@ -54,6 +54,18 @@
       <input type="checkbox" name="nao_tem_{{ prefixo }}" value="1"
              {% if form.get('nao_tem_' ~ prefixo) or (form.get(prefixo ~ '_nome') or '')|upper == 'IGNORADO' %}checked{% endif %}>
       não tem — ignorado
+    </label>
+    {% endif %}
+    {# RETIRAR (24/11/2026): apagar os campos NÃO remove a linha em
+       rc_pessoas — só esta caixa, com o motivo geral do formulário. #}
+    {% if pode_retirar and (form.get(prefixo ~ '_nome') or form.get('retirar_' ~ prefixo)) %}
+    <label style="grid-column:1/-1;align-self:end">
+      <input type="checkbox" name="retirar_{{ prefixo }}" value="1"
+             {% if form.get('retirar_' ~ prefixo) %}checked{% endif %}>
+      Retirar esta pessoa do assento
+      <small>Marque só se foi lançada por engano. O motivo da correção
+        (abaixo) registra a retirada. Apagar o nome sem marcar a caixa
+        não remove.</small>
     </label>
     {% endif %}
 
@@ -253,9 +265,11 @@
    isso: a filiacao 1 e a MAE, entao os progenitores dela sao os avos
    MATERNOS. Escrever so «filiacao 1» faria o balcao guardar essa
    correspondencia de cabeca. #}
-{% macro progenitores(prefixo1, prefixo2, titulo, explicacao, form={}) %}
+{% macro progenitores(prefixo1, prefixo2, titulo, explicacao, form={},
+                        pode_retirar=false) %}
 <details class="panel" style="grid-column:1/-1"
-         {% if form.get(prefixo1 ~ '_nome') or form.get(prefixo2 ~ '_nome') %}open{% endif %}>
+         {% if form.get(prefixo1 ~ '_nome') or form.get(prefixo2 ~ '_nome')
+            or form.get('retirar_' ~ prefixo1) or form.get('retirar_' ~ prefixo2) %}open{% endif %}>
   <summary class="panel-head" style="cursor:pointer">
     <span>{{ titulo }}</span><small>abrir para preencher</small>
   </summary>
@@ -269,6 +283,22 @@
     <label>Nome
       <input name="{{ prefixo2 }}_nome"
              value="{{ form.get(prefixo2 ~ '_nome','') }}"></label>
+    {% if pode_retirar %}
+      {% if form.get(prefixo1 ~ '_nome') or form.get('retirar_' ~ prefixo1) %}
+      <label>
+        <input type="checkbox" name="retirar_{{ prefixo1 }}" value="1"
+               {% if form.get('retirar_' ~ prefixo1) %}checked{% endif %}>
+        Retirar o primeiro progenitor
+      </label>
+      {% endif %}
+      {% if form.get(prefixo2 ~ '_nome') or form.get('retirar_' ~ prefixo2) %}
+      <label>
+        <input type="checkbox" name="retirar_{{ prefixo2 }}" value="1"
+               {% if form.get('retirar_' ~ prefixo2) %}checked{% endif %}>
+        Retirar o segundo progenitor
+      </label>
+      {% endif %}
+    {% endif %}
   </div>
 </details>
 {% endmacro %}

@@ -1,0 +1,18 @@
+{# O E-PROTOCOLO DO RI NO PAINEL (RI013 P1, 24/11/2026) — os títulos remetidos pelo
+   ONR que esperam prenotação e o horário da última leitura bem-sucedida (CNN 325).
+   O contexto vem vazio antes de o processo ser ligado ou de a primeira leitura. #}
+{% if onr_eprotocolo_no_painel %}{% set e = onr_eprotocolo_no_painel %}
+<section class="panel">
+  <div class="panel-head"><h2>e-Protocolo do RI (ONR)</h2><a href="{{ url_for('onr_eprotocolo') }}">abrir a fila</a></div>
+  <div class="cards">
+    <div class="card stat {% if e.a_prenotar %}warning{% endif %}"><span>Esperando prenotação</span><strong>{{ e.a_prenotar }}</strong></div>
+    <div class="card stat {% if e.contraditorios %}danger{% endif %}"><span>Com possível contraditório</span><strong>{{ e.contraditorios }}</strong></div>
+    <div class="card stat {% if e.atrasada or e.ultima_falhou %}danger{% endif %}"><span>Última leitura bem-sucedida</span>
+      <strong>{% if e.ultima_boa %}{{ e.ultima_boa.terminada_em[11:16] }}{% else %}—{% endif %}</strong>
+      <small class="muted">{% if e.ultima_boa %}{{ e.ultima_boa.terminada_em[:10] }}{% else %}nenhuma ainda{% endif %}
+        {%- if not e.processo_ligado %} · processo desligado{% endif %}
+        {%- if e.ultima_falhou %} · a última tentativa falhou{% endif %}
+        {%- if e.atrasada %} · mais de uma hora sem leitura{% endif %}</small></div>
+  </div>
+</section>
+{% endif %}

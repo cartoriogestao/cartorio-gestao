@@ -2488,8 +2488,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # digitado criava uma TESTEMUNHA so com documento_tipo=CPF, e
             # `RC.registrar_pessoa` punha nela o nome do registrado (assentos
             # 8371 e 8373, 09/10/2026).
-            if not any(v for c, v in campos.items()
-                       if c not in ("documento_tipo",)):
+            #
+            # RETIRAR (24/11/2026): a caixa `retirar_<prefixo>` na tela de
+            # corrigir manda a pessoa mesmo com campos vazios — apagar o
+            # nome sem marcar a caixa NÃO remove a linha (antes ficava).
+            retirar = bool(_campo(f"retirar_{prefixo}"))
+            if (not retirar
+                    and not any(v for c, v in campos.items()
+                                if c not in ("documento_tipo",))):
                 continue
             # A IDADE NA OCASIÃO DO FATO SE CALCULA — relato #37, item 5.
             #
@@ -2505,8 +2511,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                         _campo("data_fato"))
                 if anos is not None:
                     campos["idade_no_fato"] = str(anos)
-            saida.append({"papel": papel,
-                          **{c: v for c, v in campos.items() if v}})
+            item = {"papel": papel,
+                    **{c: v for c, v in campos.items() if v}}
+            if retirar:
+                item["retirar"] = True
+            saida.append(item)
         return saida
 
     def _devedores_do_formulario() -> list[dict]:
@@ -6599,12 +6608,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             form_post["motivo"] = _campo("motivo")
             return tela(form_post)
 
-        audit("RCPN_ASSENTO_CORRIGIDO", "rc_assentos", assento_id, {
+        detalhe_audit = {
             "motivo": r["motivo"],
             "origem": r["origem"],
             "campos": r["campos"],
             "usuario": r["usuario"],
-        })
+        }
+        # Retirada de pessoa: guardar o nome antigo na auditoria (pedido
+        # 24/11/2026 — pai lançado por engano no óbito).
+        mudancas = r.get("mudancas") or {}
+        retiradas = {
+            k: v for k, v in mudancas.items()
+            if isinstance(v, dict) and v.get("removido")
+        }
+        if retiradas:
+            detalhe_audit["retiradas"] = retiradas
+        audit("RCPN_ASSENTO_CORRIGIDO", "rc_assentos", assento_id,
+              detalhe_audit)
         flash(
             f"Informações corrigidas ({', '.join(r['campos'])}). "
             f"Motivo: {r['motivo']}",

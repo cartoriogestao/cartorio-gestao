@@ -486,6 +486,12 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("cx_protocolo_atos", "servico_codigo", "INTEGER"),
     ("cx_protocolo_atos", "base_calculo", "TEXT"),
     ("cx_protocolo_atos", "origem_valor", "TEXT"),   # TABELA | FAIXA | MANUAL
+    # O RECIBO DO ITEM PAGO PELO DEPÓSITO PRÉVIO (F005, 24/11/2026). O item
+    # quitado no caixa leva a marca no lançamento (`cx_lancamentos.recibo_id`);
+    # o pago pelo depósito não tem lançamento, e sem a marca aqui o mesmo
+    # dinheiro sairia em dois recibos do protocolo. Coluna nova, vazia: os
+    # recibos já emitidos ficam como estão.
+    ("cx_protocolo_atos", "recibo_id", "INTEGER"),
     # Numero de controle do deposito, no mesmo padrao do protocolo.
     ("cx_depositos", "numero", "TEXT"),
     # O que foi recebido no balcao. O protocolo de recepcao e o comprovante de
@@ -953,6 +959,17 @@ def cobrar_item_do_protocolo(con, item_id: int, *,
         raise CaixaError(
             f"Este item já está quitado ({item['quitado_por'] or 'sem lançamento'}"
             f"). Cobrar de novo faria o cliente pagar duas vezes o mesmo serviço.")
+    # O ITEM COM PARTE PAGA PELO DEPÓSITO (F005) NÃO SE COBRA INTEIRO: o
+    # lançamento leva o valor do item todo, e a parte já paga sairia duas
+    # vezes do bolso do cliente. O resto entra como depósito do protocolo.
+    import caixa_depositos as DEP
+    ja_pago = DEP.pago_do_item(bd, int(item_id))
+    if ja_pago > 0:
+        raise CaixaError(
+            f"Este item já tem R$ {reais(ja_pago)} pagos pelo depósito prévio. "
+            f"Receba o que falta (R$ {reais(max(0, centavos(item['valor_total']) - ja_pago))})"
+            f" como depósito prévio do protocolo ou numa cobrança: o item quita quando "
+            f"a soma fechar.")
     if not caixa_id:
         raise CaixaError(
             "Você não tem caixa aberto, e sem caixa o lançamento não aparece "

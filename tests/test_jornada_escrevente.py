@@ -126,8 +126,12 @@ def test_jornada_atendimento_nota_reingresso_caixa_e_entrega(jornada,layout):
     ver('13_pago',ficha+'?aba=financeiro')
     recibo=b.post(geral+'/recibo',{'formato':'odt'})
     assert recibo.mimetype=='application/vnd.oasis.opendocument.text'
-    # Os R$ 50,00 do depósito já entraram antes; o recebimento direto é R$ 20,00.
-    assert _um(casa,'SELECT valor_total FROM cx_recibos WHERE protocolo_id=%s',(pid,))['valor_total']=='20,00'
+    # O recibo do protocolo é do ATO inteiro (F005, 24/11/2026): o item pago pelos
+    # R$ 50,00 do depósito entra junto com os R$ 20,00 do PIX, cada forma com o seu
+    # valor. O recibo do depósito continua sendo o do adiantamento (orçamento).
+    r=_um(casa,'SELECT valor_total,forma_pagamento FROM cx_recibos WHERE protocolo_id=%s',(pid,))
+    assert r['valor_total']=='70,00'
+    assert 'R$ 50,00' in r['forma_pagamento'] and 'PIX R$ 20,00' in r['forma_pagamento']
     recibo_deposito=b.post(f"/caixa/recibo/{d['lancamento_id']}",{'formato':'odt'})
     assert recibo_deposito.mimetype=='application/vnd.oasis.opendocument.text'
     assert '50,00' in texto_do_odt(recibo_deposito.data)

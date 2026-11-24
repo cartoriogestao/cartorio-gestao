@@ -204,3 +204,12 @@ def test_rcto_continua_sem_trava_e_cesdi_passa_pelas_corrigiveis(monkeypatch):
                "casamento_data": None, "regime_bens": None,
                "data": "2026-11-20", "livro": "1", "folha": "1"})
     assert any(i.campo == "dataCasamento" for i in imps)
+
+
+def test_a_tela_oferece_autor_da_heranca_e_herdeiro(serventia):
+    aid = _abrir_escritura(serventia)
+    _parte(serventia, aid, "FULANO EXEMPLO", None)
+    html = serventia["cliente"].get(f"/notas/atos/{aid}").get_data(as_text=True)
+    assert 'list="qualificacoes-censec"' in html
+    assert 'value="AUTOR DA HERANÇA"' in html
+    assert 'value="HERDEIRO(A)"' in html

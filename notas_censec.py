@@ -929,6 +929,70 @@ _ROTULO_DA_QUALIDADE_CESDI = {
     "Anuente": "ANUENTE",
 }
 
+# Tipos da CESDI em que o autor da herança é obrigatório antes de lavrar
+# (pedido do oficial 23/11/2026). Inclui Sobrepartilha e Partilha (6 e 9),
+# mesmo quando o layout da remessa só exige Advogado: lavrar sem falecido
+# é o que a quinzena recusou no inventário 786.
+TIPOS_CESDI_QUE_EXIGEM_FALECIDO = frozenset({5, 6, 8, 9, 10})
+
+# Sem tipo_cesdi: natureza ou modelo ainda apontam inventário / partilha
+# causa mortis / arrolamento (ex.: NT-ESC-INVENTARIO-PARTILHA).
+_PISTA_SUCESSAO = (
+    "INVENTARI", "SOBREPARTILHA", "ARROLAMENTO", "NOMEACAO DE INVENTARIANTE",
+    "CAUSA MORTIS",
+)
+
+
+def ato_exige_autor_da_heranca(ato: dict) -> bool:
+    """Inventário, sobrepartilha, partilha causa mortis e afins.
+
+    Pelo `tipo_cesdi` quando há; senão pela natureza ou pelo modelo. Só calcula.
+    """
+    tipo = _tipo_cesdi(ato)
+    if tipo in TIPOS_CESDI_QUE_EXIGEM_FALECIDO:
+        return True
+    if tipo is not None:
+        return False
+    texto = _norm(" ".join(
+        str(ato.get(c) or "") for c in ("natureza", "modelo_codigo", "titulo")))
+    if any(p in texto for p in _PISTA_SUCESSAO):
+        return True
+    # «PARTILHA» sozinha (tipo 9); evita pegar texto sem essa palavra.
+    return "PARTILHA" in texto
+
+
+def impedimentos_do_autor_da_heranca(ato: dict, partes: list[dict]) -> list[Impedimento]:
+    """Sem autor da herança com nome e CPF válido, o inventário não lavra.
+
+    A data do óbito não tem campo na parte — a trava cobre nome e CPF.
+    """
+    if not ato_exige_autor_da_heranca(ato):
+        return []
+    falecidos = []
+    for parte in partes:
+        q = (parte.get("qualidade_cesdi")
+             or qualidade_cesdi_da_qualificacao(parte.get("qualificacao")))
+        if q == "Falecido":
+            falecidos.append(parte)
+    if not falecidos:
+        return [Impedimento(
+            "partes.qualidade",
+            "inventário exige o autor da herança (qualificação AUTOR DA HERANÇA "
+            "ou FALECIDO) no quadro «Partes»")]
+    saida: list[Impedimento] = []
+    for f in falecidos:
+        if not _texto(f.get("nome")):
+            saida.append(Impedimento("partes.nome", "o autor da herança está sem nome"))
+        doc = so_digitos(f.get("documento"))
+        if len(doc) != 11 or documento_valido(doc) is False:
+            nome = f.get("nome") or "sem nome"
+            saida.append(Impedimento(
+                "partes.numeroDocumento",
+                f"o autor da herança ({nome}) precisa de CPF válido "
+                "(dígito verificador)"))
+    return saida
+
+
 
 def central_do_ato(ato: dict) -> str | None:
     """Para qual central da CENSEC o ato vai — a mesma regra de `separar`."""
@@ -1059,7 +1123,8 @@ def impedimentos_para_lavrar(con: Any, ato: dict) -> list[Impedimento]:
     """O que impediria este ato de ir à CENSEC, dito ANTES de lavrar.
 
     Lista vazia: pode lavrar. Não grava nada. CEP pela conferência; CESDI
-    só nos campos corrigíveis na ficha (travas extras de 23/11/2026).
+    só nos campos corrigíveis na ficha (travas extras de 23/11/2026); e o
+    autor da herança nos inventários, com ou sem tipo da CESDI.
     """
     central = central_do_ato(ato)
     partes: list[dict] | None = None
@@ -1069,10 +1134,16 @@ def impedimentos_para_lavrar(con: Any, ato: dict) -> list[Impedimento]:
         problemas = CONFERENCIA[central](ato, partes)
         saida.extend(p for p in problemas
                      if p.campo not in PREENCHE_A_LAVRATURA | SEM_ONDE_CORRIGIR_ANTES)
-    if central == "CESDI":
+    sucessao = ato_exige_autor_da_heranca(ato)
+    if central == "CESDI" or sucessao:
         if partes is None:
             partes = _partes_do_ato(con, ato["id"])
-        saida.extend(impedimentos_cesdi_corrigiveis(ato, partes))
+        if sucessao:
+            saida.extend(impedimentos_do_autor_da_heranca(ato, partes))
+        if central == "CESDI":
+            # «exige uma parte Falecido» já sai, mais claro, pelo autor da herança.
+            saida.extend(p for p in impedimentos_cesdi_corrigiveis(ato, partes)
+                         if not (sucessao and (p.motivo or "").endswith("exige uma parte Falecido")))
     return saida
 
 

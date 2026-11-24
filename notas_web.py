@@ -6067,13 +6067,25 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         "naturezaEscritura": "escolha a natureza em Notas → Escrituras pendentes",
     }
 
-    def _avisos_cesdi_antes_de_lavrar(a: dict) -> list[str]:
-        """Frases da CESDI para flash na montagem do teor e eco na régua."""
-        if a.get("tipo_cesdi") is None:
+    def _avisos_cesdi_antes_de_lavrar(ato_id: int) -> list[str]:
+        """Frases da CESDI e do autor da herança para o flash da montagem do teor.
+
+        Lê o ato de novo: a montagem acabou de gravar a data do casamento e o regime que a minuta
+        pergunta, e o dict lido antes dela os dava em branco — o aviso acusava o que já estava lá.
+        """
+        a = q1("SELECT * FROM nt_atos WHERE id=%s", (ato_id,))
+        if not a:
+            return []
+        a = dict(a)
+        sucessao = NC.ato_exige_autor_da_heranca(a)
+        if a.get("tipo_cesdi") is None and not sucessao:
             return []
         with db.connect() as con:
-            imps = NC.impedimentos_cesdi_corrigiveis(
-                dict(a), NC._partes_do_ato(con, a["id"]))
+            partes = NC._partes_do_ato(con, ato_id)
+        imps = list(NC.impedimentos_do_autor_da_heranca(a, partes)) if sucessao else []
+        if a.get("tipo_cesdi") is not None:
+            imps += [p for p in NC.impedimentos_cesdi_corrigiveis(a, partes)
+                     if not (sucessao and (p.motivo or "").endswith("exige uma parte Falecido"))]
         saida = []
         for imp in imps[:4]:
             onde = _ONDE_CORRIGIR.get(imp.campo)
@@ -6324,7 +6336,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   + "; ".join(faltas[:3]), "warning")
         else:
             flash("Teor montado com a qualificação das partes.", "success")
-        for aviso in _avisos_cesdi_antes_de_lavrar(a):
+        for aviso in _avisos_cesdi_antes_de_lavrar(ato_id):
             flash(f"Teor montado, mas {aviso}", "warning")
         return redirect(url_for("notas_ato", ato_id=ato_id))
 
@@ -6475,7 +6487,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   f"{', '.join(faltam[:6])}", "warning")
         else:
             flash("Teor montado a partir do modelo.", "success")
-        for aviso in _avisos_cesdi_antes_de_lavrar(a):
+        for aviso in _avisos_cesdi_antes_de_lavrar(ato_id):
             flash(f"Teor montado, mas {aviso}", "warning")
         return redirect(url_for("notas_ato", ato_id=ato_id))
 

@@ -124,6 +124,16 @@ def test_a_previa_esconde_a_marca_e_a_caixa_a_guarda(casa):
     assert NT.MARCA_ASSINATURAS in caixa
 
 
+def test_a_caixa_do_teor_nao_vai_ao_papel(casa):
+    """A caixa guarda a marca; impressa, a ficha a levava ao papel (G002)."""
+    html = casa["cliente"].get(
+        f"/notas/atos/{_ato(casa, situacao='LAVRADO')}").get_data(as_text=True)
+    caixa = html.find('<textarea name="teor"')
+    assert html.rfind("<form method=\"post\" data-teor-edicao>", 0, caixa) > html.rfind("</form>", 0, caixa)
+    css = (RAIZ / "static" / "app.css").read_text(encoding="utf-8")
+    assert "@media print{[data-teor-edicao]{display:none!important}" in css
+
+
 def test_a_marca_sai_antes_de_limpar_o_script(casa):
     import notas_teor as NT
     teor = f'<p><a href="java{NT.MARCA_ASSINATURAS}script:alert(1)">x</a></p>'

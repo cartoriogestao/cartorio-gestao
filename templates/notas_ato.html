@@ -690,7 +690,10 @@
   </div>
 
   <div class="grid2" style="padding:14px">
-    <form method="post">
+    {# A CAIXA NÃO VAI AO PAPEL (G002, 24/11/2026): ela guarda a marca interna das
+       assinaturas, e a impressão da ficha a levava junto. Impressa, a ficha
+       mostra só a prévia (`[data-teor-edicao]` em app.css). #}
+    <form method="post" data-teor-edicao>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label class="small muted" style="display:block;margin-bottom:4px">O texto</label>
       <textarea name="teor" rows="20" data-teor

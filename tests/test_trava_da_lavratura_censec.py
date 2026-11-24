@@ -190,14 +190,20 @@ def test_o_ato_anterior_de_outra_serventia_nao_trava(monkeypatch):
                for p in NC.conferir_ato_cep(ato, partes))
 
 
-def test_cesdi_divorcio_e_rcto_nao_travam_no_geral():
-    """Divórcio e RCTO continuam só na remessa; inventário tem trava própria."""
+def test_rcto_continua_sem_trava_e_cesdi_passa_pelas_corrigiveis(monkeypatch):
+    """RCTO segue só na remessa; CESDI incompleta agora trava (travas extras)."""
     assert NC.central_do_ato({"tipo": "ESCRITURA", "tipo_cesdi": 4}) == "CESDI"
     assert NC.central_do_ato({"tipo": "TESTAMENTO"}) == "RCTO"
     assert "CESDI" not in NC.CENTRAIS_QUE_TRAVAM
     assert "RCTO" not in NC.CENTRAIS_QUE_TRAVAM
-    assert NC.impedimentos_para_lavrar(None, {"id": 1, "tipo": "ESCRITURA",
-                                              "tipo_cesdi": 4}) == []
+    assert NC.impedimentos_para_lavrar(
+        None, {"id": 1, "tipo": "TESTAMENTO", "tipo_testamento": 4}) == []
+    monkeypatch.setattr(NC, "_partes_do_ato", lambda con, ato_id: [])
+    imps = NC.impedimentos_para_lavrar(
+        None, {"id": 1, "tipo": "ESCRITURA", "tipo_cesdi": 4,
+               "casamento_data": None, "regime_bens": None,
+               "data": "2026-11-20", "livro": "1", "folha": "1"})
+    assert any(i.campo == "dataCasamento" for i in imps)
 
 
 def test_a_tela_oferece_autor_da_heranca_e_herdeiro(serventia):

@@ -41,6 +41,16 @@ CONTAGEM QUE QUEBRA NÃO VIRA ZERO
     É a regra de `painel_numeros`: zero medido e zero por engano são coisas
     diferentes.
 
+ROTINA PRIMEIRO, DÉBITO DEPOIS (24/11/2026)
+    «vou tentar separar o que é rotina atual do que é erro e débito passado
+    [...] vamos dar sempre prioridade na rotina» — o oficial. Em cada área, os
+    achados vistos pela primeira vez há até `CF.ROTINA_DIAS_UTEIS` dias úteis
+    vêm primeiro, sob «Rotina»; os mais antigos vêm depois, sob «Débito
+    passado», recolhidos mas contados (quantos, e quantos fazem a cor). A
+    régua da idade é `conformidade.idade_do_achado`, e a cor «só da rotina»
+    é `conformidade.medir(so_rotina=True)`: a mesma régua do semáforo, sem o
+    débito. A cor oficial da área não muda — o débito não se esconde.
+
 O SIGILO DO PLD
     O achado de PLD/COAF diz o número do caso; o detalhe é sigiloso (CNN,
     art. 154) e a tela do PLD é só do ADMIN. Para o gerente e o auditor o
@@ -132,6 +142,7 @@ def achados_por_area(con, hoje: date, *, papel: str, area: str | None = None) ->
         sigiloso = regra.upper() in REGRAS_SIGILOSAS and papel != "ADMIN"
         desde = _dia(r["primeiro_visto_em"])
         gravidade = _gravidade(r["gravidade"])
+        idade = CF.idade_do_achado(r["primeiro_visto_em"], hoje)
         grupos.setdefault(cod, []).append({
             "id": r["id"],
             "regra": regra,
@@ -140,6 +151,8 @@ def achados_por_area(con, hoje: date, *, papel: str, area: str | None = None) ->
             "prazo": str(r["prazo"] or "")[:10] or None,
             "desde": desde.isoformat() if desde else None,
             "dias_em_aberto": (hoje - desde).days if desde else None,
+            "idade": idade,
+            "faz_a_cor": gravidade != "ATENCAO",
             "link": None if sigiloso else _link_do_achado(con, r["chave"], regra),
         })
     for lista in grupos.values():
@@ -335,6 +348,7 @@ def montar(db, hoje: date | None = None, *, papel: str, area: str | None = None,
     if area not in {c for c, _ in CF.AREAS} | {CF.OUTROS}:
         area = None
     medicao, erro_medicao = _medido(db, CF.medir, hoje)
+    rotina, _ = _medido(db, lambda con: CF.medir(con, hoje, so_rotina=True))
     achados, erro_achados = _medido(
         db, lambda con: achados_por_area(con, hoje, papel=papel, area=area))
     conferidos, _ = _medido(db, conferidos_hoje, hoje)
@@ -348,6 +362,10 @@ def montar(db, hoje: date | None = None, *, papel: str, area: str | None = None,
                       "sem_medicao": codigo in DEPENDEM_DO_GESTOR and not medido})
     return {"hoje": hoje.isoformat(), "area": area, "medicao": medicao,
             "erro_medicao": erro_medicao, "medido": medido,
+            "rotina_dias_uteis": CF.ROTINA_DIAS_UTEIS,
+            # A cor «só da rotina». A medição que falhou não vira VERDE: some.
+            "cor_da_rotina": ({a: (rotina["areas"].get(a) or {"cor": CF.VERDE})["cor"]
+                               for a in CF.ROTULO_DA_AREA} if rotina and medido else {}),
             "achados": achados or {}, "erro_achados": erro_achados,
             "total_achados": sum(len(v) for v in (achados or {}).values()),
             "itens": itens, "pode_conferir": papel in QUEM_CONFERE}

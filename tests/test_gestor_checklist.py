@@ -324,3 +324,79 @@ def test_o_celular_leva_a_checklist_e_o_retrato_nao(cg_casa_logada):
     assert "checklist" not in retrato and NOME not in retrato.upper()
     assert not re.search(r"/administrativo", retrato)
     PR.conferir_que_e_so_agregado(PN.montar(db))
+
+
+# ------------------------------------------------------------ rotina × débito
+#
+# 24/11/2026, o oficial: «vou tentar separar o que é rotina atual do que é erro
+# e débito passado [...] vamos dar sempre prioridade na rotina».
+
+
+def test_a_idade_do_achado_corta_em_cinco_dias_uteis():
+    from datetime import timedelta
+    from ri_schema import dias_uteis_entre
+    dias = {}
+    d = HOJE
+    while len(dias) < 2:
+        d -= timedelta(days=1)
+        n = dias_uteis_entre(d, HOJE)
+        if n in (CF.ROTINA_DIAS_UTEIS, CF.ROTINA_DIAS_UTEIS + 1) and n not in dias:
+            dias[n] = d
+    assert CF.idade_do_achado(dias[CF.ROTINA_DIAS_UTEIS].isoformat(), HOJE) == CF.ROTINA
+    assert CF.idade_do_achado(dias[CF.ROTINA_DIAS_UTEIS + 1].isoformat() + "T07:30:00",
+                              HOJE) == CF.DEBITO
+    assert CF.idade_do_achado(HOJE.isoformat(), HOJE) == CF.ROTINA
+    # data que não se lê não vai para o fundo da fila
+    assert CF.idade_do_achado(None, HOJE) == CF.ROTINA
+    assert CF.idade_do_achado("ontem", HOJE) == CF.ROTINA
+
+
+def test_so_a_rotina_tira_o_debito_e_a_cor_oficial_nao_muda(cg_casa):
+    db = cg_casa["db"]
+    _rodada(db, "2026-11-10T07:35:00")
+    _achado(db, "T:1", "CENSEC", "VENCIDO", "NOTAS", visto="2026-10-13T07:30:00")
+    _achado(db, "T:2", "NOTAS_PDF", "ATENCAO", "NOTAS")
+    _achado(db, "T:3", "SIRC", "VENCIDO", "RCPN", visto="2026-11-09T07:30:00")
+    with db.connect() as con:
+        oficial = CF.medir(con, HOJE)
+        rotina = CF.medir(con, HOJE, so_rotina=True)
+    assert oficial["areas"]["NOTAS"]["cor"] == CF.VERMELHO   # o débito não se esconde
+    assert rotina["areas"]["NOTAS"]["cor"] == CF.VERDE
+    assert rotina["areas"]["NOTAS"]["abertos"] == 1
+    assert oficial["areas"]["RCPN"]["cor"] == rotina["areas"]["RCPN"]["cor"] == CF.VERMELHO
+    # a lista diz a idade de cada um, pela mesma régua
+    g = _por_area(db)
+    assert {a["regra"]: a["idade"] for a in g["NOTAS"]} == {"CENSEC": CF.DEBITO,
+                                                            "NOTAS_PDF": CF.ROTINA}
+    assert {a["regra"]: a["faz_a_cor"] for a in g["NOTAS"]} == {"CENSEC": True,
+                                                                "NOTAS_PDF": False}
+
+
+def test_a_tela_mostra_a_rotina_primeiro_e_o_debito_recolhido(cg_casa_logada):
+    from datetime import timedelta
+    db, c = cg_casa_logada["db"], cg_casa_logada["c"]
+    _rodada_de_hoje(db)
+    hoje = date.today().isoformat() + "T07:30:00"
+    antigo = (date.today() - timedelta(days=60)).isoformat() + "T07:30:00"
+    _achado(db, "T:1", "CENSEC", "VENCIDO", "NOTAS", visto=antigo,
+            titulo="Quinzena antiga sem envio")
+    _achado(db, "T:2", "NOTAS_PDF", "ATENCAO", "NOTAS", visto=hoje,
+            titulo="PDF desta semana sem assinatura")
+    html = c.get("/administrativo/gestor/checklist").get_data(as_text=True)
+    notas = html[html.index("<h3>Notas"):]
+    assert notas.index("PDF desta semana") < notas.index("Débito passado") \
+        < notas.index("Quinzena antiga")
+    assert "<details" in notas[:notas.index("Quinzena antiga")]
+    assert "1 da rotina, 1 de débito passado" in notas
+    assert "1 aberto(s), 1 que faz(em) a cor" in notas
+    assert "só a rotina: " + CF.ROTULO_DA_COR[CF.VERDE] in notas
+    # filtrada pela área, o débito abre
+    so_notas = c.get("/administrativo/gestor/checklist?area=NOTAS").get_data(as_text=True)
+    assert '<details class="idade-debito" open>' in so_notas
+
+
+def test_sem_medicao_a_tela_nao_da_cor_da_rotina(cg_casa_logada):
+    db, c = cg_casa_logada["db"], cg_casa_logada["c"]
+    _achado(db, "T:1", "CENSEC", "VENCIDO", "NOTAS")
+    html = c.get("/administrativo/gestor/checklist").get_data(as_text=True)
+    assert "só a rotina:" not in html

@@ -250,3 +250,77 @@ def test_rotina_do_malote_nao_tria_expediente_de_outra_origem(con,com_chave,tmp_
     def ia(*a,**kw):raise AssertionError('outra origem enviada à IA')
     r=GX.triar_pendentes(con,tmp_path,HOJE,conversar=ia,somente_malote=True)
     assert r['triados']==0 and r['pendentes']==0
+
+
+# ---------------------------------------------- a tarefa fechada também conta (24/11/2026)
+
+PEDE = {"tipo": "CUMPRIMENTO", "setor": "RCPN", "resumo": "Mandado de averbação",
+        "o_que_fazer": "Averbar", "prazo_dias": None, "dias_uteis": False, "data_limite": None,
+        "urgencia": "MEDIA", "quem_decide": "ESCREVENTE", "rascunho_resposta": None}
+
+
+def _fechar(con, eid, status="CONCLUIDA", quando="2026-10-07T10:00:00"):
+    con.execute("""UPDATE tasks SET status=?, completed_at=?, updated_at=?
+                    WHERE linked_expediente_id=?""",
+                (status, quando if status == "CONCLUIDA" else None, quando, eid))
+    con.commit()
+
+
+def _anexo(con, eid, quando):
+    con.execute("""INSERT INTO attachments (entity_type, entity_id, original_name, stored_name,
+                       stored_path, sha256, size_bytes, uploaded_by, uploaded_at)
+                   VALUES ('EXPEDIENTE', ?, 'reiteracao.pdf', 'reiteracao.pdf', 'x', ?, 1, 1, ?)""",
+                (eid, f"{eid:064d}", quando))
+    con.commit()
+
+
+def _ids(con):
+    return [e["id"] for e in GX.candidatos(con)]
+
+
+@pytest.mark.parametrize("status", ["CONCLUIDA", "CANCELADA"])
+def test_expediente_com_tarefa_fechada_nao_volta_quando_o_dossie_muda(con, com_chave, tmp_path,
+                                                                      monkeypatch, status):
+    """O caso da produção: a tarefa cumprida e o expediente em RECEBIDO; a leitura dos
+    PDFs mudou (o dossiê mudou de texto) e a triagem abria outra tarefa do mesmo papel."""
+    eid = _exp(con, "mandado de averbação")
+    assert GX.triar_pendentes(con, tmp_path, HOJE, conversar=_IA([PEDE]))["tarefas"] == 1
+    _fechar(con, eid, status)
+    assert eid not in _ids(con)
+    original = GX.dossie
+    monkeypatch.setattr(GX, "dossie", lambda c, e: original(c, e) + "\n[leitura nova]")
+
+    def ia(*a, **k):
+        raise AssertionError("expediente já cumprido voltou à IA")
+    assert GX.triar_pendentes(con, tmp_path, HOJE, conversar=ia)["triados"] == 0
+    assert con.execute("SELECT count(*) FROM tasks WHERE linked_expediente_id=?",
+                       (eid,)).fetchone()[0] == 1
+
+
+def test_tarefa_aberta_a_mao_e_fechada_tambem_segura_o_expediente(con):
+    """Expedientes 14, 15 e 85: a tarefa nasceu à mão, sem triagem; fechada, o
+    expediente parecia nunca lido."""
+    eid = _exp(con, "desconstituição de penhora")
+    con.execute("""INSERT INTO tasks (source_type, title, status, linked_expediente_id,
+                       created_at, updated_at, completed_at)
+                   VALUES ('MANUAL', 'Cumprir expediente', 'CONCLUIDA', ?, '2026-09-23T13:54:00',
+                           '2026-11-11T18:00:00', '2026-11-11T18:00:00')""", (eid,))
+    con.commit()
+    assert eid not in _ids(con)
+
+
+def test_documento_novo_depois_de_fechar_devolve_o_expediente_a_triagem(con, com_chave, tmp_path):
+    eid = _exp(con, "mandado de averbação")
+    GX.triar_pendentes(con, tmp_path, HOJE, conversar=_IA([PEDE]))
+    _fechar(con, eid, quando="2026-10-07T10:00:00")
+    _anexo(con, eid, "2026-10-01T09:00:00")          # o papel que já estava lá
+    assert eid not in _ids(con)
+    _anexo(con, eid, "2026-10-08T09:00:00")          # a reiteração que chegou depois
+    assert eid in _ids(con)
+
+
+def test_tarefa_aberta_continua_segurando_mesmo_com_documento_novo(con, com_chave, tmp_path):
+    eid = _exp(con, "mandado de averbação")
+    GX.triar_pendentes(con, tmp_path, HOJE, conversar=_IA([PEDE]))
+    _anexo(con, eid, "2026-10-08T09:00:00")
+    assert eid not in _ids(con)

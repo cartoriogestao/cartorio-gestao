@@ -150,12 +150,29 @@ def texto_dos_anexos(con: sqlite3.Connection, expediente_id: int,
 
 
 def candidatos(con: sqlite3.Connection) -> list[dict]:
-    """Expediente em RECEBIDO sem tarefa aberta ligada."""
+    """Expediente em RECEBIDO que ainda não teve tarefa — ou que recebeu documento
+    novo depois que a última tarefa dele fechou.
+
+    A TAREFA FECHADA TAMBÉM CONTA (24/11/2026). Até aqui só contava a tarefa
+    ABERTA: concluída a tarefa, o expediente ficava em RECEBIDO e voltava a ser
+    candidato. Bastava o dossiê mudar de texto — a leitura dos PDFs passou de 8
+    para 64 páginas em 10/11/2026 — para a triagem ler tudo de novo e abrir outra
+    tarefa do que já estava cumprido: medido na produção, 8 tarefas repetidas
+    (expedientes 3, 8, 9, 12, 14, 15, 17 e 85), todas com o mesmo anexo da tarefa
+    já fechada. O expediente cuja tarefa foi aberta à mão (sem triagem) caía no
+    mesmo buraco assim que ela fechava. Fato novo é documento novo: o anexo que
+    entra no expediente depois de a tarefa fechar devolve-o à triagem."""
     return [dict(r) for r in banco(con).ler(
         """SELECT e.* FROM expedientes e
             WHERE e.stage = 'RECEBIDO'
-              AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.linked_expediente_id = e.id
-                                 AND t.status NOT IN ('CONCLUIDA','CANCELADA'))
+              AND NOT EXISTS (
+                    SELECT 1 FROM tasks t
+                     WHERE t.linked_expediente_id = e.id
+                       AND (t.status NOT IN ('CONCLUIDA','CANCELADA')
+                            OR NOT EXISTS (
+                                 SELECT 1 FROM attachments a
+                                  WHERE a.entity_type = 'EXPEDIENTE' AND a.entity_id = e.id
+                                    AND a.uploaded_at > COALESCE(t.completed_at, t.updated_at))))
             ORDER BY e.received_at, e.id""")]
 
 

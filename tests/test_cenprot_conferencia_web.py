@@ -186,10 +186,13 @@ def test_o_pago_por_liquidacao_recusa_a_intimacao_na_ficha(s, monkeypatch):
     assert atos(s, tid, "INTIMACAO") == antes
 
 
-def test_o_pago_do_nosso_d_nao_trava_e_o_lote_protesta(s, monkeypatch):
+def test_o_pago_do_nosso_d_sai_do_lote_e_protesta_com_afirmacao_na_ficha(s, monkeypatch):
     """O 350574/2 de 29/10/2026: «1-Pago» na CENPROT pelo D desta casa, com o
-    pagamento tornado sem efeito aqui. O protesto TEM de passar — o P dele é
-    que corrige a Central."""
+    pagamento tornado sem efeito aqui. O protesto continua possível (o P dele
+    corrige a Central), com a afirmação de que não há liquidação no portal
+    (oficial, 23/11/2026)."""
+    import protesto_selo_previo as PSELO
+    monkeypatch.setattr(PSELO, "conferir_antes_de_lavrar", lambda *a, **k: None)
     tid = da_cenprot(s, intimado(s), pedido_=9900002)
     con = _con(s)
     with con:
@@ -206,8 +209,13 @@ def test_o_pago_do_nosso_d_nao_trava_e_o_lote_protesta(s, monkeypatch):
     con.close()
     central(monkeypatch, {"9900002": pedido("9900002", codigo="1",
                                             ocorrencia="Pago")})
-    lavrar(s, [tid])
+    assert "abra a ficha" in lavrar(s, [tid]).get_data(as_text=True)
+    assert atos(s, tid) == 0
+    _lancar(s, tid, ato="PROTESTO", motivo_atraso=MOTIVO, afirmo="1",
+            afirmacao=TEXTO)
     assert atos(s, tid) == 1
+    [rastro] = _auditoria(s, tid)
+    assert json.loads(rastro["details"])["regra"] == C.REGRA_DIVERGENTE
 
 
 def test_o_lote_recusa_e_manda_afirmar_na_ficha(s, monkeypatch):

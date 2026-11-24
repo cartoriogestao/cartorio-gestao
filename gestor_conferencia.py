@@ -126,6 +126,49 @@ def _achado(chave, regra, gravidade, setor, titulo, detalhe="", prazo=None,
             "fundamento": fundamento}
 
 
+# ------------------------------------------- «não mediu» não é «resolveu»
+#
+# O QUE ACONTECEU EM 29/10/2026: a pasta da CRA do agente do Protesto sumiu, as
+# quatro regras do fluxo da CRA passaram a `NAO_MEDIU`, e os achados abertos
+# delas ganharam `resolvido_em` naquele dia — a rotina resolve o que some da
+# conferência, e sumir porque a regra parou de medir parecia «resolvido». A
+# tarefa fechou dizendo «não há mais pendência» (auditoria PR003, achado P5).
+#
+# A REGRA QUE NÃO MEDIU DIZ O QUE ELA SEGURA: o achado `NAO_MEDIU` leva
+# `segura`, os padrões das regras (ou chaves) que ficaram sem medida. A rotina
+# não resolve achado aberto que casa com eles, e não fecha a tarefa da regra.
+# Padrão com `*` no fim é prefixo; sem ele, é o nome exato da regra ou da chave.
+
+
+def segura(achado: dict, *padroes: str) -> dict:
+    """Marca o achado `NAO_MEDIU` com o que ele segura. Devolve o achado."""
+    achado["segura"] = [p for p in padroes if p]
+    return achado
+
+
+def padroes_segurados(achados: list[dict]) -> tuple[str, ...]:
+    """Todos os padrões que os achados desta rodada seguram. Só calcula."""
+    vistos: list[str] = []
+    for a in achados:
+        for p in a.get("segura") or ():
+            if p not in vistos:
+                vistos.append(p)
+    return tuple(vistos)
+
+
+def esta_segurado(padroes, regra: str | None, chave: str | None = "") -> bool:
+    """O achado (regra, chave) está entre os que a rodada não mediu?"""
+    regra, chave = str(regra or ""), str(chave or "")
+    for p in padroes or ():
+        if p.endswith("*"):
+            base = p[:-1]
+            if regra.startswith(base) or (chave and chave.startswith(base)):
+                return True
+        elif p in (regra, chave):
+            return True
+    return False
+
+
 def _envios(con: sqlite3.Connection, central: str) -> list[dict]:
     return banco(con).ler(
         "SELECT * FROM ge_envios WHERE central = %s AND situacao <> 'REJEITADO' "
@@ -1422,8 +1465,8 @@ _GRUPO_DO_SELO = {"IMOVEL": "RI", "RI": "RI", "LIVRO3": "RI", "RCPN": "RCPN",
 def regra_protesto(con, hoje: date) -> list[dict]:
     """O Protesto — regularidade dos atos, prazos, intimações, protestos devidos
     e indevidos. As regras moram com o agente do Protesto (`gestor_protesto`,
-    09/10/2026), que lê o banco E os arquivos da CRA: o protesto desta casa
-    ainda é praticado no E-Ofício, e o rastro do dia está na pasta da CRA."""
+    09/10/2026). Desde a virada (14/10/2026; E-Ofício desligado em 26/10) o
+    fluxo da CRA se lê no banco; a pasta da CRA, quando existe, é só o acervo."""
     import gestor_protesto
     return gestor_protesto.conferir(con, hoje)
 
@@ -1819,8 +1862,17 @@ def conferir(con: sqlite3.Connection, hoje: date, *,
             else:
                 achados.extend(regra(con, hoje))
         except Exception as erro:            # noqa: BLE001 — o erro vai à fila
-            achados.append(_achado(
+            achados.append(segura(_achado(
                 f"NAO_MEDIU:{nome}", nome, "NAO_MEDIU", "TI",
                 f"A conferência «{nome}» não conseguiu medir",
-                f"{type(erro).__name__}: {erro}", None, ""))
+                f"{type(erro).__name__}: {erro}", None, ""),
+                *SEGURA_QUANDO_A_REGRA_QUEBRA.get(nome, (nome,))))
     return so_o_essencial(con, achados)
+
+
+#: O que a regra segura quando quebra inteira. O padrão é o nome dela (a regra
+#: que dá o nome aos próprios achados); as que delegam a um agente seguram
+#: tudo o que o agente aponta.
+SEGURA_QUANDO_A_REGRA_QUEBRA: dict[str, tuple[str, ...]] = {
+    "PROTESTO": ("PROTESTO_*",),
+}

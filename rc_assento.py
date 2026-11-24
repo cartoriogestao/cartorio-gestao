@@ -1005,6 +1005,15 @@ CAMPOS_DA_PESSOA: tuple[str, ...] = (
 # recusado - antes virava uma testemunha com o nome do registrado.
 PAPEIS_TITULARES: frozenset = frozenset({"REGISTRADO", "FALECIDO"})
 
+# Na correção da ficha dá para RETIRAR pessoa lançada por engano (PAI,
+# avós, testemunha…), mas nunca quem o assento É — registrado, falecido
+# ou o casal do casamento / união estável.
+PAPEIS_QUE_NAO_SE_RETIRAM: frozenset = frozenset({
+    "REGISTRADO", "FALECIDO",
+    "NUBENTE1", "NUBENTE2",
+    "COMPANHEIRO1", "COMPANHEIRO2",
+})
+
 # QUEM AGE NO REGISTRO, E NÃO NO FATO, NASCE ANTES DO REGISTRO — e pode ter nascido depois do fato.
 #
 #   O ensaio de atos (01/11/2026, pedido do oficial) recusou pela tela dois atos que o balcão faz: o
@@ -2221,21 +2230,50 @@ def corrigir_informacoes(con: Any, assento_id: int, *,
         # gavetas gravavam na mesma linha: a segunda testemunha ficou por cima
         # da primeira, e o assento passou a ter a mesma pessoa duas vezes. A
         # n-ésima do formulário é a n-ésima gravada (ordem do `id`).
+        #
+        # RETIRAR (24/11/2026): campos vazios sozinhos NÃO apagam a linha —
+        # o balcão apagava o pai por engano e a pessoa continuava na certidão.
+        # Só sai quem veio com `retirar=True` (caixa na tela de corrigir) e
+        # não é titular do assento. `removidas` ajusta o OFFSET quando a
+        # n-ésima some e a seguinte ainda precisa achar a linha certa.
         vistas: dict[str, int] = {}
+        removidas: dict[str, int] = {}
         for p in pessoas:
             papel = str(p.get("papel") or "").strip().upper()
             if not papel:
                 continue
+            retirar = bool(p.get("retirar"))
             campos = {c: p.get(c) for c in CAMPOS_DA_PESSOA if c in p}
-            if not any(v not in (None, "") for v in campos.values()):
+            if (not retirar
+                    and not any(v not in (None, "") for v in campos.values())):
                 continue
             n = vistas.get(papel, 0)
             vistas[papel] = n + 1
             chave = f"pessoa:{papel}" + (f"#{n + 1}" if n else "")
+            offset = n - removidas.get(papel, 0)
             existente = bd.um(
                 "SELECT * FROM rc_pessoas WHERE assento_id = %s AND papel = %s "
                 "ORDER BY id LIMIT 1 OFFSET %s",
-                (int(assento_id), papel, n))
+                (int(assento_id), papel, offset))
+            if retirar:
+                if papel in PAPEIS_QUE_NAO_SE_RETIRAM:
+                    raise RcError(
+                        f"Não é possível retirar a pessoa do papel "
+                        f"{papel} — é de quem o assento é. Corrija os "
+                        f"dados ou cancele o assento, se for o caso.")
+                if not existente:
+                    continue
+                nome_antigo = existente["nome"]
+                bd.escrever(
+                    "DELETE FROM rc_pessoas WHERE id = %s",
+                    (int(existente["id"]),))
+                removidas[papel] = removidas.get(papel, 0) + 1
+                mudancas[chave] = {
+                    "removido": True,
+                    "de": nome_antigo,
+                    "para": None,
+                }
+                continue
             if existente:
                 upd: dict[str, Any] = {}
                 for c, v in campos.items():

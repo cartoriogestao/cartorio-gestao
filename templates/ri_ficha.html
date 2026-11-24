@@ -9,6 +9,7 @@
 {% from '_selar_certidao_do_ri.html' import botao as selar_certidao %}
 {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
 {% from '_cnib_decidir.html' import resolver as resolver_cnib %}
+{% from '_georref_passo.html' import passo as passo_georref %}
 {# AS ABAS SÓ EXISTEM NO LAYOUT NOVO — 30/10/2026, `ri_abas`. Quem continua no antigo recebe
    esta mesma página, na mesma ordem. Os quadros não saem do lugar: cada um diz a que aba
    pertence, e `static/fases.js` mostra os da aba aberta. #}
@@ -75,6 +76,42 @@
     <small>Conferido por {{ d.decidido_por }} em {{ fmt_date(d.decidido_em) }}.</small>
   </div>
   {% endfor %}
+</details>
+{% endif %}
+
+{# O GEORREFERENCIAMENTO NA FICHA (RI011, art. 343-F, II do CNN): o que se declarou ao abrir a matrícula e nos
+   atos que mexem no perímetro, o que ficou pendente — e onde se confere depois. Avisa, não bloqueia. O
+   sistema não consulta o SIG-RI: o que está aqui é o que a pessoa declarou, com o nome e a hora. #}
+{% if georref %}
+<details class="panel" id="georreferenciamento" data-fase="resumo"{% if georref.pendentes %} open{% endif %}>
+  <summary><strong>Georreferenciamento — mosaico no SIG-RI</strong>
+    {% if georref.pendentes %}<span class="danger"> · {{ georref.pendentes|length }} conferência(s) pendente(s)</span>
+    {% elif georref.abertura or georref.por_ato or georref.avulsas %}<span class="muted"> · conferida</span>
+    {% else %}<span class="muted"> · sem conferência registrada</span>{% endif %}</summary>
+  <div style="padding:10px 14px">
+    <p class="small muted">Art. 343-F, II, do Código Nacional de Normas (Prov. CNJ 195/2025). O sistema não consulta o
+      SIG-RI; registra quem declarou ter conferido o mosaico — erro de fechamento do polígono e sobreposição —,
+      quando, e o que declarou.</p>
+    {% if georref.abertura %}<p class="small"><strong>Abertura:</strong> {{ GEO.frase(georref.abertura) }}</p>{% endif %}
+    {% for c in georref.avulsas %}<p class="small"><strong>Conferência avulsa:</strong> {{ GEO.frase(c) }}</p>{% endfor %}
+    {% for c in georref.pendentes %}
+    <form method="post" action="{{ url_for('ri_georref_conferir', matricula_id=m.id) }}" class="form-grid" style="border-top:1px solid var(--linha,#ddd);padding-top:8px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="refere_id" value="{{ c.id }}">
+      <div class="span2 danger"><strong>Pendente{% if c.ato_rotulo %} — {{ c.ato_rotulo }}{% endif %}</strong>
+        <small class="muted">({{ (c.conferido_em or '')[:16].replace('T',' ') }}{% if c.conferido_por %}, {{ c.conferido_por }}{% endif %})</small></div>
+      {{ passo_georref() }}
+      <div class="span2"><button class="button">Registrar a conferência</button></div>
+    </form>
+    {% endfor %}
+    {% if not georref.pendentes %}
+    <form method="post" action="{{ url_for('ri_georref_conferir', matricula_id=m.id) }}" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {{ passo_georref() }}
+      <div class="span2"><button class="button">Registrar uma conferência</button></div>
+    </form>
+    {% endif %}
+  </div>
 </details>
 {% endif %}
 
@@ -733,6 +770,7 @@
         pelas partes deste ato e pelos titulares atuais é <strong>gravada no
         ato</strong> ao lavrar (TJMA 506). Informe aqui o protocolo quando a
         consulta tiver sido feita na Central.</small></label>
+    {{ passo_georref('ato') }}
     {# Quem pratica o ato NÃO se escolhe — relato #65 do oficial, 15/09/2026:
        «tirar a opção de escolher ato praticado por, atos novos são sempre
        praticados pelo delegatário ou escrevente atual do sistema». Sai do
@@ -2465,6 +2503,12 @@ document.addEventListener('DOMContentLoaded',abrir);window.addEventListener('has
         {{ 'ordem(ns) ativa(s) coincidem — conferir' if cn.resultado == 'POSITIVO' else 'nada consta' }}
         · {% if cn.fonte == 'CENTRAL' %}Central, protocolo {{ cn.protocolo_consulta }}{% else %}cópia local{% if cn.base_ate %} até {{ fmt_date(cn.base_ate) }}{% endif %}{% endif %}
         · {{ cn.consultado_em[:16] }}{% if cn.consultado_por %} por {{ cn.consultado_por }}{% endif %}
+      </div>
+      {% endif %}
+      {% set gr = ((georref.por_ato if georref else {}) or {}).get(a.id) %}
+      {% if gr %}
+      <div class="small {{ 'danger' if gr.situacao in ('PENDENTE', 'COM_OCORRENCIA') else 'muted' }}">
+        <strong>Georreferenciamento (art. 343-F, II):</strong> {{ GEO.frase(gr) }}
       </div>
       {% endif %}
     </article>

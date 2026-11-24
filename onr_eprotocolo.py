@@ -23,6 +23,15 @@ A ORDEM É A DA REMESSA (CNN 326)
     se não trouxer, dois títulos remetidos no mesmo dia ficam na ordem do
     número do contrato, que é A CONFERIR com o ONR.
 
+A PRIORIDADE VALE PELA HORA DA PRENOTAÇÃO — decisão do titular, 24/11/2026
+    («vale a hora da prenotacao»). Entre o título de balcão e o eletrônico, tem
+    prioridade o que foi PRENOTADO primeiro, e não o que foi remetido primeiro.
+    A ordem da remessa continua valendo ENTRE os títulos eletrônicos: é a ordem
+    em que se prenotam (CNN 326). Por isso o aviso de contraditório não compara
+    a prenotação nem o balcão com a data da remessa — compararia a coisa errada
+    —, e só os títulos eletrônicos entre si se comparam pela remessa. A regra
+    vai escrita para a P2 em `REGRA_DE_PRIORIDADE`.
+
 OS AVISOS SE CALCULAM NA HORA; NÃO SE GRAVAM
     Prenotação aberta ou título de balcão sobre a mesma matrícula (o controle de
     contraditórios do CNN 326, por enquanto só aviso), outro título do
@@ -152,6 +161,10 @@ LEITURA_BOA = ("OK", "PARCIAL")
 MINUTOS_SEM_LEITURA_PARA_AVISAR = 60
 ORIGEM_ROBO, ORIGEM_TELA = "ROBO", "TELA"
 CHAVE_DO_AMBIENTE = "onr_eprotocolo_ambiente"
+#: Decisão do titular, 24/11/2026: «vale a hora da prenotacao». Entre balcão e
+#: eletrônico, prioridade de quem foi prenotado primeiro; entre eletrônicos, a
+#: prenotação segue a ordem da remessa (CNN 326). É a regra que a P2 aplica.
+REGRA_DE_PRIORIDADE = "HORA_DA_PRENOTACAO"
 CODIGO_DO_PROCESSO = "RI_ONR_EPROTOCOLO"
 
 
@@ -643,6 +656,11 @@ def _citadas(*textos: Any) -> set[str]:
             for m in _CITA_MATRICULA.findall(str(t or ""))}
 
 
+def _numero_da_prenotacao(texto: Any) -> int | None:
+    digitos = re.sub(r"\D", "", str(texto or ""))
+    return int(digitos) if digitos else None
+
+
 def _quando(remessa: str, outra: str) -> str:
     if not remessa or not outra:
         return ""
@@ -665,7 +683,7 @@ def alertas(con, p: dict, ims: list[dict] | None = None) -> list[dict]:
     saida: list[dict] = []
     aberto = p.get("situacao") in ABERTAS
     remessa = p.get("data_remessa") or p.get("data_solicitacao") or ""
-    propria = RIDOM.normalizar_numero_matricula(p.get("prenotacao_numero") or "")
+    propria = _numero_da_prenotacao(p.get("prenotacao_numero"))
     numeros = {im["matricula_numero"] for im in ims if im.get("matricula_numero")}
     ids = {int(im["matricula_id"]) for im in ims if im.get("matricula_id")}
     if aberto and (numeros or ids):
@@ -680,15 +698,21 @@ def alertas(con, p: dict, ims: list[dict] | None = None) -> list[dict]:
                         or RIDOM.normalizar_numero_matricula(pr["matricula_numero"]) in numeros)
                 if not alvo:
                     continue
-                if propria and str(pr["numero"]) == propria:
+                if propria is not None and pr["numero"] == propria:
                     continue          # é a prenotação deste mesmo título
+                # PELA HORA DA PRENOTAÇÃO (decisão de 24/11/2026): a que já está
+                # prenotada vem antes do título que ainda não foi; se os dois já
+                # foram, vale o número menor do Livro 1.
+                if propria is not None and pr["numero"] is not None and pr["numero"] > propria:
+                    quem = "prenotada DEPOIS deste título: a prioridade é deste"
+                else:
+                    quem = "já prenotada: pela hora da prenotação, ela tem prioridade sobre este título"
                 saida.append({"tipo": "CONTRADITORIO_PRENOTACAO", "nivel": "perigo",
                               "protocolo_id": pr["id"],
                               "texto": f"Prenotação nº {pr['numero']} aberta sobre a mesma "
                                        f"matrícula, de {_br(pr['data_prenotacao'])}"
-                                       f"{_quando(remessa, str(pr['data_prenotacao'] or ''))}"
-                                       f"{' — ' + pr['natureza_titulo'] if pr['natureza_titulo'] else ''}. "
-                                       "Confira a prioridade (CNN 326) antes de prenotar."})
+                                       f"{' — ' + pr['natureza_titulo'] if pr['natureza_titulo'] else ''}"
+                                       f", {quem}."})
         if tem("cx_protocolos"):
             for cx in bd.ler(
                     "SELECT id, numero, data_abertura, ri_matricula_id, assunto, observacao "
@@ -699,12 +723,13 @@ def alertas(con, p: dict, ims: list[dict] | None = None) -> list[dict]:
                 if not (ligado or citado):
                     continue
                 como = "sobre a mesma matrícula" if ligado else "que cita o número da matrícula"
+                ja = ("este título já está prenotado e tem a prioridade"
+                      if propria is not None else
+                      "nenhum dos dois está prenotado: a prioridade será do que for prenotado primeiro")
                 saida.append({"tipo": "CONTRADITORIO_BALCAO", "nivel": "perigo",
                               "texto": f"Título de balcão no protocolo geral nº {cx['numero']}, "
-                                       f"de {_br(cx['data_abertura'])}"
-                                       f"{_quando(remessa, str(cx['data_abertura'] or ''))}, "
-                                       f"ainda sem prenotação, {como}. Confira a prioridade "
-                                       "(CNN 326) antes de prenotar."})
+                                       f"de {_br(cx['data_abertura'])}, ainda sem prenotação, "
+                                       f"{como}. Pela hora da prenotação, {ja}."})
         if numeros:
             marcas = ",".join(["%s"] * len(numeros))
             for o in bd.ler(
@@ -719,7 +744,8 @@ def alertas(con, p: dict, ims: list[dict] | None = None) -> list[dict]:
                               "pedido_id": o["id"],
                               "texto": f"Outro título do e-Protocolo ({o['protocolo'] or 'sem protocolo'}), "
                                        f"remetido em {_br(outra)}{_quando(remessa, outra)}, "
-                                       "sobre a mesma matrícula."})
+                                       "sobre a mesma matrícula. Entre os eletrônicos, a "
+                                       "prenotação segue a ordem da remessa (CNN 326)."})
     if p.get("constricao_tipo") or p.get("constricao_processo"):
         detalhe = ", ".join(x for x in (
             p.get("constricao_tipo"),

@@ -404,8 +404,12 @@ def test_contraditorio_com_prenotacao_aberta_pela_amarracao_e_pelo_numero(pasta)
     p = _um(con, pasta)
     textos = [a["texto"] for a in p["alertas"] if a["tipo"] == "CONTRADITORIO_PRENOTACAO"]
     assert len(textos) == 2
-    assert "11600" in textos[0] and "depois da remessa" in textos[0]
-    assert "11601" in textos[1] and "antes da remessa" in textos[1]
+    # Vale a hora da prenotação (decisão do titular, 24/11/2026): a que já está
+    # prenotada tem prioridade, seja de antes ou de depois da remessa.
+    assert "11600" in textos[0] and "11601" in textos[1]
+    assert all("tem prioridade sobre este título" in t for t in textos)
+    assert not [t for t in textos if "remessa" in t]
+    assert EP.REGRA_DE_PRIORIDADE == "HORA_DA_PRENOTACAO"
     assert all(a["nivel"] == "perigo" for a in p["alertas"] if a["tipo"].startswith("CONTRA"))
 
 
@@ -413,9 +417,17 @@ def test_a_prenotacao_do_proprio_titulo_nao_e_contraditorio(pasta):
     con = _con()
     banco(con).escrever("INSERT INTO ri_protocolos VALUES (1, 11600, '2026-11-23', 77, NULL, "
                         "NULL, 'ABERTO')")
+    banco(con).escrever("INSERT INTO ri_protocolos VALUES (2, 11590, '2026-11-20', 77, NULL, "
+                        "NULL, 'ABERTO')")
+    banco(con).escrever("INSERT INTO ri_protocolos VALUES (3, 11610, '2026-11-24', NULL, '1234', "
+                        "NULL, 'ABERTO')")
     p = _um(con, pasta, prenotacao="11600")
     assert p["situacao"] == "EM_ANDAMENTO"
-    assert "CONTRADITORIO_PRENOTACAO" not in _tipos(p)
+    textos = [a["texto"] for a in p["alertas"] if a["tipo"] == "CONTRADITORIO_PRENOTACAO"]
+    # A própria (11600) não conta; a 11590 veio antes, e a 11610 depois.
+    assert len(textos) == 2
+    assert "11590" in textos[0] and "tem prioridade sobre este título" in textos[0]
+    assert "11610" in textos[1] and "a prioridade é deste" in textos[1]
 
 
 def test_contraditorio_com_titulo_de_balcao(pasta):
@@ -434,6 +446,7 @@ def test_contraditorio_com_titulo_de_balcao(pasta):
     assert len(balcao) == 2
     assert "PG-9" in balcao[0] and "mesma matrícula" in balcao[0]
     assert "PG-10" in balcao[1] and "cita o número" in balcao[1]
+    assert all("do que for prenotado primeiro" in t for t in balcao)
 
 
 def test_contraditorio_entre_dois_titulos_eletronicos(pasta):

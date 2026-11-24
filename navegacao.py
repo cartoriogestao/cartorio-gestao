@@ -21,6 +21,7 @@ import unicodedata
 from typing import Any, Callable
 
 from modulos import POR_CHAVE, clarear, modulo_da_tela
+import papeis as PAP
 
 TODOS: tuple[str, ...] | None = None
 AMU = ("ADMIN", "MANAGER", "USER")
@@ -830,7 +831,9 @@ def cor_do_modulo(modulo: dict) -> tuple[str, str]:
 
 def _ve(entrada: dict, papel: str, flags: dict) -> bool:
     papeis = entrada.get("papeis")
-    if papeis is not None and papel not in papeis:
+    # A REGRA CENTRAL (T015): o TI vê o que o ADMIN vê — `papeis.equivale_a`,
+    # e não «TI» escrito em cada tupla deste registro.
+    if papeis is not None and not PAP.equivale_a(papel, papeis):
         return False
     quando = entrada.get("quando")
     if quando and not flags.get(quando):

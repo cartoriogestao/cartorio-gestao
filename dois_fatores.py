@@ -373,7 +373,12 @@ def papeis_exigidos(get_setting: Callable[..., str]) -> list[str]:
 
 
 def exigido(get_setting: Callable[..., str], papel: Any) -> bool:
-    return str(papel or "") in papeis_exigidos(get_setting)
+    """O segundo fator é exigido deste papel? O TI segue o ADMIN (T015): exigido
+    do ADMIN, é exigido do TI — além de quando o próprio TI estiver marcado."""
+    import papeis as PAP
+    exigidos = papeis_exigidos(get_setting)
+    return (str(papel or "") in exigidos
+            or (bool(papel) and PAP.papel_efetivo(papel) in exigidos))
 
 
 # --------------------------------------------------------------- a leitura

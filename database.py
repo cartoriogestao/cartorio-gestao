@@ -1138,7 +1138,8 @@ class Database:
                 "Nome de usuario ou nome completo nao pode ser rotulo de robo "
                 "ou maquina — marque a opcao Robo no cadastro.")
         role = role.strip().upper() or "USER"
-        if role not in {"ADMIN", "MANAGER", "USER", "AUDITOR"}:
+        # O TI (T015, 24/11/2026) entra na lista da casa: `papeis.PAPEIS`.
+        if role not in {"ADMIN", "MANAGER", "USER", "AUDITOR", "TI"}:
             raise ValueError("Perfil inválido.")
         # ROBÔ NÃO ADMINISTRA (revisão de segurança de 22/10/2026, A6): a
         # credencial dele mora num script; com ADMIN ou MANAGER ela abriria
@@ -1191,7 +1192,8 @@ class Database:
                 or "grok" in (username + " " + full_name).casefold()):
             eh_robo = 1
         role = role.strip().upper() or "USER"
-        if role not in {"ADMIN", "MANAGER", "USER", "AUDITOR"}:
+        # O TI (T015, 24/11/2026) entra na lista da casa: `papeis.PAPEIS`.
+        if role not in {"ADMIN", "MANAGER", "USER", "AUDITOR", "TI"}:
             raise ValueError("Perfil inválido.")
         # ROBÔ NÃO ADMINISTRA (revisão de segurança de 22/10/2026, A6): a
         # credencial dele mora num script; com ADMIN ou MANAGER ela abriria

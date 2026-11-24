@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 import nome_humano as NOMEHUM
+import papeis as PAP
 
 MSG_PENDENTE_SELO = " Pendente de selo — o escrevente deve selar."
 
@@ -40,14 +41,29 @@ def usuario_e_robo(user: Any = None) -> bool:
     return NOMEHUM.eh_rotulo_de_maquina(nome) or NOMEHUM.eh_rotulo_de_maquina(login)
 
 
+def papel_sela(user: Any = None) -> bool:
+    """O PAPEL da conta (a logada, ou o row passado) sela? O TI não (T015).
+
+    A régua é `papeis.pode_selar`; aqui ela se junta à do robô, porque as rotas
+    que lavram já perguntam a este módulo antes de falar com o aparelho: o ato
+    do TI fica lavrado e pendente de selo, como o do robô, e quem sela é o
+    escrevente. O papel lido é o VERDADEIRO (`papeis.papel_de`/da sessão).
+    """
+    if user is None:
+        return PAP.sessao_pode_selar()
+    return PAP.pode_selar(user)
+
+
 def pode_selar_automatico(user: Any = None) -> bool:
-    """False para robo: nao chamar o selador no fluxo automatico."""
-    return not usuario_e_robo(user)
+    """False para robo e para o TI: nao chamar o selador no fluxo automatico."""
+    return not usuario_e_robo(user) and papel_sela(user)
 
 
 def recado_pendente_selo() -> str:
-    """Mensagem que NAO casa com motivo_da_falha_do_selo (sem 'SEM SELO')."""
-    return MSG_PENDENTE_SELO
+    """Mensagem que NAO casa com motivo_da_falha_do_selo (sem 'SEM SELO').
+
+    Para o TI diz o porquê (T015): o papel não sela, e o ato fica pendente."""
+    return MSG_PENDENTE_SELO if papel_sela() else PAP.MSG_PENDENTE
 
 
 def reconhecimento_pendente() -> dict:
@@ -59,7 +75,7 @@ def reconhecimento_pendente() -> dict:
     return {
         "ok": True,
         "selos": [],
-        "mensagem": MSG_PENDENTE_SELO,
+        "mensagem": recado_pendente_selo(),
         "motivo": None,
         "pendente_de_selo": True,
     }
@@ -159,8 +175,8 @@ ROTAS_VEDADAS_AO_ROBO += ("ri_qualificacao_ia",)
 
 
 def exige_humano_para_selar(user: Any = None) -> bool:
-    """True = a rota do botao Selar deve responder 403."""
-    return usuario_e_robo(user)
+    """True = a rota do botao Selar deve responder 403. Robô e TI (T015)."""
+    return usuario_e_robo(user) or not papel_sela(user)
 
 
 def nome_ou_login_indica_robo(nome: Any = None, login: Any = None) -> bool:

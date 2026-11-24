@@ -36,6 +36,7 @@ A CARGA MOSTRA O QUE FEZ, E O QUE NAO FEZ
 """
 from __future__ import annotations
 
+import papeis as PAP
 import io
 import json
 import re
@@ -462,7 +463,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         if not uid:
             return ""
         u = db.get_user(int(uid))
-        return (u["role"] if u else "") or ""
+        return PAP.papel_efetivo(u) if u else ""  # o TI segue o ADMIN (T015)
 
     def _campo(nome: str) -> str:
         return (request.form.get(nome) or "").strip()

@@ -20,6 +20,7 @@ QUEM FAZ O QUÊ (decisões do oficial, 24/10/2026 e 28/10/2026)
 from __future__ import annotations
 
 import logging
+import papeis as PAP
 from datetime import date, datetime
 from io import BytesIO
 
@@ -613,7 +614,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         except (DP.DespesaError, INTER.InterError) as erro:
             flash(str(erro), "danger")
             return _ficha(despesa_id)
-        audit(f"DESPESA_{acao.upper()}", "dp_despesas", despesa_id, {"papel": papel})
+        audit(f"DESPESA_{acao.upper()}", "dp_despesas", despesa_id, {"papel": PAP.para_o_registro(papel)})
         if acao not in ("pagar", "atualizar"):
             flash("Feito.", "success")
         return _ficha(despesa_id)
@@ -651,7 +652,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             total += valor
         for despesa_id in autorizadas:
             audit("DESPESA_AUTORIZAR", "dp_despesas", despesa_id,
-                  {"papel": usuario_papel(), "em_lote": True})
+                  {"papel": PAP.para_o_registro(usuario_papel()), "em_lote": True})
         if autorizadas:
             flash(f"{len(autorizadas)} despesa(s) autorizada(s), R$ {DP.reais(total)}.", "success")
         for recusa in recusadas:

@@ -7,6 +7,7 @@ nem auditoria.
 """
 from __future__ import annotations
 
+import papeis as PAP
 import json
 import sqlite3
 from datetime import date, datetime
@@ -173,7 +174,7 @@ def aprovacao_de_outra_pessoa(db, *, usuario_id: int, aprovador: str | None, sen
         return "", ("Falta a aprovação de OUTRA pessoa: informe o usuário e a senha do aprovador "
                     "(oficial ou gerente).")
     quem = db.authenticate(nome, str(senha))
-    if not quem or str(quem["role"] or "").upper() not in ("ADMIN", "MANAGER"):
+    if not quem or not PAP.equivale_a(quem, "ADMIN", "MANAGER"):  # o TI segue o ADMIN (T015)
         return "", "Aprovador não reconhecido, ou sem perfil de oficial ou gerente."
     if int(quem["id"]) == int(usuario_id or 0):
         return "", f"O aprovador tem de ser outra pessoa — não {quem_pede}."

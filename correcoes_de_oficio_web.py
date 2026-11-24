@@ -17,6 +17,7 @@ recusar recusam o robô POR DENTRO também, e o domínio uma terceira vez.
 """
 from __future__ import annotations
 
+import papeis as PAP
 from flask import abort, flash, jsonify, redirect, render_template, request, url_for
 
 import correcoes_de_oficio as CDO
@@ -37,7 +38,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
 
     def _quem():
         uid = app.extensions["usuario_id"]()
-        return db.get_user(uid) if uid else None
+        # o papel que decide é o efetivo: o TI segue o ADMIN (T015)
+        return PAP.usuario_efetivo(db.get_user(uid)) if uid else None
 
     def _anexar(correcao_id: int, arquivos, quem) -> int:
         """Guarda os arquivos da prova na pasta da casa. ESCREVE."""

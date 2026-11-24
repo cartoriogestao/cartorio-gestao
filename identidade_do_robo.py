@@ -105,7 +105,7 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
 
 #: Quem pode responder pelas ROTINAS automáticas (revisão de 26/10/2026): só
 #: quem administra a casa.
-PAPEIS_DAS_ROTINAS = ("ADMIN", "MANAGER")
+PAPEIS_DAS_ROTINAS = ("ADMIN", "TI", "MANAGER")  # TI: T015
 #: Quem pode responder por um ROBÔ: pessoa de qualquer papel, menos o AUDITOR —
 #: quem confere não manda.
 PAPEIS_QUE_NAO_RESPONDEM_POR_ROBO = ("AUDITOR",)
@@ -188,7 +188,7 @@ def responsavel_das_rotinas(con) -> dict | None:
              if bd.tem_tabela("settings") else None)
     if str(valor or "").strip().isdigit():
         r = bd.um(f"SELECT id, {nomes} FROM users "
-                  f"WHERE id=%s AND active=1 AND role IN ('ADMIN','MANAGER'){pessoa}",
+                  f"WHERE id=%s AND active=1 AND role IN ('ADMIN','TI','MANAGER'){pessoa}",
                   (int(str(valor).strip()),))
         if r:
             return {"id": int(r["id"]), "nome": _nome(r), "configurado": True}
@@ -215,7 +215,7 @@ def pessoas_que_podem_responder(con, por: str = "robo") -> list[dict]:
     bd = banco(con)
     pessoa = " AND COALESCE(eh_robo,0)=0" if bd.tem_coluna("users", "eh_robo") else ""
     if por == "rotinas":
-        papel = " AND role IN ('ADMIN','MANAGER')"
+        papel = " AND role IN ('ADMIN','TI','MANAGER')"
     else:
         papel = " AND role <> 'AUDITOR'"
     return bd.ler(f"SELECT id, username, full_name, role FROM users "

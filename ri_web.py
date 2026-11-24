@@ -8,6 +8,7 @@ from __future__ import annotations
 from certidao_texto import sem_linha_de_assinatura_a_mao
 
 import hashlib
+import papeis as PAP
 import base64
 import json
 import math
@@ -5937,7 +5938,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if _js:
                 _uid = session.get("user_id")
                 _u = db.get_user(int(_uid)) if _uid else None
-                _papel = ((_u["role"] if _u else "") or "").upper()
+                _papel = PAP.papel_efetivo(_u) if _u else ""  # o TI segue o ADMIN (T015)
                 if _papel not in ("ADMIN", "MANAGER") or request.form.get("confirmar_ressele") != "1":
                     flash(f"O ato {rotulo} já consta como selado ({_js[1]}). Selar de "
                           f"novo é selo em duplicidade. Só administrador ou gerente, "
@@ -9058,7 +9059,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         audit("RI_REINGRESSO", "RI_NOTA", nota_id,
               {"protocolo": p["numero"], "data": quando, "no_prazo": dentro_do_prazo,
-               "registrado_em": hoje, "retroativo": quando < hoje, "papel": papel,
+               "registrado_em": hoje, "retroativo": quando < hoje, "papel": PAP.para_o_registro(papel),
                "anexos": anexos})
         if dentro_do_prazo:
             flash(f"Reingresso registrado no protocolo {p['numero']}, dentro da vigência "
@@ -11947,7 +11948,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if substituir:
             uid = session.get("user_id")
             u = db.get_user(int(uid)) if uid else None
-            papel = (u["role"] if u else "") or ""
+            papel = PAP.papel_efetivo(u) if u else ""  # o TI segue o ADMIN (T015)
             if papel not in ("ADMIN", "MANAGER"):
                 flash("Substituir a carga anterior continua restrito ao "
                       "administrador ou gerente. Para importar matrícula sem "

@@ -74,6 +74,7 @@ import atribuicoes as ATR
 import custas as CU
 from bd_nativo import banco
 import identidade_do_robo as IDR
+import papeis as PAP
 
 # `selador` E O CONTRATO, e entra aqui para CONFERIR o caminho composto do
 # civil em vez de confiar nele. No topo porque `caminho_do_civil` e
@@ -2612,6 +2613,32 @@ class AtoError(ValueError):
     """Impedimento de regra, com mensagem pronta para o balcao."""
 
 
+class SeloVedadoAoTI(AtoError, PAP.TINaoSela):
+    """O papel TI não sela atos (T015, decisão do titular de 24/11/2026).
+
+    É `AtoError` para a tela que já apanha a recusa do selo mostrar a frase, e
+    `papeis.TINaoSela` para a que não apanha responder 403 (o `errorhandler`
+    do app), e não 500.
+    """
+
+    def __init__(self, mensagem: str = PAP.MSG_NAO_SELA):
+        AtoError.__init__(self, mensagem)
+
+
+def barrar_quem_nao_sela(papel: Any = None) -> None:
+    """O PONTO MAIS BAIXO DO SELO PERGUNTA AQUI (T015). Recusa ou volta calada.
+
+    Duas perguntas, porque as rotas passam o papel EFETIVO (`usuario_papel`,
+    que para o TI é o do ADMIN) e o selo recebe o NOME do escrevente, e não a
+    conta: o `papel` que veio, se veio, e o papel VERDADEIRO da sessão
+    (`papeis.papel_da_sessao`). Fora de requisição (rotina, teste de unidade)
+    a régua não decide — robô já não sela (`selo_robo`), e nenhuma rotina
+    entra como TI. Não há configuração que desligue: ver `papeis.py`.
+    """
+    if not PAP.pode_selar(papel) or not PAP.sessao_pode_selar():
+        raise SeloVedadoAoTI()
+
+
 # ------------------------------------------------------------- as custas
 
 
@@ -3003,6 +3030,8 @@ def registrar_selo_obtido_a_mao(con: sqlite3.Connection, numero: Any, *,
     `selo_isento` le enquanto o TJ nao responde. O texto, quando vem, decide
     sozinho.
 
+    O TI NAO DIGITA SELO (T015): o selo a mao tambem e selar o ato.
+
     E o caminho normal do Protesto e do RCPN nesta casa — ver o cabecalho.
     Escreve em `sd_selos` JA VINCULADO ao ato, porque aqui o ato existe antes
     do selo, ao contrario do selo automatico.
@@ -3028,6 +3057,7 @@ def registrar_selo_obtido_a_mao(con: sqlite3.Connection, numero: Any, *,
     UNIQUE em HTTP 500, em vez de ouvir onde o selo ja estava. O
     `ON CONFLICT (numero)` decide sob a trava da propria chave.
     """
+    barrar_quem_nao_sela()
     if tabela not in TABELAS_DE_ATO:
         raise AtoError(
             f"{tabela!r} não é tabela de ato. As que são: "
@@ -3201,6 +3231,9 @@ def obter_selo(db, pasta_de_dados: Any, *, caminho: str, dados: dict,
     19/11/2026: as regras de um selo valem para os dois); o selo adicional
     das Notas continua sem ela.
     """
+    # O TI NÃO SELA (T015): antes de reservar cobertura e de falar com o
+    # aparelho — nada fica preso nem sai do saldo por um pedido recusado.
+    barrar_quem_nao_sela()
     import selador_cliente as CL  # importado aqui: so quem sela paga
     # SEGUNDA TRANCA: mesmo que `usuario_nome` falhe, o escrevente do envelope
     # e o `obtido_por` NAO podem ser robo. Achado 21/09/2026 (REGNAS...KM25).
@@ -3467,7 +3500,10 @@ def vincular_ao_ato(con: sqlite3.Connection, numero: Any, *, tabela: str,
 
     UM RELOGIO SO. `agora` vem de quem chama, que e quem ja carimbou o ato —
     ler a hora aqui faria o selo e o ato discordarem por um segundo.
+
+    O TI NAO CONSOME SELO (T015): amarrar o selo ao ato e gasta-lo.
     """
+    barrar_quem_nao_sela()
     if tabela not in TABELAS_DE_ATO:
         raise AtoError(f"{tabela!r} não é tabela de ato.")
     import selador_cliente as CL
@@ -4701,7 +4737,9 @@ def _auditar(bd, *, acao: str, usuario: Any, usuario_id: Any, entidade: str,
 
 
 def _so_admin(papel: Any, o_que: str) -> None:
-    if str(papel or "").upper() != PAPEL_QUE_LIBERA:
+    # O TI passa onde o ADMIN passa (T015) — a recusa do selo vem logo depois,
+    # em `barrar_quem_nao_sela`, só para o que libera selo.
+    if not PAP.equivale_a(papel, PAPEL_QUE_LIBERA):
         raise AtoError(f"Só o oficial (ADMIN) pode {o_que}. Peça a ele.")
 
 
@@ -4722,6 +4760,10 @@ def ligar_trava(con, *, ligada: bool, papel: Any, usuario: Any,
     barra vermelha aparece para todos (`barra_da_trava`).
     """
     _so_admin(papel, "ligar ou desligar a trava do selo")
+    # O TI NÃO DESLIGA A TRAVA DO SELO PAGO (T015): desligada, o selo sai sem
+    # cobertura — é liberar selo para a casa inteira. Religar é com ele também.
+    if not ligada:
+        barrar_quem_nao_sela(papel)
     motivo = _justificativa(justificativa) if not ligada else " ".join(
         str(justificativa or "").split())
     bd = banco(con)
@@ -4750,6 +4792,10 @@ def ligar_selo_pago_no_onr(con, *, ligado: bool, papel: Any, usuario: Any,
     medição do primeiro pedido pago de verdade, nas palavras de quem mediu.
     Desligar é sempre permitido ao ADMIN, sem frase mínima."""
     _so_admin(papel, "ligar ou desligar o selo pago no ONR")
+    # LIGAR é que abre a porta (o selo sai sem o caixa ver o dinheiro): o TI
+    # não liga (T015). Desligar fecha, e fica com ele.
+    if ligado:
+        barrar_quem_nao_sela(papel)
     motivo = _justificativa(justificativa) if ligado else " ".join(
         str(justificativa or "").split())
     bd = banco(con)
@@ -4784,6 +4830,8 @@ def liberar_selo(con, *, tabela: str, ato_id: int, justificativa: Any,
     obteve o selo, até o caixa registrar o pagamento.
     """
     _so_admin(papel, "liberar um selo sem cobertura")
+    # A LIBERAÇÃO É DO OFICIAL, E O TI NÃO LIBERA (T015).
+    barrar_quem_nao_sela(papel)
     if tabela not in TABELAS_DE_ATO:
         raise AtoError(f"{tabela!r} não é tabela de ato.")
     motivo = _justificativa(justificativa)

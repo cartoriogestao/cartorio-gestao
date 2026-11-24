@@ -47,12 +47,19 @@
   <ul>
   {% for c in cnib_pendencias %}
     <li>{{ c.nome }}{% if c.documento %} — {{ c.documento }}{% endif %}; ordem {{ c.protocolo_cnib }}.
-    <strong>{% if c.criterio == 'documento' %}Coincidência por CPF/CNPJ — revisar a minuta e lavrar.{% else %}Coincidência apenas por nome — conferir possível homônimo.{% endif %}</strong>
+    {# Devida ou aviso — ordem do oficial em 24/11/2026: minuta só quando o
+       CPF/CNPJ da ordem é o do dono de hoje; o resto é para conferir aqui. #}
+    <strong>{% if c.devida %}Averbação devida: o CPF/CNPJ da ordem é o do dono de hoje —
+      {% if c.minuta and c.minuta.situacao == 'A_REVISAR' %}revisar a minuta {{ c.minuta.id }}, conferir a ordem na Central e lavrar.
+      {%- elif c.minuta %}a minuta {{ c.minuta.id }} foi descartada; prepare de novo em «Conferir pendências da CNIB» ou registre a decisão.
+      {%- else %}a minuta ainda não foi preparada (Conferir pendências da CNIB).{% endif %}
+      {%- else %}Aviso — verifique se corresponde: {{ c.motivo_do_aviso }}.{% endif %}</strong>
     {{ resolver_cnib(c, m.id, csrf_token) }}
     </li>
   {% endfor %}
   </ul>
-  <p>O aviso permanece até a lavratura ou decisão registrada sobre a ocorrência.</p>
+  <p>O aviso permanece até a lavratura ou decisão registrada sobre a ocorrência. Se não for a mesma
+    pessoa, ou a ordem não alcançar este imóvel, registre o motivo no botão da própria linha.</p>
   <a style="color:#fff;text-decoration:underline;font-weight:bold" href="{{ url_for('ri_cnib_pendentes') }}">Conferir pendências da CNIB</a>
   {% if minutas %}<span> · </span><a style="color:#fff;text-decoration:underline;font-weight:bold" href="#minutas-para-lavrar">Revisar minutas desta matrícula</a>{% endif %}
 </section>

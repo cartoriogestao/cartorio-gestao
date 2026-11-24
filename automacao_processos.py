@@ -438,21 +438,58 @@ def verificar_wsoficio(ctx: Contexto) -> dict:
 
 
 def verificar_cnib(ctx: Contexto) -> dict:
-    """Matrículas com parte que bate com ordem ativa da CNIB e ainda sem decisão."""
+    """Averbações de indisponibilidade DEVIDAS que ainda não foram lavradas.
+
+    ORDEM DO OFICIAL, 24/11/2026 (tarefa 486): minuta só no caso devido — o
+    CPF/CNPJ da ordem é o de quem é dono hoje —, e o resto fica como aviso na
+    ficha da matrícula, para o escrevente conferir ao abri-la. Até então esta
+    rotina cobrava os 1.669 casos como «sem decisão», e a cobrança diária de
+    homônimo virou nota repetida que ninguém lia.
+
+    Com `pode_agir`, prepara a minuta do caso devido que ainda não tem nenhuma
+    (não lavra, não sela). Desligado, só conta.
+    """
     import ri_cnib
+    import ri_minuta as MIN
+    acoes = []
     with ctx.db.connect() as con:
         if not banco(con).tem_tabela("ri_cnib_decisoes"):
             return _nao_mediu("as pendências da CNIB", "a tabela ri_cnib_decisoes não existe")
-        pendentes = ri_cnib.pendentes(con)
-    achados = [{"matricula": p.get("matricula_numero"), "criterio": p.get("criterio")}
-               for p in pendentes[:200]]
-    if pendentes:
-        por_doc = sum(1 for p in pendentes if p.get("criterio") == "documento")
-        return resultado(SCH.AVISO,
-                         f"CNIB: {len(pendentes)} caso(s) sem decisão ({por_doc} pelo documento, "
-                         f"{len(pendentes) - por_doc} pelo nome — homônimo é comum). Decida em "
-                         "Registro de Imóveis → CNIB.", achados)
-    return resultado(SCH.OK, "CNIB: nenhuma ordem ativa sem decisão nas matrículas.")
+    if ctx.pode_agir:
+        with ctx.db.transaction() as con:
+            feito = ri_cnib.preparar_minutas_devidas(con, agora=ctx.agora.isoformat(timespec="seconds"),
+                                                      usuario="AUTOMACAO")
+        if feito["preparadas"]:
+            acoes.append({"acao": "preparou minutas de averbação devida",
+                          "minutas": feito["preparadas"]})
+    with ctx.db.connect() as con:
+        pendentes = ri_cnib.pendentes(con, com_teor=False)
+    devidas = [p for p in pendentes if p["devida"]]
+    avisos = len(pendentes) - len(devidas)
+    situacao = lambda p: (p["ordem"].get("minuta") or {}).get("situacao")
+    prontas = sum(1 for p in devidas if situacao(p) == MIN.A_REVISAR)
+    descartadas = sum(1 for p in devidas if situacao(p) == MIN.DESCARTADA)
+    sem_minuta = len(devidas) - prontas - descartadas
+    achados = [{"matricula": p.get("matricula_numero"), "protocolo": p["ordem"].get("protocolo_cnib"),
+                "minuta": (p["ordem"].get("minuta") or {}).get("id"), "situacao_da_minuta": situacao(p)}
+               for p in devidas[:200]]
+    quadro = (f"{avisos} ocorrência(s) ficam só como aviso na ficha da matrícula, para o escrevente "
+              "conferir se corresponde ao abri-la.")
+    if devidas:
+        partes = [f"{prontas} com minuta pronta esperando revisão e lavratura"]
+        if sem_minuta:
+            partes.append(f"{sem_minuta} sem minuta")
+        if descartadas:
+            partes.append(f"{descartadas} com a minuta descartada e sem decisão")
+        r = resultado(SCH.AVISO,
+                      f"CNIB: {len(devidas)} averbação(ões) de indisponibilidade devida(s) — o "
+                      f"documento da ordem é o do dono de hoje: {', '.join(partes)}. Lavre ou "
+                      f"decida em Registro de Imóveis → CNIB. {quadro}", achados)
+    else:
+        r = resultado(SCH.OK, f"CNIB: nenhuma averbação devida à espera. {quadro}")
+    if acoes:
+        r["acoes"] = acoes
+    return r
 
 
 # ------------------------------------------------------------------ RCPN
@@ -921,8 +958,9 @@ SEMENTES: tuple[dict, ...] = (
     {"codigo": "RI_CNIB", "nome": "CNIB — ordens sem decisão", "setor": "RI",
      "alvo": "automacao_processos:verificar_cnib", "robo_oficial": "RI", "timeout_s": 900,
      "agenda": {"dias": _UTEIS, "horarios": ["07:45"]},
-     "descricao": "Matrículas com parte que bate com ordem ativa de indisponibilidade e ainda sem "
-                  "decisão do cartório."},
+     "descricao": "Averbações de indisponibilidade devidas (documento da ordem = dono de hoje) "
+                  "ainda não lavradas; com «pode agir», prepara a minuta. O resto fica como aviso "
+                  "na ficha da matrícula."},
     {"codigo": "RI_CNIB_MINUTAS", "nome": "CNIB — minutas diárias (rotina de fora)", "setor": "RI",
      "alvo": "automacao_processos:verificar_log", "robo_oficial": "RI", "timeout_s": 60,
      "parametros": {"chave_config": SCH.CHAVE_CNIB_LOG, "nome": "as minutas do CNIB", "horas": 26,

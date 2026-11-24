@@ -30,28 +30,41 @@
       <p><strong>Nada esperando decisão.</strong> Nenhuma ordem ativa da CNIB atinge
       parte de matrícula desta serventia, ou todas já foram resolvidas.</p>
     {% else %}
-      <p>Cada linha abaixo é uma ordem de indisponibilidade que atinge uma pessoa
-      com o mesmo nome ou documento de parte de uma matrícula desta casa.
-      <strong>O texto da averbação já está pronto</strong> &mdash; falta você dizer
-      se é a mesma pessoa.</p>
-      <p class="small muted">Achado <strong>por documento</strong> vem primeiro:
-      documento não tem homônimo, nome tem. Achado por nome é quase sempre outra
-      pessoa &mdash; há muitos José da Silva &mdash;, e por isso ele não vira ato
-      sem alguém olhar.</p>
+      {#  ORDEM DO OFICIAL, 24/11/2026 (tarefa 486): «só prepara a minuta de
+          averbação nos casos devidos, e nos demais segue o padrão do sistema e
+          cria apenas um aviso para o escrevente verificar quando abrir a
+          matrícula se corresponde». #}
+      <p><strong>{{ devidas|length }} averbação(ões) devida(s)</strong> &mdash; o CPF/CNPJ
+        da ordem é o de quem é dono hoje, em matrícula ativa. Para elas o sistema
+        prepara a minuta; quem revisa confere a ordem na Central e lavra.</p>
+      {% set sem_minuta = devidas|selectattr('ordem.minuta', 'none')|list %}
+      {% if sem_minuta and user.role in ['ADMIN','MANAGER'] %}
+      <form method="post" action="{{ url_for('ri_cnib_preparar_minutas') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="primary">Preparar as {{ sem_minuta|length }} minuta(s) que faltam</button>
+      </form>
+      {% endif %}
+      <p><strong>{{ avisos|length }} aviso(s)</strong> &mdash; coincidência só pelo nome,
+        documento de quem não é mais dono, ou matrícula encerrada. Não viram minuta:
+        ficam no quadro vermelho da ficha, e o escrevente confere se corresponde quando
+        abrir a matrícula.</p>
     {% endif %}
   </div>
 </section>
 
-{% for p in pendentes %}
+{% for p in devidas %}
 <section class="panel">
   <div class="panel-head">
     <span>Matrícula {{ p.matricula_numero }}{% if p.matricula_livro %},
       livro {{ p.matricula_livro }}{% endif %}</span>
     <span>
-      {% if p.criterio == 'documento' %}
-        <span class="badge danger">achado pelo documento</span>
+      <span class="badge danger">averbação devida</span>
+      {% if p.ordem.minuta and p.ordem.minuta.situacao == 'A_REVISAR' %}
+        <span class="badge">minuta {{ p.ordem.minuta.id }} pronta</span>
+      {% elif p.ordem.minuta %}
+        <span class="badge warn">minuta {{ p.ordem.minuta.id }} descartada</span>
       {% else %}
-        <span class="badge warn">achado só pelo nome</span>
+        <span class="badge warn">sem minuta</span>
       {% endif %}
     </span>
   </div>
@@ -87,6 +100,16 @@
       <a class="button primary"
          href="{{ url_for('ri_ficha', matricula_id=p.matricula_id) }}">
         Abrir a matrícula para averbar</a>
+      {% if p.ordem.minuta and p.ordem.minuta.situacao == 'DESCARTADA' and user.role in ['ADMIN','MANAGER'] %}
+      <form method="post" action="{{ url_for('ri_cnib_preparar_minutas') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="matricula_id" value="{{ p.matricula_id }}">
+        <input type="hidden" name="protocolo_cnib" value="{{ p.ordem.protocolo_cnib }}">
+        <input type="hidden" name="pessoa_nome" value="{{ p.ordem.nome }}">
+        <input type="hidden" name="pessoa_documento" value="{{ p.ordem.documento or '' }}">
+        <button>Preparar a minuta de novo</button>
+      </form>
+      {% endif %}
 
       <form method="post" style="display:flex;gap:6px;align-items:center;flex:1;min-width:320px">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -109,4 +132,27 @@
   </div>
 </section>
 {% endfor %}
+
+{% if avisos %}
+<details class="panel" id="avisos">
+  <summary class="panel-head"><span>{{ avisos|length }} aviso(s) para conferir na ficha</span></summary>
+  <div style="padding:14px">
+    <p class="small muted">Cada linha aparece no quadro vermelho da ficha da matrícula. Se não
+      for a mesma pessoa, ou a ordem não alcançar o imóvel, o motivo se registra lá.</p>
+    <table class="tabela">
+      <thead><tr><th>Matrícula</th><th>Atingido na ordem</th><th>Ordem</th><th>Por que é só aviso</th></tr></thead>
+      <tbody>
+      {% for p in avisos %}
+        <tr>
+          <td><a href="{{ url_for('ri_ficha', matricula_id=p.matricula_id) }}#cnib-pendente">{{ p.matricula_numero }}{% if p.matricula_livro %} ({{ p.matricula_livro }}){% endif %}</a></td>
+          <td>{{ p.ordem.nome }}<div class="small muted">{{ p.ordem.documento or '—' }}</div></td>
+          <td class="small">{{ p.ordem.protocolo_cnib }}<div class="muted">{{ fmt_date(p.ordem.data_pedido) }}</div></td>
+          <td class="small">{{ p.ordem.motivo_do_aviso }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endif %}
 {% endblock %}

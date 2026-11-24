@@ -75,11 +75,11 @@ def sirc_como_tarefa(monkeypatch):
 def test_banco_vazio_nao_quebra_regra_nenhuma(con):
     achados = GC.conferir(con, HOJE)
     nao_medidos = [a for a in achados if a["gravidade"] == "NAO_MEDIU"]
-    # Banco vazio não fornece pasta da CRA nem preço de selo pago. As regras
-    # novas devem declarar essas lacunas, sem esconder uma exceção como zero.
-    assert {a["chave"] for a in nao_medidos} == {
-        "PT_PASTA_CRA", "FISCAL_SALDO:NAO_MEDIU",
-    }
+    # Banco vazio não fornece preço de selo pago. As regras novas devem
+    # declarar essa lacuna, sem esconder uma exceção como zero. A pasta da CRA
+    # saiu daqui em 20/11/2026 (PR004): o fluxo da CRA se mede no banco, e a
+    # pasta legada não configurada não é lacuna nenhuma.
+    assert {a["chave"] for a in nao_medidos} == {"FISCAL_SALDO:NAO_MEDIU"}
     assert not [a for a in nao_medidos if a["chave"].startswith("NAO_MEDIU:")]
 
 

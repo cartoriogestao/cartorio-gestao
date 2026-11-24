@@ -142,7 +142,7 @@ não serve de chave global.
 > o id como chave poria **«Ignorado» onde é hospital**.
 >
 > **Quem achou tudo isto foi o oficial mandando verificar UM registro:**
-> «verifique o json do Pessoa Exemplo» — assento 1240, nascimento nº 5172 de 1974,
+> «verifique o json do registrado» — um nascimento do acervo,
 > cujo teor diz com todas as letras «O registrado não é gêmeo».
 >
 > É «não achar onde eu procurei não prova que não existe» outra vez, e desta

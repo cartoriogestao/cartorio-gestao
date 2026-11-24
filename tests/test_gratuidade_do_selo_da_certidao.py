@@ -1,17 +1,17 @@
 """O MOTIVO DA GRATUIDADE SE RECUSA ANTES DE EMITIR — 10/09/2026.
 
-    «segue sem funcionar, revise o caso do nilton»
+    «segue sem funcionar, revise o caso do registrado»
                                         — o oficial, 10/09/2026
 
-O QUE ACONTECIA, medido numa cópia do banco do balcão (assento 1240, «Nestor
-Moreira Leitao», nascimento nº 5172 de 1974, origem ARQUIVO): marcar
+O QUE ACONTECIA, medido numa cópia do banco do balcão (um nascimento
+de origem ARQUIVO): marcar
 **«Selo gratuito / isento»** e deixar o **Motivo** em branco produzia
 
     «Certidão n. 28/2026 emitida. O ato foi lavrado SEM SELO: Ato gratuito /
      selo gratuito precisa do motivo escrito.»
 
 **A CERTIDÃO FICAVA, E FICAVA SEM SELO.** É o desfecho das certidões 16, 17 e
-23 do Marcos Dione por outro caminho — e a folha de segurança **não se
+23 do mesmo registrado por outro caminho — e a folha de segurança **não se
 gastava**, porque ela só se gasta se o selo sair: o papel existia, sem selo e
 sem folha.
 
@@ -69,7 +69,7 @@ def casa(cg_casa):
     return cg_casa
 
 def _assento_importado(casa) -> int:
-    """A forma do Nilton e do Marcos Dione: veio de fora, e o registro nunca
+    """A forma deste caso e do incidente da certidão 16: veio de fora, e o registro nunca
     foi selado aqui — logo a certidão é tratada como segunda via."""
     con = sqlite3.connect(casa["banco"])
     con.row_factory = sqlite3.Row
@@ -81,13 +81,13 @@ def _assento_importado(casa) -> int:
                VALUES ('RC_A','NASCIMENTO',5172,?,?,
                        '1974-11-16','1971-06-30','{}','ARQUIVO',
                        'ensaio-gratuidade',?, 'A-12')""",
-            (M32, "Nestor Moreira Leitao", AGORA))
+            (M32, "Pessoa Exemplo", AGORA))
         aid = int(cur.lastrowid)
         con.execute(
             """INSERT INTO rc_pessoas(assento_id, papel, nome, nome_norm,
                    sexo, criado_em)
                VALUES (?,'REGISTRADO',?,?,'M',?)""",
-            (aid, "Nestor Moreira Leitao", "nestor moreira leitao", AGORA))
+            (aid, "Pessoa Exemplo", "pessoa exemplo", AGORA))
     con.close()
     return aid
 
@@ -173,7 +173,7 @@ def test_o_envelope_isento_leva_o_campo_do_contrato_e_o_motivo():
     comuns = {"especie": "NASCIMENTO", "tipo": "CERTIDAO",
               "escrevente": "Debora Exemplo Reis", "livro": "A-12",
               "folha": "154", "termo": "5172",
-              "nome_parte": "Nestor Moreira Leitao",
+              "nome_parte": "Pessoa Exemplo",
               "versao_tabela": "0520260101", "papel": "7225462"}
     env = AS.envelope_do_civil(
         **comuns, isento=True,

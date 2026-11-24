@@ -155,7 +155,7 @@ COR_PELE = {"BRANCA": "BRANCA", "PRETA": "PRETA", "PARDA": "PARDA",
 #   estão vazios em todos).
 #
 #   Achado porque o oficial mandou verificar **um** registro: «verifique o json
-#   do nilton» — assento 1240, nascimento nº 5172 de 1974, cujo teor diz com
+#   do registrado» — um nascimento do acervo, cujo teor diz com
 #   todas as letras «O registrado não é gêmeo».
 # ============================================================================
 
@@ -1286,7 +1286,7 @@ def _possui_gemeos(assento: dict) -> str:
     o código 1, e **todos** subiam afirmando `POSSUIGEMEOS S`, sem que um
     único tenha irmão gêmeo.
 
-    Achado porque o oficial mandou verificar um registro — o do Nilton, cujo
+    Achado porque o oficial mandou verificar um registro — o de um nascimento, cujo
     teor diz «O registrado não é gêmeo» —, e não pela releitura.
 
     **A INVARIANTE MAIS FORTE VEM PRIMEIRO.** `gemeo_irmao_id` e `gemeo_ordem`

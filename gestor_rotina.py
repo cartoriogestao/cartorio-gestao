@@ -462,6 +462,10 @@ def gravar_achados(con, achados: list[dict],
                        resolvido_em=NULL WHERE id=%s""",
                 (a["regra"], a["gravidade"], a["setor"], a["titulo"], a["detalhe"],
                  a["prazo"], a["fundamento"], agora, linha["id"]))
+    # O QUE A REGRA DEIXOU DE MEDIR NÃO ESTÁ RESOLVIDO (29/10/2026, achado P5
+    # da auditoria do Protesto): o achado `NAO_MEDIU` diz o que segura
+    # (`GC.segura`), e o aberto que casa com isso fica aberto.
+    padroes = GC.padroes_segurados(achados)
     sumiram = [r for r in bd.ler(
         "SELECT id, chave, regra FROM ge_achados WHERE resolvido_em IS NULL "
         "ORDER BY id") if r["chave"] not in vistos]
@@ -473,14 +477,17 @@ def gravar_achados(con, achados: list[dict],
     devidas = GC.chaves_funai_devidas(con, hoje) if da_funai else set()
     seguem = {r["id"] for r in da_funai
               if devidas is None or r["chave"] in devidas}
-    resolvidos = 0
+    resolvidos = segurados = 0
     for r in sumiram:
+        if GC.esta_segurado(padroes, r["regra"], r["chave"]):
+            segurados += 1
+            continue
         if r["id"] in seguem:
             continue
         resolvidos += 1
         bd.escrever("UPDATE ge_achados SET resolvido_em=%s WHERE id=%s",
                     (agora, r["id"]))
-    return {"novos": novos, "resolvidos": resolvidos}
+    return {"novos": novos, "resolvidos": resolvidos, "segurados": segurados}
 
 
 # ---------------------------------------------------------------- tarefas
@@ -606,8 +613,21 @@ def sincronizar_tarefas(con, achados: list[dict],
                        nota=f"Lista atualizada pela conferência: {len(itens)} "
                             "pendência(s).")
 
+    # A REGRA QUE NÃO MEDIU NÃO FECHA A TAREFA: a pendência pode estar lá. Vale
+    # a regra segura inteira e a regra que tem achado aberto seguro pela chave.
+    padroes = GC.padroes_segurados(achados)
+    seguradas: set[str] = set()
+    if padroes and bd.tem_tabela("ge_achados"):
+        chaves = {a["chave"] for a in achados}
+        seguradas = {r["regra"] for r in bd.ler(
+            "SELECT chave, regra FROM ge_achados WHERE resolvido_em IS NULL ORDER BY id")
+            if r["chave"] not in chaves
+            and GC.esta_segurado(padroes, r["regra"], r["chave"])}
     for ref, tarefa in abertas.items():
         if ref in tocadas or tarefa["status"] in ("CONCLUIDA", "CANCELADA"):
+            continue
+        regra_da_tarefa = ((ref or "").split(":") + ["", ""])[1]
+        if regra_da_tarefa in seguradas or GC.esta_segurado(padroes, regra_da_tarefa):
             continue
         bd.escrever(
             """UPDATE tasks SET status='CONCLUIDA', completed_at=%s, updated_at=%s

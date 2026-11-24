@@ -1244,7 +1244,15 @@ def test_o_lancamento_a_margem_sai_selado_e_entra_na_certidao(
     pedido = _pedidos_de_selo(balcao)[-1]
     assert pedido["caminho"].endswith(f"/selo/civil/nascimento/{caminho}")
     # O ITEM DO TJ QUE O PROTOCOLO PAGOU é o que vai no envelope.
-    assert f'"{codigo}"' in json.dumps(pedido), pedido
+    # Averbação/anotação/retificação usam `codigoAto` (não codigoTipoAtoRegistro).
+    assert pedido.get("codigoAto") == codigo, pedido
+    assert "codigoTipoAtoRegistro" not in pedido, pedido
+    if tipo == "ANOTACAO":
+        assert "anotacao" in pedido and "teve o assento alterado" in pedido["anotacao"]
+    elif tipo == "RETIFICACAO":
+        assert "retificacao" in pedido and "teve o assento alterado" in pedido["retificacao"]
+    elif tipo == "AVERBACAO":
+        assert "alteracao" in pedido
     # NÃO OCUPA FOLHA NEM NÚMERO NOVO: lança-se no espaço do próprio assento.
     assert _livro(balcao, _ato)["folha_atual"] == livro_antes["folha_atual"]
     assert _um(balcao, "SELECT proximo FROM nu_numeracao WHERE serie = "

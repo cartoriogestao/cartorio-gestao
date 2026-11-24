@@ -1621,7 +1621,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         letra = str(p.get("livro_nome") or "").strip()
                         livro = f"{letra}-{num}" if letra and num else num
 
-        if str(tipo or "").strip().upper() == "AVERBACAO":
+        tipo_u = str(tipo or "").strip().upper()
+        if tipo_u == "AVERBACAO":
             teor = ""
             try:
                 teor = str(linha["teor"] or "").strip()
@@ -1656,6 +1657,42 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 codigo_tj=codigo_tj or "14.4.1",
                 isento=isento, motivo_isencao=motivo_isencao,
                 quantidade=quantidade)
+
+        # ANOTAÇÃO USA SCHEMA PRÓPRIO — DadosSeloAnotacaoRegistroCivil
+        # (codigoAto + anotacao), não codigoTipoAtoRegistro (23/11/2026).
+        if tipo_u == "ANOTACAO":
+            teor = ""
+            try:
+                teor = str(linha["teor"] or "").strip()
+            except Exception:
+                teor = ""
+            if not teor:
+                teor = (_campo("teor") or _campo("anotacao")
+                        or _campo("texto") or "").strip()
+            return AS.envelope_da_anotacao_civil(
+                escrevente=usuario_nome(), livro=livro,
+                folha=folha_ato, termo=termo_ato,
+                versao_tabela=versao, anotacao=teor,
+                codigo_tj=codigo_tj or "14.7",
+                isento=isento, motivo_isencao=motivo_isencao)
+
+        # RETIFICAÇÃO USA SCHEMA PRÓPRIO — DadosSeloRetificacaoRegistroCivil
+        # (codigoAto + retificacao), não codigoTipoAtoRegistro.
+        if tipo_u == "RETIFICACAO":
+            teor = ""
+            try:
+                teor = str(linha["teor"] or "").strip()
+            except Exception:
+                teor = ""
+            if not teor:
+                teor = (_campo("teor") or _campo("retificacao")
+                        or _campo("texto") or "").strip()
+            return AS.envelope_da_retificacao_civil(
+                escrevente=usuario_nome(), livro=livro,
+                folha=folha_ato, termo=termo_ato,
+                versao_tabela=versao, retificacao=teor,
+                codigo_tj=codigo_tj or "14.10",
+                isento=isento, motivo_isencao=motivo_isencao)
 
         return AS.envelope_do_civil(
             especie=especie, tipo=tipo,
@@ -2451,8 +2488,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # digitado criava uma TESTEMUNHA so com documento_tipo=CPF, e
             # `RC.registrar_pessoa` punha nela o nome do registrado (assentos
             # 8371 e 8373, 09/10/2026).
-            if not any(v for c, v in campos.items()
-                       if c not in ("documento_tipo",)):
+            #
+            # RETIRAR (24/11/2026): a caixa `retirar_<prefixo>` na tela de
+            # corrigir manda a pessoa mesmo com campos vazios — apagar o
+            # nome sem marcar a caixa NÃO remove a linha (antes ficava).
+            retirar = bool(_campo(f"retirar_{prefixo}"))
+            if (not retirar
+                    and not any(v for c, v in campos.items()
+                                if c not in ("documento_tipo",))):
                 continue
             # A IDADE NA OCASIÃO DO FATO SE CALCULA — relato #37, item 5.
             #
@@ -2468,8 +2511,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                         _campo("data_fato"))
                 if anos is not None:
                     campos["idade_no_fato"] = str(anos)
-            saida.append({"papel": papel,
-                          **{c: v for c, v in campos.items() if v}})
+            item = {"papel": papel,
+                    **{c: v for c, v in campos.items() if v}}
+            if retirar:
+                item["retirar"] = True
+            saida.append(item)
         return saida
 
     def _devedores_do_formulario() -> list[dict]:
@@ -6562,12 +6608,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             form_post["motivo"] = _campo("motivo")
             return tela(form_post)
 
-        audit("RCPN_ASSENTO_CORRIGIDO", "rc_assentos", assento_id, {
+        detalhe_audit = {
             "motivo": r["motivo"],
             "origem": r["origem"],
             "campos": r["campos"],
             "usuario": r["usuario"],
-        })
+        }
+        # Retirada de pessoa: guardar o nome antigo na auditoria (pedido
+        # 24/11/2026 — pai lançado por engano no óbito).
+        mudancas = r.get("mudancas") or {}
+        retiradas = {
+            k: v for k, v in mudancas.items()
+            if isinstance(v, dict) and v.get("removido")
+        }
+        if retiradas:
+            detalhe_audit["retiradas"] = retiradas
+        audit("RCPN_ASSENTO_CORRIGIDO", "rc_assentos", assento_id,
+              detalhe_audit)
         flash(
             f"Informações corrigidas ({', '.join(r['campos'])}). "
             f"Motivo: {r['motivo']}",
@@ -9513,7 +9570,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             img_path = _imagem_da_certidao_inteiro(assento_id)
 
         # GRATUIDADE_SEM_MOTIVO — 10/09/2026, do relato «segue sem
-        # funcionar, revise o caso do assento 1240».
+        # funcionar, revise o caso do registrado».
         #
         # **MARCAR «SELO GRATUITO» SEM ESCREVER O MOTIVO DEIXAVA A CERTIDAO
         # LAVRADA SEM SELO.** Medido numa copia do banco do balcao, no assento

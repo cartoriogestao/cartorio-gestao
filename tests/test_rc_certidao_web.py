@@ -165,7 +165,7 @@ def _semear_folha(s) -> str:
     **A GUARDA DE PRODUÇÃO DE 09/09/2026 (`FOLHA_SEGURANCA_OBRIGATORIA_CERT`)
     ALCANÇA TODO ASSENTO QUE `_semear` CRIA.** Ela recusa emitir certidão de
     2ª via sem folha escolhida, porque sem folha o ato ficava gravado SEM SELO
-    (incidente Marcos Dione / cert. 16), e a régua dela é: assento IMPORTADO
+    (incidente da certidão 16), e a régua dela é: assento IMPORTADO
     (`origem='EOFICIO'`) cujo ato de REGISTRO não tem selo **não é primeira
     via** — presume-se segunda, decisão do oficial no mesmo dia.
 

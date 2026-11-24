@@ -189,11 +189,22 @@
 
   {# SUSPENSÃO DO PRAZO — TJMA 452, § 3º. Enquanto suspenso o prazo não corre;
      ao retomar, o limite avança os dias úteis parados. #}
+  {# A INTIMAÇÃO FIDUCIÁRIA (RI013-I1): o procedimento suspende o prazo e só a certidão o
+     encerra (TJMA 723). A ficha mostra o atalho, e não oferece retomar à mão. #}
+  {% set intimacao = intimacao_fiduciaria_do_protocolo(p.id) if intimacao_fiduciaria_do_protocolo is defined else none %}
+  {% if intimacao %}
+  <div class="notice">
+    <strong>Requerimento de intimação fiduciária n. {{ intimacao.rotulo }}</strong> — {{ intimacao.situacao_rotulo }}.
+    <a class="button small" href="{{ url_for('ri_intimacao', intimacao_id=intimacao.id) }}">Abrir o procedimento</a>
+  </div>
+  {% elif p.situacao == 'ABERTO' and user.role in ['ADMIN','MANAGER','USER'] and intimacao_fiduciaria_do_protocolo is defined %}
+  <p class="small"><a href="{{ url_for('ri_intimacao_nova', protocolo_id=p.id) }}">Este título é requerimento de intimação do credor fiduciário? Abrir o procedimento</a> (Lei 9.514, art. 26; TJMA 721 a 726).</p>
+  {% endif %}
   {% if prazo_suspenso %}
   <div class="notice warning">
     <strong>Prazo suspenso desde {{ fmt_date(p.prazo_suspenso_desde) }}</strong>
     — {{ MOTIVOS_SUSPENSAO.get(p.prazo_suspenso_motivo, p.prazo_suspenso_motivo) }}{% if p.prazo_suspenso_por %}, por {{ p.prazo_suspenso_por }}{% endif %}.
-    {% if user.role in ['ADMIN','MANAGER'] %}
+    {% if user.role in ['ADMIN','MANAGER'] and not (intimacao and p.prazo_suspenso_motivo == 'INTIMACAO_FIDUCIARIA' and intimacao.situacao not in intimacao.terminais) %}
     <form method="post" action="{{ url_for('ri_protocolo_prazo', protocolo_id=p.id) }}" style="display:inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="acao" value="retomar">
@@ -209,7 +220,7 @@
       <input type="hidden" name="acao" value="suspender">
       <label>Hipótese do TJMA 452, § 3º
         <select name="motivo" required>
-          {% for chave, rotulo in MOTIVOS_SUSPENSAO.items() %}<option value="{{ chave }}">{{ rotulo }}</option>{% endfor %}
+          {% for chave, rotulo in MOTIVOS_SUSPENSAO.items() if chave != 'INTIMACAO_FIDUCIARIA' %}<option value="{{ chave }}">{{ rotulo }}</option>{% endfor %}
         </select></label>
       <div><button class="button">Suspender o prazo</button></div>
     </form>

@@ -67,7 +67,7 @@
     <p><small>Esta diligência está coberta pelo item da primeira (15.8.1 — até três por destinatário).</small></p>
     {% endif %}
     {# O PROTOCOLO PAGO — 22/10/2026: o escrevente escolhe aqui, e o selo procura o item nele. #}
-    {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('rg_notificacao_diligencias') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo) }}</div>
+    {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('rg_notificacao_diligencias') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo, tabela='rg_notificacao_diligencias') }}</div>
     <button class="button" type="submit">Registrar a diligência</button>
   </form>
   {% endif %}
@@ -100,7 +100,7 @@
     <form method="post" action="{{ url_for('rcpj_rtd_notificacao_negativa', notificacao_id=n.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       {# O PROTOCOLO PAGO — 22/10/2026: o escrevente escolhe aqui, e o selo procura o item nele. #}
-      {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('rg_notificacao_certidoes') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo) }}</div>
+      {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('rg_notificacao_certidoes') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo, tabela='rg_notificacao_certidoes') }}</div>
       <button class="button" type="submit">Certificar o resultado negativo</button></form>
     {% endif %}
   {% endif %}
@@ -119,7 +119,7 @@
       <p><small>Certidão à margem do registro, item 15.8.2{% if p and p.preco is not none %} — R$ {{ '%.2f'|format(p.preco / 100) }}{% elif p %} — {{ p.motivo }}{% endif %}.</small></p>
       <label><input type="checkbox" name="cobrar" value="1"> Lançar no meu caixa</label>
       {# O PROTOCOLO PAGO — 22/10/2026: o escrevente escolhe aqui, e o selo procura o item nele. #}
-      {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('rg_notificacao_certidoes') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo) }}</div>
+      {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('rg_notificacao_certidoes') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo, tabela='rg_notificacao_certidoes') }}</div>
       <button class="button" type="submit">Emitir a certidão de notificação {{ n.situacao|lower }}</button></form>
   {% endif %}
   {% if qualifica and certidoes and not n.averbacao_ato_id %}

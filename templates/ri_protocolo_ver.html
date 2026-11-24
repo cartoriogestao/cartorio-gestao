@@ -31,7 +31,7 @@
     {# O protocolo que paga o selo da prenotação (16.1) — 22/10/2026, trava do
        selo pago. O protocolo geral dela vem pré-marcado; a escrevente confirma. #}
     {% set _ps_pren = protocolos_do_selo_ri('ri_protocolos', '16.1', ri_protocolo_id=p.id) %}
-    {{ protocolo_do_selo(_ps_pren.candidatos, _ps_pren.pedidos, atendendo=_ps_pren.atendendo) }}
+    {{ protocolo_do_selo(_ps_pren.candidatos, _ps_pren.pedidos, atendendo=_ps_pren.atendendo, tabela='ri_protocolos') }}
     <button class="primary">Selar</button>
   </form>
 </div>

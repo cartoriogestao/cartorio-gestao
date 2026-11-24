@@ -42,7 +42,7 @@
   {% endif %}
   <label><input type="checkbox" name="cobrar" value="1"> Lançar no meu caixa</label>
   {# O PROTOCOLO PAGO — 22/10/2026: o escrevente escolhe aqui, e o selo procura o item nele. #}
-  {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('rg_livros_contabeis') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo) }}</div>
+  {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('rg_livros_contabeis') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo, tabela='rg_livros_contabeis') }}</div>
   <button type="submit" class="primary">{% if l.situacao == 'PEDIDO' %}Autenticar e selar{% else %}Selar de novo{% endif %}</button>
 </form>
 {% endif %}

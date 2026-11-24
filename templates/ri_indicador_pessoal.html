@@ -74,7 +74,7 @@
               {% if not m.da_pessoa %}<span class="badge alta">outro cadastro, mesmo nome</span>{% endif %}</label><br>
             {% endfor %}</div>
           {% set _ps_pos = protocolos_do_selo_ri('ri_certidoes', '16.24.1') %}
-          <div class="span2">{{ protocolo_do_selo(_ps_pos.candidatos, _ps_pos.pedidos, atendendo=_ps_pos.atendendo) }}</div>
+          <div class="span2">{{ protocolo_do_selo(_ps_pos.candidatos, _ps_pos.pedidos, atendendo=_ps_pos.atendendo, tabela='ri_certidoes') }}</div>
           <label>Requerente
             <input name="requerente" placeholder="Quem pede a certidão" size="40"></label>
           <label>Documento do requerente
@@ -110,7 +110,7 @@
         {# O protocolo que paga o selo da negativa (16.24.1) — 22/10/2026,
            trava do selo pago: a escrevente confirma qual paga. #}
         {% set _ps_neg = protocolos_do_selo_ri('ri_certidoes', '16.24.1') %}
-        <div class="span2">{{ protocolo_do_selo(_ps_neg.candidatos, _ps_neg.pedidos, atendendo=_ps_neg.atendendo) }}</div>
+        <div class="span2">{{ protocolo_do_selo(_ps_neg.candidatos, _ps_neg.pedidos, atendendo=_ps_neg.atendendo, tabela='ri_certidoes') }}</div>
         <input type="hidden" name="busca" value="{{ busca }}">
         {% if so_proprietarios %}<input type="hidden" name="proprietarios" value="1">{% endif %}
         <label>Requerente

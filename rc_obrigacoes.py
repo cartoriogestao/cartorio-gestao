@@ -204,10 +204,22 @@ def _quantas(modulo: str, con: sqlite3.Connection) -> dict:
             "erro": f"o módulo {modulo} não tem por onde contar o que espera"}
 
 
+def _divisao_de(modulo: str) -> Callable[[sqlite3.Connection], dict] | None:
+    """Quem divide o número daquele módulo, ou `None`. Só escolhe.
+
+    **ESCRITO PELO NOME, e não achado por `getattr`**: a chamada por texto não
+    aparece no grafo de `tests/test_funcao_sem_tela.py`, e a função que o painel
+    mostra passava por órfã. Módulo novo que dividir o número entra aqui.
+    """
+    if modulo == "rc_funai":
+        import rc_funai
+        return rc_funai.quantas_por_grupo
+    return None
+
+
 def _partes(modulo: str, con: sqlite3.Connection) -> dict:
     """A divisão do número, para o módulo que a tem. Não engole erro."""
-    import importlib
-    funcao = getattr(importlib.import_module(modulo), "quantas_por_grupo", None)
+    funcao = _divisao_de(modulo)
     if funcao is None:
         return {}
     try:

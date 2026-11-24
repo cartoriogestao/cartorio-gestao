@@ -153,6 +153,8 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
          ("Consulta", (
              _i("Indicador Real", "ri_indicador_real"),
              _i("Indicador Pessoal", "ri_indicador_pessoal"),
+             _i("Georreferenciamento a conferir", "ri_georref_pendentes", antigo="Georreferenciamento — a conferir",
+                termos="mosaico sigri sig-ri poligono 343-f perimetro"),
              _i("Mapa do ONR: polígonos", "ri_geo", antigo="Mapa do ONR — polígonos",
                 termos="georreferenciamento poligono gpkg shapefile sigef sirgas qgis mosaico"),)),
          ("Centrais e obrigações", (

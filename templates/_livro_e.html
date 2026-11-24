@@ -101,13 +101,13 @@
   {{ pessoa('companheiro1', 'Primeiro(a) companheiro(a)',
             'Qualificação, CPF e o nome que passa a usar (art. 94-A, II e VIII).',
             true, form) }}
-  {{ pessoa('filiacao1c1', 'Mãe do primeiro companheiro', '', false, form, false, 'completo', false, true) }}
-  {{ pessoa('filiacao2c1', 'Pai do primeiro companheiro', '', false, form, false, 'completo', false, true) }}
+  {{ pessoa('filiacao1c1', 'Mãe do primeiro companheiro', '', false, form, false, 'completo', false, true, pode_retirar=true) }}
+  {{ pessoa('filiacao2c1', 'Pai do primeiro companheiro', '', false, form, false, 'completo', false, true, pode_retirar=true) }}
   {{ pessoa('companheiro2', 'Segundo(a) companheiro(a)',
             'Qualificação, CPF e o nome que passa a usar (art. 94-A, II e VIII).',
             true, form) }}
-  {{ pessoa('filiacao1c2', 'Mãe do segundo companheiro', '', false, form, false, 'completo', false, true) }}
-  {{ pessoa('filiacao2c2', 'Pai do segundo companheiro', '', false, form, false, 'completo', false, true) }}
+  {{ pessoa('filiacao1c2', 'Mãe do segundo companheiro', '', false, form, false, 'completo', false, true, pode_retirar=true) }}
+  {{ pessoa('filiacao2c2', 'Pai do segundo companheiro', '', false, form, false, 'completo', false, true, pode_retirar=true) }}
 {% else %}
   {{ pessoa('pessoa',
             {'EMANCIPACAO': 'O emancipado', 'INTERDICAO': 'O interdito',
@@ -118,19 +118,19 @@
              'Nome, idade, estado civil, profissão, naturalidade e residência.'),
             false, form) }}
   {% if especie in ['EMANCIPACAO', 'TUTELA', 'OPCAO_NACIONALIDADE'] %}
-  {{ pessoa('filiacao1', 'Mãe — filiação 1', '', false, form, false, 'completo', false, true) }}
-  {{ pessoa('filiacao2', 'Pai — filiação 2', '', false, form, false, 'completo', false, true) }}
+  {{ pessoa('filiacao1', 'Mãe — filiação 1', '', false, form, false, 'completo', false, true, pode_retirar=true) }}
+  {{ pessoa('filiacao2', 'Pai — filiação 2', '', false, form, false, 'completo', false, true, pode_retirar=true) }}
   {% endif %}
   {% if especie in ['EMANCIPACAO', 'TUTELA'] %}
   {{ pessoa('tutor', 'Tutor(a)' ~ (' — quando a emancipação não for dada pelos pais' if especie == 'EMANCIPACAO' else ' nomeado(a)'),
-            '', false, form) }}
+            '', false, form, pode_retirar=true) }}
   {% endif %}
   {% if especie in ['INTERDICAO', 'AUSENCIA'] %}
   {{ pessoa('curador', 'Curador(a) nomeado(a)',
             'Nome, profissão, estado civil, domicílio e residência (art. 92, 4º; art. 94, 6º).',
-            false, form) }}
+            false, form, pode_retirar=true) }}
   {{ pessoa('requerente', 'Quem requereu' if especie == 'INTERDICAO' else 'Quem promoveu o processo',
-            '', false, form) }}
+            '', false, form, pode_retirar=true) }}
   {% endif %}
 {% endif %}
 {% endmacro %}

@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% from '_rascunho.html' import salvar_rascunho, script_do_rascunho %}
 {% from '_passos_e_gravar.html' import preparar, regua, andar %}
+{% from '_georref_passo.html' import passo as passo_georref %}
 {% block heading %}<h1>Abrir matrícula</h1>{% endblock %}
 {% block content %}
 {% from "_veio_de_arquivo.html" import veio_de_arquivo %}
@@ -87,6 +88,8 @@
        matrícula, e a ficha já as imprime (`RI_FICHA`); só esta tela não tinha
        onde escrevê-las, e a matrícula nova nascia sem elas. #}
     <label class="span2" data-passo="descricao">Confrontações<textarea name="confrontacoes" rows="2">{{ form.get('confrontacoes','') }}</textarea></label>
+    {# A abertura de matrícula sempre pede o passo (art. 343-F, II); ficha de acervo é abertura histórica. #}
+    {{ passo_georref('descricao', obrigatorio=(not e_acervo)) }}
     {# A DESIGNAÇÃO CADASTRAL — LRP art. 176, § 1º, II, 3, b («se houver»). LT03. #}
     <label data-passo="imovel">Inscrição municipal<input name="inscricao_municipal" value="{{ form.get('inscricao_municipal','') }}"></label>
     <label class="span2" data-passo="descricao">Registro anterior<input name="registro_anterior" value="{{ form.get('registro_anterior','') }}"></label>

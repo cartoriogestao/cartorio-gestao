@@ -6055,9 +6055,25 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         "partes.nome": "corrija o nome da parte",
         "partes.qualidade": "escolha a qualificação no quadro «Partes»",
         "partes.numeroDocumento": "corrija o CPF/CNPJ no cartão da parte",
+        "partes.documento": "corrija o CPF/CNPJ no cartão da parte",
         "valor": "informe o valor em Notas → Escrituras pendentes",
         "naturezaEscritura": "escolha a natureza em Notas → Escrituras pendentes",
     }
+
+    def _aviso_do_autor_da_heranca(a: dict, partes: list) -> str | None:
+        """Frase para a tela e a montagem do teor — vazio se o inventário já tem falecido."""
+        preparados = []
+        for p in partes:
+            linha = dict(p)
+            if not linha.get("qualidade_cesdi"):
+                linha["qualidade_cesdi"] = NC.qualidade_cesdi_da_qualificacao(
+                    linha.get("qualificacao"))
+            preparados.append(linha)
+        imps = NC.impedimentos_do_autor_da_heranca(dict(a), preparados)
+        if not imps:
+            return None
+        onde = _ONDE_CORRIGIR.get(imps[0].campo, "quadro «Partes»")
+        return f"{imps[0].motivo} — {onde}"
 
     def _pendencias_do_teor(teor: str) -> list[str]:
         """Campo em branco do teor: `[CAMPO]`, `{ESCOLHA}` e a fileira de X.
@@ -6303,6 +6319,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   + "; ".join(faltas[:3]), "warning")
         else:
             flash("Teor montado com a qualificação das partes.", "success")
+        falta_falecido = _aviso_do_autor_da_heranca(a, partes)
+        if falta_falecido:
+            flash(f"Teor montado, mas {falta_falecido}", "warning")
         return redirect(url_for("notas_ato", ato_id=ato_id))
 
     @app.route("/notas/atos/<int:ato_id>/selar-arquivamento", methods=["POST"])
@@ -6452,6 +6471,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   f"{', '.join(faltam[:6])}", "warning")
         else:
             flash("Teor montado a partir do modelo.", "success")
+        falta_falecido = _aviso_do_autor_da_heranca(a, partes)
+        if falta_falecido:
+            flash(f"Teor montado, mas {falta_falecido}", "warning")
         return redirect(url_for("notas_ato", ato_id=ato_id))
 
     @app.route("/notas/atos/<int:ato_id>/traslado")

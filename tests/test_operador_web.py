@@ -51,6 +51,16 @@ def _base(casa) -> Path:
     return Path(casa["app"].config["DATA_DIR"]) / "operador"
 
 
+def _o_titular_e(casa, nome: str) -> None:
+    """Quem é o titular da serventia (`titular_privado`): o nome da configuração."""
+    casa["db"].set_settings({"serventia_titular": nome})
+
+
+def _coluna_da_direita(pagina: str) -> str:
+    inicio = pagina.index('class="cg-apoio"')
+    return pagina[inicio:pagina.index("</aside>", inicio)]
+
+
 def _linhas_da_auditoria(db, acao: str) -> int:
     with db.connect() as con:
         return int(banco(con).um("SELECT COUNT(*) AS n FROM audit_logs WHERE action=%s",
@@ -105,6 +115,8 @@ def test_o_atalho_fica_na_coluna_da_direita_so_para_o_oficial(cg_casa_logada):
     novo, como WhatsApp, Produtividade e Ajuda — nada flutuante. Fica azul
     quando ele está trabalhando."""
     casa, c = cg_casa_logada, cg_casa_logada["c"]
+    casa["db"].create_user("ana", "ANALISTA EXEMPLO", SENHA, "ADMIN")
+    _o_titular_e(casa, "ANALISTA EXEMPLO")       # o mario não é o titular
     assert 'class="su-atalho' not in c.get("/conta/senha").get_data(as_text=True)   # sem conta
     _criar_o_superusuario(casa)
     c.get(TELA)                                   # a tela confere no banco e o menu fica sabendo
@@ -116,9 +128,33 @@ def test_o_atalho_fica_na_coluna_da_direita_so_para_o_oficial(cg_casa_logada):
     assert 'class="su-atalho trabalhando"' in c.get("/conta/senha").get_data(as_text=True)
 
 
+def test_o_titular_ve_o_botao_acima_do_whatsapp_mesmo_sem_a_conta(cg_casa_logada):
+    """Pedido do titular (24/11/2026, S005): «coloca um botão superusuário pra
+    aparecer para mim na coluna da direita, em cima de onde ficam as
+    notificações do WhatsApp». Sem a conta `superusuario`, o botão leva à tela
+    que só explica; nenhum outro ADMIN o vê, nem o usuário comum."""
+    casa, c = cg_casa_logada, cg_casa_logada["c"]
+    _o_titular_e(casa, "MARIO EXEMPLO DOS SANTOS")
+    apoio = _coluna_da_direita(c.get("/conta/senha").get_data(as_text=True))
+    botao = re.search(r'class="su-atalho"\s+href="' + TELA + '"', apoio)
+    assert botao and "Super&shy;usuário" in apoio
+    whatsapp = apoio.index("data-wa-avisos")      # o bloco das notificações do WhatsApp
+    assert botao.start() < whatsapp < apoio.index('class="wa-atalho"')
+    assert "Ainda não há superusuário" in c.get(TELA).get_data(as_text=True)
+    # outro ADMIN, que não é o titular, não vê; o usuário comum também não
+    casa["db"].create_user("carla", "CARLA EXEMPLO DE SOUZA", SENHA, "ADMIN")
+    casa["db"].create_user("joana", "JOANA EXEMPLO LIMA", SENHA, "USER")
+    for quem in ("carla", "joana"):
+        outro = casa["app"].test_client()
+        cg_login(outro, quem, SENHA)
+        pagina = outro.get("/conta/senha").get_data(as_text=True)
+        assert 'class="cg-apoio"' in pagina and "su-atalho" not in pagina, quem
+
+
 def test_outro_admin_nao_entra_nem_pede(cg_casa_logada):
     casa = cg_casa_logada
     _criar_o_superusuario(casa)                  # quem responde é o mario
+    _o_titular_e(casa, "MARIO EXEMPLO DOS SANTOS")   # e o titular também
     casa["db"].create_user("carla", "CARLA EXEMPLO DE SOUZA", SENHA, "ADMIN")
     c = casa["app"].test_client()
     cg_login(c, "carla", SENHA)

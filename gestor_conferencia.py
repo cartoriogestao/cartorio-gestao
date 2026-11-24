@@ -1282,9 +1282,21 @@ def regra_modelo_nao_preenchido(con, hoje: date) -> list[dict]:
         ("rc_atos", "RCPN", "SELECT id, teor FROM rc_atos WHERE data_ato >= %s ORDER BY id", (IMPLANTACAO,)),
         # O TEOR DA FICHA TAMBÉM: a abertura da matrícula escreve nele, e não em
         # `ri_atos` — foi onde o marcador da 4019 morava.
+        #
+        # FICHA PROVISÓRIA ENCERRADA NÃO É PENDÊNCIA (23/11/2026). A importação
+        # assistida deixou fichas com «[INSERIR …]» que foram encerradas sem
+        # ato nenhum, porque os atos foram lavrados na ficha definitiva. Ficha
+        # encerrada não se edita: o achado era crítico e ninguém podia
+        # resolvê-lo. Só as três condições juntas tiram a ficha da cobrança; a
+        # minuta que ficou nela continua cobrada pela fonte `ri_minutas`.
         ("ri_matriculas", "RI_QUALIFICACAO",
-         """SELECT id, teor FROM ri_matriculas
-             WHERE COALESCE(data_abertura, criado_em, '') >= %s ORDER BY id""", (IMPLANTACAO,)),
+         """SELECT m.id, m.teor FROM ri_matriculas m
+             WHERE COALESCE(m.data_abertura, m.criado_em, '') >= %s
+               AND NOT (
+                    (COALESCE(m.encerrada, 0) = 1 OR m.situacao = 'ENCERRADA')
+                    AND m.origem = 'IMPORTACAO'
+                    AND NOT EXISTS (SELECT 1 FROM ri_atos a WHERE a.matricula_id = m.id))
+             ORDER BY m.id""", (IMPLANTACAO,)),
     )
     saida = []
     for tabela, setor, sql, args in fontes:

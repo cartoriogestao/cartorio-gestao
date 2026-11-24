@@ -266,9 +266,13 @@ GUIA: dict[str, tuple[str, list[str]]] = {
         "O backup completo está atrasado.",
         ["Rode FERRAMENTAS/BACKUP_AGORA.cmd no servidor (ele também espelha fora)."]),
     "CNIB_PARADO": (
-        "A base local do CNIB não é atualizada há dias: a conferência de ordem nos "
-        "registros responde sobre base velha.",
-        ["Rode a atualização do CNIB (TI) e, até lá, consulte direto na Central."]),
+        "A base local do CNIB não recebe ordem nova há dias, ou a leitura da Central "
+        "vem voltando vazia: a conferência de ordem nos registros responde sobre "
+        "base velha.",
+        ["Antes de lavrar, consulte a indisponibilidade direto na Central, pelo CPF "
+         "ou CNPJ das partes.",
+         "Chame o TI. Se a leitura está voltando vazia, rodar a atualização de novo "
+         "não resolve."]),
 }
 
 

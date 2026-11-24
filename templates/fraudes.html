@@ -30,7 +30,7 @@
   </div>
   <table class="table">
     <tbody><tr>
-      {% for chave, p in papeis.items() %}
+      {% for chave, p in (todos_os_papeis or papeis).items() %}
         <th>{{ p.rotulo }}</th><td>{{ contas.por_papel.get(chave, 0) }}</td>
       {% endfor %}
     </tr></tbody>
@@ -84,6 +84,54 @@
   </div>
 </section>
 
+{# O ATO DE OUTRA SERVENTIA — 24/11/2026. A circular que suspende procurações
+   identificadas só por serventia, livro e folha, sem o nome das partes, não
+   tinha onde entrar. #}
+<section class="panel">
+  <div class="panel-head"><span>Incluir um ato suspenso ou fraudado</span></div>
+  <div class="notice" style="margin:14px 14px 0">
+    Para a comunicação que identifica o <strong>ato</strong>, e não as pessoas:
+    «ficam suspensas as procurações do livro tal, folha tal, da serventia tal».
+    O sistema avisa quando esse livro e folha forem citados num ato daqui — a
+    procuração de terceiro numa escritura, o ato anterior de um
+    substabelecimento, o título prenotado no RI.
+  </div>
+  <form method="post" action="{{ url_for('fraude_incluir_ato') }}" class="form"
+        style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Que ato
+      <input name="ato_natureza" placeholder="Ex.: Procuração, substabelecimento"></label>
+    <label>Data do ato
+      <input name="ato_data" type="date"></label>
+    <label style="grid-column:1/-1">Serventia de origem
+      <input name="ato_serventia" placeholder="Ex.: 1º Tabelionato de Notas de Cidade Exemplo"></label>
+    <label>CNS <input name="ato_cns" placeholder="Se a comunicação trouxer"></label>
+    <label>Cidade <input name="ato_cidade"></label>
+    <label>UF <input name="ato_uf" maxlength="2"></label>
+    <label>Livro <input name="ato_livro" required></label>
+    <label>Folha(s) <input name="ato_folha" placeholder="Ex.: 45, 45v, 45/46"></label>
+    <label>Nº de ordem / termo <input name="ato_ordem"></label>
+    <div style="grid-column:1/-1"><small>
+      O mínimo é o <strong>livro</strong>, a <strong>folha ou a ordem</strong>, e
+      <strong>de onde é o ato</strong> (serventia, CNS ou cidade): livro e folha
+      sem a serventia são os de qualquer cartório.
+    </small></div>
+
+    <label style="grid-column:1/-1">De onde veio a comunicação
+      <input name="origem" required
+             placeholder="Ex.: Circular 12/2026, recebida pelo malote em 24/11"></label>
+    <label>Quem comunicou
+      <input name="origem_orgao" placeholder="Ex.: Corregedoria-Geral de outro estado"></label>
+    <label>Data da comunicação
+      <input name="origem_data" type="date"></label>
+    <label style="grid-column:1/-1">O que a comunicação diz, em resumo
+      <input name="observacao"
+             placeholder="Ex.: procuração suspensa por indício de falsidade da assinatura"></label>
+
+    <div class="actions"><button class="button primary">Incluir o ato</button></div>
+  </form>
+</section>
+
 <section class="panel">
   <div class="panel-head">
     <span>{{ 'Na lista' if situacao == 'ATIVO' else 'Fora da lista' }}</span>
@@ -92,7 +140,7 @@
 
   <form method="get" class="form" style="padding:14px">
     <label>Procurar <input name="q" value="{{ busca }}"
-           placeholder="nome ou documento"></label>
+           placeholder="nome, documento, serventia ou cidade"></label>
     <label>Mostrar
       <select name="situacao">
         <option value="ATIVO"{% if situacao == 'ATIVO' %} selected{% endif %}>na lista</option>
@@ -120,7 +168,7 @@
     <tbody>
       {% for a in linhas %}
       <tr>
-        <td>{{ a.nome or '—' }}
+        <td>{{ a.ato_descricao or a.nome or '—' }}
             {% for arq in a.anexos_malote %}<div><small>
               <a href="{{ url_for('attachment_view', attachment_id=arq.id) }}" target="_blank" rel="noopener">Ver {{ arq.original_name }}</a> ·
               <a href="{{ url_for('attachment_download', attachment_id=arq.id) }}">Baixar</a>

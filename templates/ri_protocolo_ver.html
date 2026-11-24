@@ -19,6 +19,12 @@
 {% set f = fases_da_ficha() if layout_novo else none %}
 {% if f %}{{ abre_ficha(VERSION) }}{{ regua(f, 'pren-' ~ p.id, 'Fases desta prenotação') }}<span class="cg-ancora" id="titulo"></span>{% endif %}
 
+{# O ALERTA DE FRAUDE VEM NO ALTO — o ato de outra serventia que o título cita
+   (24/11/2026). #}
+{% from '_fraude.html' import alerta as alerta_fraude %}
+{{ alerta_fraude(fraudes or [], csrf_token, 'Registro de Imóveis — prenotação', p.numero,
+                 url_for('ri_protocolo_ver', protocolo_id=p.id)) }}
+
 {% if p is defined and not (p.selo_prenotacao or "")|trim %}
 <div class="notice warning">
   <strong>Pendente de selo — o escrevente deve selar.</strong>

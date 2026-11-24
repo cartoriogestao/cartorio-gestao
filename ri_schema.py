@@ -1010,6 +1010,12 @@ MIGRACOES = (
     ("ri_protocolos", "telefone", "TEXT"),
     ("ri_protocolos", "email", "TEXT"),
     ("ri_protocolos", "documento_descricao", "TEXT"),
+    # A PROCURAÇÃO CITADA NO TÍTULO — 24/11/2026, lista de atenção para fraudes.
+    # Uma circular de outro estado suspendeu procurações só por serventia, livro
+    # e folha. O RI não tinha onde dizer que o título prenotado se apoia numa
+    # procuração de outra serventia; o mínimo é este campo de texto, que a
+    # ficha da prenotação confere na lista (`fraude.atos_citados_na_prenotacao`).
+    ("ri_protocolos", "procuracao_citada", "TEXT"),
     # A REABERTURA DA MATRICULA — pedido do oficial em 15/09/2026.
     #
     #   O encerramento era caminho de ida sem volta: havia rota para encerrar

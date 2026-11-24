@@ -41,6 +41,7 @@ O QUE PROTEGE A CASA NÃO É O ALERTA: É O RASTRO DE QUE ELE FOI VISTO
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 from typing import Any
 
@@ -88,8 +89,35 @@ PAPEIS: dict[str, dict] = {
     },
 }
 
+# O ATO DE ORIGEM — 24/11/2026. Um papel a mais, e de outra natureza: não é
+# pessoa, é o ATO que a comunicação diz suspenso ou fraudado (a procuração do
+# livro tal, folha tal, da serventia tal). Fica FORA de `PAPEIS` de propósito:
+# `incluir` exige nome ou documento, e o formulário de pessoa não oferece o
+# papel de ato. Quem inclui ato é `incluir_ato`, com os campos do ato.
+PAPEL_ATO = "ATO"
+PAPEIS_DE_ATO: dict[str, dict] = {
+    PAPEL_ATO: {
+        "rotulo": "Ato suspenso ou fraudado",
+        "aviso": (
+            "Este ato — livro e folha de outra serventia — consta de "
+            "comunicação como SUSPENSO ou FRAUDADO. Antes de lavrar ou "
+            "registrar com base nele, confira o traslado com a serventia de "
+            "origem e leia a comunicação. O aviso não trava: quem decide é o "
+            "oficial."),
+    },
+}
+TODOS_OS_PAPEIS: dict[str, dict] = {**PAPEIS, **PAPEIS_DE_ATO}
+
 SITUACOES = ("ATIVO", "INATIVO")
 DECISOES = ("PROSSEGUIU", "RECUSOU", "ANOTOU")
+
+
+def _rotulo(papel: str) -> str:
+    return TODOS_OS_PAPEIS.get(papel, {}).get("rotulo", papel)
+
+
+def _aviso(papel: str) -> str:
+    return TODOS_OS_PAPEIS.get(papel, {}).get("aviso", "")
 
 
 class FraudeError(ValueError):
@@ -215,9 +243,8 @@ def conferir(con: sqlite3.Connection, *, nome: Any = None,
         linha["por_documento"] = por_documento
         linha["por_nome"] = por_nome
         linha["forca"] = "DOCUMENTO" if por_documento else "NOME"
-        linha["papel_rotulo"] = PAPEIS.get(linha["papel"], {}).get(
-            "rotulo", linha["papel"])
-        linha["aviso"] = PAPEIS.get(linha["papel"], {}).get("aviso", "")
+        linha["papel_rotulo"] = _rotulo(linha["papel"])
+        linha["aviso"] = _aviso(linha["papel"])
         achados.append(linha)
     achados.sort(key=lambda x: (not x["por_documento"], x["id"]))
     return achados
@@ -301,10 +328,17 @@ def listar(con: sqlite3.Connection, *, situacao: str = "ATIVO",
         if d:
             alternativas.append("documento ILIKE %s")
             valores_busca.append(f"%{d}%")
+        # O ATO SE PROCURA PELA SERVENTIA E PELA CIDADE — é o que quem recebe a
+        # circular tem na mão («a de Cidade Exemplo já está na lista?»).
+        c = _comparavel(texto)
+        if c:
+            alternativas += ["ato_serventia_norm ILIKE %s", "ato_cidade_norm ILIKE %s"]
+            valores_busca += [f"%{c}%", f"%{c}%"]
         condicoes.append("(" + " OR ".join(alternativas) + ")")
         valores.extend(valores_busca)
-    return [dict(r) | {"papel_rotulo": PAPEIS.get(r["papel"], {}).get(
-                "rotulo", r["papel"])}
+    return [dict(r) | {"papel_rotulo": _rotulo(r["papel"]),
+                       "ato_descricao": (descrever_ato(r)
+                                         if r["papel"] == PAPEL_ATO else None)}
             for r in banco(con).ler(
                 f"""SELECT * FROM fr_alertas WHERE {' AND '.join(condicoes)}
                      ORDER BY id DESC LIMIT %s""", (*valores, int(limite)))]
@@ -431,3 +465,394 @@ def atos_da_pessoa(con: sqlite3.Connection, *, nome: Any = None,
         except sqlite3.Error:
             continue
     return saida
+
+
+# ============================================================ O ATO DE ORIGEM
+#
+# O CASO, de 24/11/2026: uma circular de outro estado suspendeu procurações
+# identificadas SÓ por serventia, livro, folha e número de ordem — sem o nome
+# de ninguém. A lista só procurava pessoa: nada entrou, o expediente foi
+# arquivado como ciência, e o traslado podia chegar ao balcão sem aviso.
+#
+# O QUE SE PROCURA É O ATO DE OUTRA SERVENTIA CITADO NO ATO DAQUI: a procuração
+# de terceiro com que se lavra uma escritura nas Notas, o ato anterior que um
+# substabelecimento ou uma revogação cita, a procuração citada num título
+# prenotado no RI.
+#
+# AS MESMAS TRÊS REGRAS DO ALERTA DE PESSOA
+#   1. Não é trava — mostra, com a procedência, e o oficial decide.
+#   2. Sem procedência não entra (`origem` obrigatória, como em `incluir`).
+#   3. A força do achado se diz: livro e folha batem por coincidência entre
+#      serventias diferentes (toda serventia tem um livro 10, folha 20); o que
+#      dá certeza é a SERVENTIA bater junto — pelo CNS, que não se repete, ou
+#      pelo nome dela. Por isso o achado diz por que bateu, e a tela pinta de
+#      vermelho só o que bateu com a serventia.
+#
+# LIVRO + (FOLHA OU ORDEM) É O MÍNIMO para entrar e para bater. Só o livro
+# acenderia o alerta para o livro inteiro; só a folha não identifica nada.
+
+_ORDINAIS = re.compile(r"[º°ª]")
+
+
+def _leve(texto: Any) -> str:
+    """Sem acento, sem caixa e sem ordinal, mas COM a pontuação — é ela que
+    separa «120-A» (livro 120A) de «120 a 125» (faixa de folhas)."""
+    s = _ORDINAIS.sub("", str(texto or ""))
+    return normalizar_nome(s) or ""
+
+
+def _comparavel(texto: Any) -> str:
+    """A forma que compara serventia e cidade: sem acento, sem caixa, sem
+    ordinal e sem pontuação. «1º Tabelionato de Notas – Cidade Exemplo/SP» e
+    «1 tabelionato de notas cidade exemplo sp» são a mesma coisa aqui."""
+    return " ".join(re.sub(r"[^0-9a-z]+", " ", _leve(texto)).split())
+
+
+def livro_normalizado(valor: Any) -> str | None:
+    """«Livro nº 0120-A» -> «120A»; «3-B» -> «3B»; «L. 12» -> «12».
+
+    O ZERO À ESQUERDA SAI (o livro 0120 é o 120), e a letra fica — o livro 3-B
+    não é o 3."""
+    s = _leve(valor)
+    s = re.sub(r"\b(livro|liv|lv|l|numero|num|n)\b\.?", " ", s)
+    m = re.search(r"(\d{1,6})\s*-?\s*([a-z])?(?![a-z0-9])", s)
+    if m:
+        return str(int(m.group(1))) + (m.group(2) or "").upper()
+    letras = re.sub(r"[^a-z0-9]", "", s).upper()
+    return letras or None
+
+
+def folhas_normalizadas(valor: Any) -> list[int]:
+    """As folhas de um campo de folha: «45» -> [45]; «45v» -> [45];
+    «45/47» e «45 a 47» -> [45, 46, 47]; «45 e 52» -> [45, 52].
+
+    O VERSO É A MESMA FOLHA: «45v» bate com «45». A FAIXA ABRE até 20 folhas —
+    mais que isso é número de outra coisa que entrou no campo, e abrir
+    acenderia o alerta para meio livro."""
+    s = _leve(valor)
+    m = re.fullmatch(r"\D*?(\d{1,5})\s*(?:v(?:erso)?\.?)?\s*(?:a|ate|/|-)\s*"
+                     r"(\d{1,5})\s*(?:v(?:erso)?\.?)?\D*", s)
+    if m:
+        a, b = int(m.group(1)), int(m.group(2))
+        if 0 < b - a <= 20:
+            return list(range(a, b + 1))
+    return sorted({int(x) for x in re.findall(r"\d{1,5}", s)})[:20]
+
+
+def ordem_normalizada(valor: Any) -> str | None:
+    d = so_digitos(valor)
+    return str(int(d)) if d else None
+
+
+def _folhas_texto(folhas: list[int]) -> str | None:
+    return ("|" + "|".join(str(f) for f in folhas) + "|") if folhas else None
+
+
+def _folhas_da_linha(linha: dict) -> set[int]:
+    return {int(x) for x in str(linha.get("ato_folhas_norm") or "").split("|")
+            if x.isdigit()}
+
+
+def descrever_ato(linha: dict) -> str:
+    """O ato numa linha só, como o balcão lê: «Procuração — 1º Tabelionato de
+    Cidade Exemplo/SP (CNS 000000), livro 120, folha 45, ordem 3, de 2026-03-10»."""
+    d = dict(linha)
+    onde = d.get("ato_serventia") or ""
+    lugar = "/".join(x for x in (d.get("ato_cidade"), d.get("ato_uf")) if x)
+    if lugar and _comparavel(d.get("ato_cidade")) not in _comparavel(onde):
+        onde = f"{onde}, {lugar}" if onde else lugar
+    if d.get("ato_cns"):
+        onde = f"{onde} (CNS {d['ato_cns']})" if onde else f"CNS {d['ato_cns']}"
+    partes = [p for p in (
+        onde or None,
+        f"livro {d['ato_livro']}" if d.get("ato_livro") else None,
+        f"folha {d['ato_folha']}" if d.get("ato_folha") else None,
+        f"ordem {d['ato_ordem']}" if d.get("ato_ordem") else None,
+        f"de {d['ato_data']}" if d.get("ato_data") else None) if p]
+    natureza = (d.get("ato_natureza") or "Ato").strip()
+    return f"{natureza} — {', '.join(partes)}"
+
+
+def incluir_ato(con: sqlite3.Connection, *, origem: str, agora: str,
+                livro: str | None, folha: str | None = None,
+                ordem: str | None = None, serventia: str | None = None,
+                cns: str | None = None, cidade: str | None = None,
+                uf: str | None = None, natureza: str | None = None,
+                data: str | None = None, origem_data: str | None = None,
+                origem_orgao: str | None = None,
+                observacao: str | None = None,
+                usuario: str | None = None) -> dict:
+    """Inclui um ATO de outra serventia na lista de atenção. ESCREVE.
+
+    A MESMA PORTA DE `incluir`, com a mesma régua de procedência: sem dizer de
+    onde veio, não entra. E o ato tem de ser achável: livro, folha ou ordem, e
+    de onde ele é (serventia, CNS ou cidade) — sem a serventia, «livro 120,
+    folha 45» é o de qualquer cartório do país.
+    """
+    livro_n = livro_normalizado(livro)
+    folhas = folhas_normalizadas(folha) if (folha or "").strip() else []
+    ordem_n = ordem_normalizada(ordem)
+    cns_d = so_digitos(cns)
+    if not livro_n:
+        raise FraudeError(
+            "Informe o livro do ato. É por ele que o sistema reconhece o "
+            "traslado quando ele aparecer no balcão.")
+    if not folhas and not ordem_n:
+        raise FraudeError(
+            "Informe a folha ou o número de ordem do ato. Só o livro acenderia "
+            "o alerta para o livro inteiro.")
+    if not ((serventia or "").strip() or cns_d or (cidade or "").strip()):
+        raise FraudeError(
+            "Diga de que serventia é o ato — o nome, o CNS ou ao menos a "
+            "cidade. Sem isso, «livro e folha» é o de qualquer cartório.")
+    if not (origem or "").strip():
+        raise FraudeError(
+            "Diga de onde veio a comunicação — o ofício, o e-mail, o malote. "
+            "Alerta sem procedência não se avalia, e vira alerta que se "
+            "ignora.")
+
+    def limpo(v):
+        return " ".join(str(v or "").split()) or None
+
+    novo = banco(con).escrever(
+        """INSERT INTO fr_alertas(papel, origem, origem_data, origem_orgao,
+               observacao, situacao, criado_em, criado_por,
+               ato_natureza, ato_serventia, ato_serventia_norm, ato_cns,
+               ato_cidade, ato_cidade_norm, ato_uf, ato_livro, ato_livro_norm,
+               ato_folha, ato_folhas_norm, ato_ordem, ato_ordem_norm, ato_data)
+           VALUES (%s,%s,%s,%s,%s,'ATIVO',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                   %s,%s,%s,%s,%s)
+           RETURNING id""",
+        (PAPEL_ATO, origem.strip(), (origem_data or None),
+         limpo(origem_orgao), (observacao or "").strip() or None, agora,
+         usuario, limpo(natureza), limpo(serventia),
+         _comparavel(serventia) or None, cns_d, limpo(cidade),
+         _comparavel(cidade) or None, (limpo(uf) or "").upper() or None,
+         limpo(livro), livro_n, limpo(folha), _folhas_texto(folhas),
+         limpo(ordem), ordem_n, (data or None)))[0]["id"]
+    linha = ler(con, int(novo))
+    return {"alerta_id": int(novo), "papel": PAPEL_ATO,
+            "descricao": descrever_ato(linha)}
+
+
+def _candidatos(con, livros: list[str]) -> list[dict]:
+    """Os alertas de ato ATIVOS desses livros. Só LÊ."""
+    livros = [x for x in dict.fromkeys(livros) if x]
+    if not livros:
+        return []
+    marcas = ",".join(["%s"] * len(livros))
+    return [dict(r) for r in banco(con).ler(
+        f"""SELECT * FROM fr_alertas
+             WHERE situacao='ATIVO' AND papel=%s AND ato_livro_norm IN ({marcas})
+             ORDER BY id""", (PAPEL_ATO, *livros))]
+
+
+_FORCA_DO_ATO = {"SERVENTIA": 0, "CIDADE": 1, "LIVRO_FOLHA": 2}
+
+
+def _achado_de_ato(linha: dict, *, forca: str, por_que: str,
+                   conferido: str) -> dict:
+    return {**linha, "forca": forca, "por_que": por_que,
+            "papel_rotulo": _rotulo(PAPEL_ATO), "aviso": _aviso(PAPEL_ATO),
+            "ato_descricao": descrever_ato(linha),
+            # O QUE SE CONFERIU vai no campo de nome do rastro: é ele que a
+            # macro do alerta devolve ao registrar a conferência.
+            "conferido_nome": conferido, "conferido_documento": None}
+
+
+def conferir_ato(con: sqlite3.Connection, *, livro: Any = None,
+                 folha: Any = None, ordem: Any = None, serventia: Any = None,
+                 cns: Any = None, cidade: Any = None, uf: Any = None,
+                 natureza: Any = None) -> list[dict]:
+    """Procura um ato de outra serventia, dado EM CAMPOS, na lista. **Só LÊ**.
+
+    Bate quando o LIVRO é o mesmo e a FOLHA ou a ORDEM também. Daí, a
+    serventia decide a força:
+      - CNS igual, ou o mesmo nome de serventia → SERVENTIA (certeza);
+      - a mesma cidade → CIDADE (há cidade com mais de um tabelionato);
+      - nada sobre a serventia dos dois lados → LIVRO_FOLHA (coincidência
+        possível: confira).
+    E NÃO BATE quando os dois lados dizem serventias diferentes — CNS diferente,
+    cidade diferente ou UF diferente: aí é outro cartório, e o alerta seria
+    falso com toda a certeza.
+    """
+    livro_n = livro_normalizado(livro)
+    folhas = set(folhas_normalizadas(folha)) if str(folha or "").strip() else set()
+    ordem_n = ordem_normalizada(ordem)
+    if not livro_n or not (folhas or ordem_n):
+        return []
+    cns_d = so_digitos(cns)
+    serv = _comparavel(serventia)
+    cid = _comparavel(cidade)
+    uf_n = _comparavel(uf)
+    conferido = descrever_ato({
+        "ato_natureza": natureza or "Ato citado", "ato_serventia": serventia,
+        "ato_cns": cns_d, "ato_cidade": cidade, "ato_uf": uf, "ato_livro": livro,
+        "ato_folha": folha, "ato_ordem": ordem})
+    achados = []
+    for linha in _candidatos(con, [livro_n]):
+        bate_folha = bool(folhas & _folhas_da_linha(linha))
+        bate_ordem = bool(ordem_n and linha.get("ato_ordem_norm") == ordem_n)
+        if not (bate_folha or bate_ordem):
+            continue
+        if cns_d and linha.get("ato_cns") and cns_d != linha["ato_cns"]:
+            continue
+        if cid and linha.get("ato_cidade_norm") and cid != linha["ato_cidade_norm"]:
+            continue
+        if (uf_n and linha.get("ato_uf")
+                and uf_n != _comparavel(linha["ato_uf"])):
+            continue
+        pelo = "folha" if bate_folha else "número de ordem"
+        if cns_d and cns_d == linha.get("ato_cns"):
+            forca, por_que = "SERVENTIA", f"o CNS da serventia, o livro e a {pelo}"
+        elif serv and serv == linha.get("ato_serventia_norm"):
+            forca, por_que = "SERVENTIA", f"o nome da serventia, o livro e a {pelo}"
+        elif cid and cid == linha.get("ato_cidade_norm"):
+            forca, por_que = "CIDADE", f"a cidade, o livro e a {pelo}"
+        else:
+            forca, por_que = "LIVRO_FOLHA", f"o livro e a {pelo}"
+        achados.append(_achado_de_ato(linha, forca=forca, por_que=por_que,
+                                      conferido=conferido))
+    achados.sort(key=lambda x: (_FORCA_DO_ATO[x["forca"]], x["id"]))
+    return achados
+
+
+# NO TEXTO LIVRE a referência vem escrita como cada um escreve: «procuração
+# lavrada no 2º Tabelionato de Cidade Exemplo/SP, livro 120, fls. 45/46». As
+# expressões abaixo leem a forma `_leve` (sem acento, sem caixa, com pontuação).
+_LIVRO_NO_TEXTO = re.compile(
+    r"\b(?:livro|liv\.?|lv\.?|l\.)\s*(?:n\.?\s*|numero\s*)?(\d{1,6})"
+    r"(?:\s*-\s*([a-z])\b|([a-z])\b)?")
+_FOLHA_NO_TEXTO = re.compile(
+    r"\b(?:folhas?|fls?\.?|f\.)\s*(?:n\.?\s*)?(\d{1,5})\s*(?:v(?:erso)?\b\.?)?"
+    r"(?:\s*(?:a|ate|/|-|e)\s*(\d{1,5}))?")
+_ORDEM_NO_TEXTO = re.compile(
+    r"\b(?:ordem|termo|protocolo|ato)\s*(?:n\.?\s*|numero\s*|de\s+n\.?\s*)?"
+    r"(\d{1,7})")
+
+
+def referencias_no_texto(texto: Any) -> dict:
+    """Os livros, folhas e ordens escritos num texto livre. Só calcula."""
+    s = _leve(texto)
+    livros = [str(int(m.group(1))) + (m.group(2) or m.group(3) or "").upper()
+              for m in _LIVRO_NO_TEXTO.finditer(s)]
+    folhas: set[int] = set()
+    for m in _FOLHA_NO_TEXTO.finditer(s):
+        a = int(m.group(1))
+        b = int(m.group(2)) if m.group(2) else None
+        if b is not None and 0 < b - a <= 20:
+            folhas.update(range(a, b + 1))
+        else:
+            folhas.add(a)
+            if b is not None:
+                folhas.add(b)
+    ordens = {str(int(m.group(1))) for m in _ORDEM_NO_TEXTO.finditer(s)}
+    return {"livros": list(dict.fromkeys(livros)), "folhas": folhas,
+            "ordens": ordens}
+
+
+def conferir_ato_no_texto(con: sqlite3.Connection, *textos: Any) -> list[dict]:
+    """Procura, num TEXTO LIVRE, ato que esteja na lista. **Só LÊ**.
+
+    É o caso do instrumento da representação nas Notas («livro, folha e
+    serventia da procuração», um campo só) e dos campos de texto da prenotação
+    no RI. Lê os livros, as folhas e as ordens escritas; bate quando o livro e
+    a folha (ou a ordem) de um alerta estão lá. A serventia, aqui, se confere
+    pelo contrário: é o CNS, o nome ou a cidade DO ALERTA que se procura no
+    texto. Achou → SERVENTIA ou CIDADE; não achou → LIVRO_FOLHA, para conferir.
+    """
+    junto = " · ".join(str(t) for t in textos if str(t or "").strip())
+    if not junto:
+        return []
+    refs = referencias_no_texto(junto)
+    if not refs["livros"] or not (refs["folhas"] or refs["ordens"]):
+        return []
+    comparavel = f" {_comparavel(junto)} "
+    # O CNS escrito com ponto ou traço («12.345-6») conta como o mesmo número.
+    numeros = set(re.findall(r"\d+", junto)) | {
+        re.sub(r"\D", "", m) for m in re.findall(r"\d(?:[.\-]?\d)*", junto)}
+    achados = []
+    for linha in _candidatos(con, refs["livros"]):
+        bate_folha = bool(refs["folhas"] & _folhas_da_linha(linha))
+        bate_ordem = bool(linha.get("ato_ordem_norm")
+                          and linha["ato_ordem_norm"] in refs["ordens"])
+        if not (bate_folha or bate_ordem):
+            continue
+        pelo = "folha" if bate_folha else "número de ordem"
+        serv = linha.get("ato_serventia_norm")
+        cid = linha.get("ato_cidade_norm")
+        if linha.get("ato_cns") and linha["ato_cns"] in numeros:
+            forca, por_que = "SERVENTIA", f"o CNS da serventia, o livro e a {pelo}"
+        elif serv and f" {serv} " in comparavel:
+            forca, por_que = "SERVENTIA", f"o nome da serventia, o livro e a {pelo}"
+        elif cid and f" {cid} " in comparavel:
+            forca, por_que = "CIDADE", f"a cidade, o livro e a {pelo}"
+        else:
+            forca, por_que = "LIVRO_FOLHA", f"o livro e a {pelo}"
+        achados.append(_achado_de_ato(linha, forca=forca, por_que=por_que,
+                                      conferido=" ".join(junto.split())[:300]))
+    achados.sort(key=lambda x: (_FORCA_DO_ATO[x["forca"]], x["id"]))
+    return achados
+
+
+def _uma_vez(achados: list[dict]) -> list[dict]:
+    vistos, saida = set(), []
+    for a in achados:
+        if a["id"] not in vistos:
+            vistos.add(a["id"])
+            saida.append(a)
+    return saida
+
+
+def atos_citados_no_ato_de_notas(con: sqlite3.Connection, ato: Any,
+                                 partes: list) -> list[dict]:
+    """Os atos de outra serventia que este ato das Notas cita, conferidos na
+    lista. **Só LÊ**.
+
+    ONDE AS NOTAS GUARDAM O ATO DE TERCEIRO, medido no esquema em 24/11/2026:
+      - `nt_atos.anterior_*` (livro, folha, cartório, cidade, UF, CNS) — o ato
+        anterior que o substabelecimento, a revogação ou a retificação cita,
+        em campos, como a CENSEC pede;
+      - o INSTRUMENTO de cada representação (`nt_ato_representacoes.instrumento`
+        e a coluna antiga `nt_ato_partes.representa_instrumento`) — «livro,
+        folha e serventia da procuração» (CN-MA art. 798, VI), em texto livre.
+    É o segundo que pega o caso do balcão: a escritura lavrada aqui com
+    procuração de outra serventia.
+    """
+    a = dict(ato or {})
+    saida = []
+    if a.get("anterior_livro"):
+        for x in conferir_ato(con, livro=a.get("anterior_livro"),
+                              folha=a.get("anterior_folha"),
+                              serventia=a.get("anterior_cartorio"),
+                              cns=a.get("anterior_cns"),
+                              cidade=a.get("anterior_cidade"),
+                              uf=a.get("anterior_uf")):
+            saida.append({**x, "papel_no_ato": "ato anterior citado"})
+    for p in partes or []:
+        d = dict(p)
+        textos = [dict(v).get("instrumento") for v in (d.get("representacoes") or [])]
+        textos.append(d.get("representa_instrumento"))
+        for t in dict.fromkeys(x for x in textos if (x or "").strip()):
+            for x in conferir_ato_no_texto(con, t):
+                saida.append({**x, "papel_no_ato":
+                              f"instrumento de {d.get('nome') or 'representante'}"})
+    return _uma_vez(saida)
+
+
+def atos_citados_na_prenotacao(con: sqlite3.Connection, protocolo: Any) -> list[dict]:
+    """Os atos de outra serventia que a prenotação do RI cita, conferidos na
+    lista. **Só LÊ**.
+
+    O RI NÃO TINHA CAMPO para a procuração citada no título (medido em
+    24/11/2026: `ri_protocolos` só tem a natureza, o objeto, o documento
+    apresentado e a anotação, todos texto livre). O mínimo que se acrescentou
+    é `procuracao_citada`, um campo de texto como o instrumento das Notas; os
+    outros três também se leem, porque é neles que a referência já vinha
+    sendo escrita.
+    """
+    p = dict(protocolo or {})
+    textos = [p.get(c) for c in ("procuracao_citada", "documento_descricao",
+                                 "objeto", "anotacao")]
+    return [{**x, "papel_no_ato": "ato citado no título"}
+            for x in conferir_ato_no_texto(con, *textos)]

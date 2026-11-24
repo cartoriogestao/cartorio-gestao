@@ -136,7 +136,7 @@ def test_a_ordem_bate_sem_a_folha(con):
 
 
 @pytest.mark.parametrize("outro", [
-    {"cns": "888888"}, {"cidade": "Outra Cidade"}, {"uf": "YY"},
+    {"cns": "999998"}, {"cidade": "Outra Cidade"}, {"uf": "YY"},
 ])
 def test_serventia_diferente_nao_bate(con, outro):
     incluir_ato(con)

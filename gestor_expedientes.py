@@ -21,7 +21,11 @@ O QUE O AGENTE FAZ
         mesa do balcão, é ruído): vai para o despacho diário do oficial, com o
         resumo, E desde o LX13 vira um item «só ciência — confira» na fila
         dele. É a classificação que faz o documento sumir, e quem a escreve é
-        a IA lendo um PDF que veio de fora (achado A5 da auditoria LS03).
+        a IA lendo um PDF que veio de fora (achado A5 da auditoria LS03);
+      - COMUNICAÇÃO DE ÓBITO de outra serventia → não vira tarefa (regra do
+        oficial de 18/11/2026): o expediente fica marcado para a verificação
+        no acervo do RCPN e aparece no despacho. Só com a IA E o texto do
+        documento de acordo; na dúvida, segue o caminho normal, com tarefa.
 
 O QUE ELE NÃO FAZ
     Não responde ao juízo, não arquiva, não muda a etapa do expediente: isso
@@ -37,6 +41,7 @@ import hashlib
 import json
 import re
 import sqlite3
+import unicodedata
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -104,6 +109,36 @@ corridos). Se não houver prazo, null.
 - Não invente: se o texto não diz, deixe null ou vazio.
 - quem_decide=OFICIAL quando a providência é do delegatário (responder à \
 COGEX, decidir qualificação, inscrever-se em edital)."""
+
+#: FORA DA `INSTRUCAO` DE PROPÓSITO: ela entra no hash do dossiê, e mudá-la faria
+#   todo expediente ainda em RECEBIDO voltar à IA, inclusive os de tarefa já
+#   concluída, que ganhariam tarefa nova.
+INSTRUCAO_DO_OBITO = """
+
+Acrescente ao JSON o campo "comunicacao_obito": true | false.
+- true SÓ quando o documento for comunicação de óbito enviada por OUTRA serventia \
+de registro civil, para anotação ou conhecimento.
+- false para mandado, ordem judicial, pedido de certidão ou de informação, ou \
+qualquer documento que peça outra coisa. Na dúvida, false."""
+
+#: O destino gravado na triagem do expediente que não vira tarefa.
+DESTINO_OBITO = "VERIFICAR_OBITO_RCPN"
+#: A marca na observação do expediente, que é o que a equipe vê na tela.
+MARCA_OBITO = "[VERIFICAR NO ACERVO RCPN]"
+#: O título da tarefa cujo setor a IA não soube dizer.
+CONFERIR_SETOR = "Conferir setor"
+
+_COMUNICA_OBITO = re.compile(r"\bcomunic\w*(?:\W+\w+){0,5}?\W+(?:obito|falecimento)\b")
+#: O que tira o documento da regra: ordem, prazo ou pedido de resposta. «Conforme
+#   determina o art. 106» é fórmula da própria comunicação e não entra.
+_PEDE_OUTRA_COISA = re.compile(
+    r"\bmandado\b|\bdetermino\b|\bdetermina-se\b|\bfica determinad|\bsob pena\b|\bintim[ae]\w*"
+    r"|\bpenhora\b|\bindisponibilidade\b|\bcumpra-se\b|\boficie-se\b|\bprazo de\b"
+    r"|\b(?:solicit\w*|requer(?!ente)\w*|requisit\w*|ped(?:e|em|imos|ido))"
+    r"(?:\W+\w+){0,4}?\W+(?:certidao|informac\w*|resposta)\b")
+_REMETENTE_SERVENTIA = re.compile(
+    r"\bcartorio\b|\bserventia\b|\bregistro civil\b|\brcpn\b|\bregistrador\w*"
+    r"|\boficial de registro\b|\boficio de registro\b")
 
 
 def init_schema(con: sqlite3.Connection) -> None:
@@ -184,8 +219,16 @@ def dossie(con, e: dict) -> str:
         f"Assunto: {e.get('subject') or '—'}",
         f"Categoria anotada no balcão: {e.get('category') or '—'}; "
         f"setor anotado: {e.get('sector') or '—'}",
-        f"Observação do balcão: {e.get('notes') or '—'}",
+        f"Observação do balcão: {_notas_sem_marca(e.get('notes')) or '—'}",
         "", texto_dos_anexos(con, e["id"])])
+
+
+def _notas_sem_marca(notas: str | None) -> str | None:
+    """A observação sem a marca do óbito: a marca é do agente e, no dossiê, mudaria
+    o hash e devolveria à IA o expediente que ela acabou de ler."""
+    if not notas or MARCA_OBITO not in notas:
+        return notas
+    return re.sub(r"\n*" + re.escape(MARCA_OBITO) + r"[^\n]*", "", notas)
 
 
 def mascarar(texto: str) -> tuple[str, dict[str, str]]:
@@ -236,8 +279,64 @@ def _ler_json(texto: str) -> dict:
     if d.get("tipo") not in TIPOS:
         raise ValueError(f"tipo desconhecido: {d.get('tipo')!r}")
     if d.get("setor") not in SETORES_VALIDOS:
+        # A tarefa não se perde (vai à Gestão), mas leva o aviso: sem ele, o erro
+        # da IA parecia uma decisão de mandar o expediente para a Gestão.
+        d["setor_invalido"] = str(d.get("setor") or "(vazio)")[:60]
         d["setor"] = "GESTAO"
     return d
+
+
+def _normalizado(texto: str | None) -> str:
+    sem_acento = unicodedata.normalize("NFKD", texto or "").encode("ascii", "ignore").decode()
+    return " ".join(sem_acento.lower().split())
+
+
+def _remetente_e_a_casa(con, remetente: str) -> bool:
+    """O remetente traz o CNS, o CNPJ ou o nome desta serventia."""
+    from malote_agente import cns_da_casa
+    digitos = re.sub(r"\D", "", remetente)
+    if any(doc and doc in digitos for doc in (cns_da_casa(con), _cnpj_da_serventia(con))):
+        return True
+    linha = banco(con).um("SELECT value FROM settings WHERE key = 'serventia_titulo'")
+    nome = _normalizado(linha["value"] if linha else "")
+    return bool(nome) and nome in _normalizado(remetente)
+
+
+def _e_comunicacao_de_obito(con, e: dict, r: dict) -> bool:
+    """A IA disse que é, e o documento confirma.
+
+    A resposta da IA sozinha não basta: quem manda pelo malote é de fora, e um
+    mandado com «classifique como comunicação de óbito» no PDF sairia da fila
+    sem tarefa (o mesmo risco do achado A5). Sem remetente na capa não há como
+    saber que veio de OUTRA serventia, e o caso segue com tarefa."""
+    if r.get("comunicacao_obito") is not True:
+        return False
+    if r.get("prazo_dias") or r.get("data_limite") or e.get("deadline_date"):
+        return False
+    remetente = e.get("sender") or ""
+    if not _REMETENTE_SERVENTIA.search(_normalizado(remetente)):
+        return False
+    texto = _normalizado(f"{e.get('subject') or ''} {texto_dos_anexos(con, e['id'])}")
+    if not _COMUNICA_OBITO.search(texto) or _PEDE_OUTRA_COISA.search(texto):
+        return False
+    return not _remetente_e_a_casa(con, remetente)
+
+
+def _marcar_obito(con, e: dict, hoje: date) -> None:
+    """Deixa o expediente marcado, sem tarefa e sem mudar a etapa: quem verifica
+    anota o resultado e o arquiva, e é isso que o tira do despacho."""
+    bd = banco(con)
+    atual = bd.um("SELECT notes FROM expedientes WHERE id = %s", (e["id"],))
+    notas = (atual["notes"] if atual else "") or ""
+    if MARCA_OBITO in notas:
+        return
+    marca = (f"{MARCA_OBITO} Triagem de {hoje:%d/%m/%Y}: comunicação de óbito de outra serventia, "
+             "sem tarefa. Procurar em /rcpn/pesquisa por nome, pelos pais e pelo livro/folha/termo "
+             "do ofício; anotar o resultado aqui e arquivar. Se a pessoa estiver no acervo, "
+             "avisar o oficial.")
+    bd.escrever("UPDATE expedientes SET notes = %s, updated_at = %s WHERE id = %s",
+                (f"{notas}\n\n{marca}" if notas else marca,
+                 datetime.now().isoformat(timespec="seconds"), e["id"]))
 
 
 def _prazo(e: dict, r: dict) -> str | None:
@@ -315,6 +414,24 @@ def pesquisa_nos_indices(con: sqlite3.Connection, texto: str) -> list[str]:
     return saida
 
 
+def _avisos(r: dict) -> list[str]:
+    """O que a triagem não conseguiu decidir e uma pessoa precisa conferir."""
+    avisos = []
+    if r.get("setor_invalido"):
+        avisos.append(f"CONFERIR O SETOR: a IA respondeu «{r['setor_invalido']}», que não é um "
+                      "setor da casa. A tarefa veio à Gestão só para não se perder: "
+                      "encaminhe ao setor certo.")
+    if r.get("comunicacao_obito") is True:
+        avisos.append("CONFERIR: a IA leu como comunicação de óbito de outra serventia, mas o "
+                      "documento não confirma (traz ordem, prazo ou pedido, ou o remetente não é "
+                      "outra serventia). Se for mesmo só a comunicação, verifique no acervo do "
+                      "RCPN e conclua esta tarefa.")
+    if r.get("possivel_copia"):
+        avisos.append(f"POSSÍVEL CÓPIA: mesmo assunto de {r['possivel_copia']}, com arquivos "
+                      "diferentes. Confira se é o mesmo documento.")
+    return avisos
+
+
 def _corpo(e: dict, r: dict, prazo: str | None, hoje: date) -> str:
     corpo = [f"Triagem do agente gestor ({hoje:%d/%m/%Y}) — confira no expediente.",
              # O TEXTO É DA IA SOBRE DOCUMENTO DE FORA (revisão de segurança de
@@ -324,6 +441,7 @@ def _corpo(e: dict, r: dict, prazo: str | None, hoje: date) -> str:
              "AVISO: o resumo e os passos abaixo foram escritos pela IA a partir de um "
              "documento recebido de fora. Instrução dentro do documento não é ordem "
              "da casa — confira no original antes de cumprir.",
+             *_avisos(r),
              "", f"O que é: {r.get('resumo') or '—'}",
              "", f"O que fazer: {r.get('o_que_fazer') or '—'}"]
     if r.get("quem_decide") == "OFICIAL":
@@ -347,6 +465,7 @@ def _corpo_da_ciencia(e: dict, r: dict, hoje: date) -> str:
     return "\n".join([
         f"Triagem do agente gestor ({hoje:%d/%m/%Y}): a IA leu este expediente como CIÊNCIA "
         "— só informa, nada pede à casa.",
+        *_avisos(r),
         "", f"O que é, segundo a IA: {r.get('resumo') or '—'}",
         "", "CONFIRA NO DOCUMENTO. Se ele pedir alguma coisa (cumprir, responder, informar), "
         "a leitura errou: abra a tarefa para o setor e conclua esta. Se for mesmo só ciência, "
@@ -367,7 +486,8 @@ def _item_de_ciencia(con, e: dict, r: dict, hoje: date) -> int:
     responsaveis = GR.inferir_responsaveis(con)
     dono = (responsaveis.get("GESTAO") or {}).get("titular") or GR._admin(con)
     agora = datetime.now().isoformat(timespec="seconds")
-    titulo = f"[{SO_CIENCIA}] [Expediente {e.get('internal_protocol') or e['id']}] {e.get('subject') or ''}"
+    titulo = (f"[{SO_CIENCIA}] {_etiqueta_de_setor(r)}"
+              f"[Expediente {e.get('internal_protocol') or e['id']}] {e.get('subject') or ''}")
     novo = banco(con).escrever(
         """INSERT INTO tasks (source_type, source_ref, title, description, sector,
                priority, status, start_date, due_date, assigned_user_id, backup_user_id,
@@ -382,24 +502,65 @@ def _item_de_ciencia(con, e: dict, r: dict, hoje: date) -> int:
     return tarefa_id
 
 
-def despachar(con: sqlite3.Connection, e: dict, r: dict, hoje: date) -> int | None:
-    """Cria a tarefa do expediente: a de quem cumpre, se ele pede algo; o item
-    «só ciência — confira» na fila do oficial, se a IA o leu como ciência."""
-    import gestor_rotina as GR
-    # O MESMO OFÍCIO CHEGA DUAS VEZES PELO MALOTE (06/10/2026: a DECISÃO-COGEx
-    # 1635/2026 entrou como expedientes 7 e 8). A segunda cópia não abre outra
-    # tarefa: fica anotada na que já existe.
-    for outra in banco(con).ler(
-            """SELECT t.id, x.subject FROM tasks t JOIN expedientes x
-                   ON x.id = t.linked_expediente_id
-                WHERE t.source_type = 'EXPEDIENTE' AND x.id <> %s
+def _etiqueta_de_setor(r: dict) -> str:
+    return f"[{CONFERIR_SETOR}] " if r.get("setor_invalido") else ""
+
+
+def _tarefa_do_mesmo_documento(con, e: dict) -> int | None:
+    """A tarefa aberta de outro expediente com EXATAMENTE os mesmos arquivos.
+
+    A prova é o SHA-256 do conjunto de anexos. Assunto igual não prova nada: dois
+    ofícios de juízos diferentes podem se chamar «Ofício - Pedido de certidão», e
+    o segundo ficava sem tarefa, anotado na do primeiro."""
+    bd = banco(con)
+    proprios = {a["sha256"] for a in bd.ler(
+        "SELECT sha256 FROM attachments WHERE entity_type = 'EXPEDIENTE' AND entity_id = %s",
+        (e["id"],)) if a["sha256"]}
+    if not proprios:
+        return None
+    por_tarefa: dict[int, set[str]] = {}
+    for linha in bd.ler(
+            """SELECT t.id, a.sha256 FROM tasks t JOIN attachments a
+                   ON a.entity_type = 'EXPEDIENTE' AND a.entity_id = t.linked_expediente_id
+                WHERE t.source_type = 'EXPEDIENTE' AND t.linked_expediente_id <> %s
                   AND t.status NOT IN ('CONCLUIDA','CANCELADA')
                 ORDER BY t.id""", (e["id"],)):
-        tid, assunto = outra["id"], outra["subject"]
-        if _assunto(assunto) and _assunto(assunto) == _assunto(e.get("subject")):
-            GR._historico(con, tid, "NOTA", nota=f"O mesmo expediente chegou de novo "
-                          f"({e.get('internal_protocol') or e['id']}); não abri outra tarefa.")
-            return tid
+        por_tarefa.setdefault(linha["id"], set()).add(linha["sha256"])
+    return next((tid for tid, shas in por_tarefa.items() if shas == proprios), None)
+
+
+def _mesmo_assunto(con, e: dict) -> str | None:
+    """Os expedientes de assunto idêntico com tarefa aberta, para o aviso na tarefa."""
+    assunto = _assunto(e.get("subject"))
+    if not assunto:
+        return None
+    iguais = [o["internal_protocol"] or str(o["id"]) for o in banco(con).ler(
+        """SELECT DISTINCT x.id, x.internal_protocol, x.subject FROM tasks t JOIN expedientes x
+               ON x.id = t.linked_expediente_id
+            WHERE t.source_type = 'EXPEDIENTE' AND x.id <> %s
+              AND t.status NOT IN ('CONCLUIDA','CANCELADA')
+            ORDER BY x.id""", (e["id"],)) if _assunto(o["subject"]) == assunto]
+    return ", ".join(iguais[:3]) or None
+
+
+def despachar(con: sqlite3.Connection, e: dict, r: dict, hoje: date) -> int | None:
+    """Cria a tarefa do expediente: a de quem cumpre, se ele pede algo; o item
+    «só ciência — confira» na fila do oficial, se a IA o leu como ciência. A
+    comunicação de óbito confirmada não cria nada: só marca o expediente."""
+    import gestor_rotina as GR
+    if r.get("destino") == DESTINO_OBITO:
+        _marcar_obito(con, e, hoje)
+        return None
+    # O MESMO OFÍCIO CHEGA DUAS VEZES PELO MALOTE (06/10/2026: a DECISÃO-COGEx
+    # 1635/2026 entrou como expedientes 7 e 8). A segunda cópia não abre outra
+    # tarefa: fica anotada na que já existe. Só com os mesmos arquivos.
+    copia_de = _tarefa_do_mesmo_documento(con, e)
+    if copia_de is not None:
+        GR._historico(con, copia_de, "NOTA", nota=f"O mesmo documento chegou de novo "
+                      f"({e.get('internal_protocol') or e['id']}, anexos idênticos); "
+                      "não abri outra tarefa.")
+        return copia_de
+    r["possivel_copia"] = _mesmo_assunto(con, e)
     if r["tipo"] == "CIENCIA":
         return _item_de_ciencia(con, e, r, hoje)
     responsaveis = GR.inferir_responsaveis(con)
@@ -409,7 +570,8 @@ def despachar(con: sqlite3.Connection, e: dict, r: dict, hoje: date) -> int | No
     # cumpre é o setor; a tarefa diz quando é preciso levar ao oficial.
     setor = r["setor"]
     dono, substituto = GR.escolher_responsavel(con, responsaveis, setor)
-    if e.get("source") == "Malote Digital":
+    # Setor que a IA não soube dizer fica na Gestão, mesmo com natureza preenchida.
+    if e.get("source") == "Malote Digital" and not r.get("setor_invalido"):
         import malote_fluxo as FL
         escolhidos = FL.responsaveis(con, r)
         if escolhidos:
@@ -421,7 +583,8 @@ def despachar(con: sqlite3.Connection, e: dict, r: dict, hoje: date) -> int | No
     agora = datetime.now().isoformat(timespec="seconds")
     # SEM EXIGIR EVIDÊNCIA (hotfix de 06/10/2026, ordem do oficial: «tire a regra
     # de exigir evidencia para todas as tarefas»).
-    titulo = f"[Expediente {e.get('internal_protocol') or e['id']}] {e.get('subject') or ''}"
+    titulo = (f"{_etiqueta_de_setor(r)}[Expediente {e.get('internal_protocol') or e['id']}] "
+              f"{e.get('subject') or ''}")
     novo = banco(con).escrever(
         """INSERT INTO tasks (source_type, source_ref, title, description, sector,
                priority, status, start_date, due_date, assigned_user_id, backup_user_id,
@@ -473,7 +636,10 @@ def triar_pendentes(con: sqlite3.Connection, pasta_dados: Path, hoje: date | Non
     bd = banco(con)
     feitos = int(bd.valor("SELECT count(*) FROM ge_triagens WHERE lido_em ILIKE %s",
                           (hoje.isoformat() + "%",)))
-    triados = tarefas = ciencias = erros = 0
+    triados = tarefas = ciencias = obitos = erros = 0
+    # O QUE JÁ TEM LEITURA VÁLIDA NÃO É PENDÊNCIA: a cópia e a comunicação de óbito
+    # ficam em RECEBIDO sem tarefa própria, e o robô acusaria erro em toda rodada.
+    resolvidos: set[int] = set()
     for e in candidatos(con):
         if somente_malote and e.get("source") != "Malote Digital":
             continue
@@ -484,6 +650,7 @@ def triar_pendentes(con: sqlite3.Connection, pasta_dados: Path, hoje: date | Non
         seguro, originais = mascarar(texto)
         if bd.um("""SELECT 1 AS um FROM ge_triagens WHERE expediente_id=%s AND hash_dossie=%s
                        AND erro IS NULL LIMIT 1""", (e["id"], h)):
+            resolvidos.add(e["id"])
             continue
         agora = datetime.now().isoformat(timespec="seconds")
         try:
@@ -491,7 +658,8 @@ def triar_pendentes(con: sqlite3.Connection, pasta_dados: Path, hoje: date | Non
                 raise ValueError("PDF com leitura incompleta: conferir original ou realizar OCR antes da triagem")
             # O REGISTRO DO USO DE IA (LF01): finalidade do catálogo e o
             # expediente — o texto, mascarado ou não, não vai para o registro.
-            resposta = conversar(pasta_dados, provedor=provedor, sistema=INSTRUCAO,
+            resposta = conversar(pasta_dados, provedor=provedor,
+                                 sistema=INSTRUCAO + INSTRUCAO_DO_OBITO,
                                  conversa=[{"tipo": "user", "texto": seguro}],
                                  ferramentas=[], modelo=None,
                                  maximo_de_saida=MAXIMO_DE_SAIDA,
@@ -500,7 +668,9 @@ def triar_pendentes(con: sqlite3.Connection, pasta_dados: Path, hoje: date | Non
                                  usuario="rotina do gestor",
                                  referencia=f"expedientes:{e['id']}", mascarado=True)
             r = desmascarar(_ler_json(resposta.get("texto") or ""), originais)
-            if r["tipo"] != "CIENCIA":
+            if _e_comunicacao_de_obito(con, e, r):
+                r["destino"] = DESTINO_OBITO
+            elif r["tipo"] != "CIENCIA":
                 r["pesquisa"] = pesquisa_nos_indices(con, texto)
         except Exception as erro:                       # noqa: BLE001 — vai à tabela
             _regravar_triagem(bd, e["id"], h, agora, provedor,
@@ -515,6 +685,7 @@ def triar_pendentes(con: sqlite3.Connection, pasta_dados: Path, hoje: date | Non
             if bd.um("SELECT 1 AS um FROM ge_triagens WHERE expediente_id=%s AND hash_dossie=%s AND erro IS NULL", (e["id"], h)) or bd.um(
                     "SELECT id FROM tasks WHERE linked_expediente_id=%s AND status NOT IN ('CONCLUIDA','CANCELADA')", (e["id"],)):
                 con.commit()
+                resolvidos.add(e["id"])
                 continue
             tarefa = despachar(con, e, r, hoje)
             _regravar_triagem(bd, e["id"], h, agora, provedor, modelo=resposta.get("modelo"),
@@ -525,21 +696,36 @@ def triar_pendentes(con: sqlite3.Connection, pasta_dados: Path, hoje: date | Non
             con.rollback()
             raise
         triados += 1
+        resolvidos.add(e["id"])
         # «tarefas» continua sendo as de quem cumpre (o despacho as conta assim);
-        # o item de ciência do oficial conta à parte.
-        if r["tipo"] == "CIENCIA":
+        # o item de ciência do oficial e o óbito marcado contam à parte.
+        if r.get("destino") == DESTINO_OBITO:
+            obitos += 1
+        elif r["tipo"] == "CIENCIA":
             ciencias += 1
         else:
             tarefas += tarefa is not None
-    resultado = {"triados": triados, "tarefas": tarefas, "ciencias": ciencias, "erros": erros,
-                 "provedor": provedor}
+    resultado = {"triados": triados, "tarefas": tarefas, "ciencias": ciencias, "obitos": obitos,
+                 "erros": erros, "provedor": provedor}
     if somente_malote:
-        resultado["pendentes"] = sum(e.get("source") == "Malote Digital" for e in candidatos(con))
+        resultado["pendentes"] = sum(e.get("source") == "Malote Digital" and e["id"] not in resolvidos
+                                     for e in candidatos(con))
     return resultado
 
 
 def para_ciencia(con: sqlite3.Connection) -> list[dict]:
     """As circulares que o agente leu e que só pedem ciência — para o despacho."""
+    return [c for c, r in _lidos_em_recebido(con)
+            if r.get("tipo") == "CIENCIA" and r.get("destino") != DESTINO_OBITO]
+
+
+def para_verificar_obito(con: sqlite3.Connection) -> list[dict]:
+    """As comunicações de óbito à espera da verificação no acervo do RCPN."""
+    return [c for c, r in _lidos_em_recebido(con) if r.get("destino") == DESTINO_OBITO]
+
+
+def _lidos_em_recebido(con: sqlite3.Connection) -> list[tuple[dict, dict]]:
+    """A última leitura válida de cada expediente ainda em RECEBIDO."""
     if not _tem_tabela(con, "ge_triagens"):
         return []
     saida = []
@@ -553,7 +739,6 @@ def para_ciencia(con: sqlite3.Connection) -> list[dict]:
         eid, proto, assunto, resultado = (linha["id"], linha["internal_protocol"],
                                           linha["subject"], linha["resultado_json"])
         r = json.loads(resultado or "{}")
-        if r.get("tipo") == "CIENCIA":
-            saida.append({"id": eid, "protocolo": proto, "assunto": assunto,
-                          "resumo": r.get("resumo") or ""})
+        saida.append(({"id": eid, "protocolo": proto, "assunto": assunto,
+                       "resumo": r.get("resumo") or ""}, r))
     return saida

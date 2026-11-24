@@ -1,0 +1,14 @@
+{# O RELÓGIO DE PRAZO DE UM PEDIDO DO ONR (RI013, 24/11/2026) — `onr_certidoes_prazo.relogio`.
+   Vencido em vermelho, menos de 1 h em laranja; a base normativa no título. #}
+{% macro selo(r) -%}
+{%- if not r -%}<span class="muted">—</span>
+{%- elif r.situacao == 'ENCERRADO' -%}<span class="small muted">{{ r.texto }}</span>
+{%- elif r.situacao == 'AGUARDA_PAGAMENTO' -%}<span class="badge" title="{{ r.base }}">prazo parado</span>
+  <div class="small muted">{{ r.texto }}</div>
+{%- else -%}
+  <span class="badge {{ 'critica' if r.situacao == 'VENCIDO' else ('alta' if r.situacao == 'MENOS_DE_1H' else 'ok') }}" title="{{ r.base }}">
+    {%- if r.situacao == 'VENCIDO' %}vencido{% elif r.situacao == 'MENOS_DE_1H' %}menos de 1 h{% else %}no prazo{% endif -%}
+  </span>
+  <div class="small">{{ r.texto }}</div>
+{%- endif -%}
+{%- endmacro %}

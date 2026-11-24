@@ -2,13 +2,19 @@
 {% block title %}ONR — preparados pelo robô{% endblock %}
 {% block heading %}<h1>ONR — certidões preparadas pelo robô</h1>{% endblock %}
 {% block content %}
+{% import '_onr_prazo.html' as prazo %}
 <div class="actions"><a class="button" href="{{ url_for('onr_certidoes') }}">&larr; Certidões do ONR</a></div>
 
 <section class="card">
-  <p>O robô busca os pedidos às 8h, 11h, 14h e 17h e prepara cada um. Quem está em
+  <p>O robô busca os pedidos {% if agenda_texto %}({{ agenda_texto }}){% else %}de hora em hora no
+    expediente{% endif %} e prepara cada um. Quem está em
     <strong>a revisar e aprovar</strong> espera você: abra, confira o resumo e a prévia, e
-    clique em <strong>Aprovar</strong> — a certidão é emitida nesse clique, com o selo, e o robô
-    a assina com o A3 do oficial e a envia ao ONR na rodada seguinte.</p>
+    clique em <strong>Aprovar</strong> — a certidão é emitida nesse clique, com o selo, e a
+    aprovação pede a rodada na hora: o robô a assina com o A3 do oficial e a envia ao ONR em
+    instantes (com o «pode agir» ligado).</p>
+  <p class="small">A coluna <strong>Prazo</strong> conta em horas de expediente: o inteiro teor com
+    o número da matrícula sai em até 2 h (CNN art. 327); a situação jurídica atualizada, em 1 dia;
+    as demais, em 5 dias, contados do pagamento (Lei 6.015, art. 19, § 10).</p>
   {% if selo_pago_ligado %}
   <p class="notice small">O <strong>selo pago no ONR</strong> está LIGADO: a certidão aprovada aqui sai
     com o selo coberto pelo pagamento feito no ONR (sem lançamento no caixa).</p>
@@ -39,7 +45,7 @@
 <div class="table-wrap">
 <table>
   <thead><tr><th>Protocolo ONR</th><th>Tipo</th><th>Solicitante</th><th>Matrícula / pessoa</th>
-    <th>Status no ONR</th><th>Etapa</th><th>Pedido em</th></tr></thead>
+    <th>Status no ONR</th><th>Etapa</th><th>Pedido em</th><th>Prazo</th></tr></thead>
   <tbody>
   {% for a in lista %}
     <tr>
@@ -52,9 +58,10 @@
         {% if a.motivo %}<div class="small muted">{{ a.motivo }}</div>{% endif %}
         {% if a.erro %}<div class="small">{{ a.erro }}</div>{% endif %}</td>
       <td>{{ (a.data_pedido or '')[:16]|replace('T', ' ') }}</td>
+      <td>{{ prazo.selo(relogios.get(a.pedido_id)) }}</td>
     </tr>
   {% else %}
-    <tr><td colspan="7">Nenhum pedido em aberto preparado pelo robô.</td></tr>
+    <tr><td colspan="8">Nenhum pedido em aberto preparado pelo robô.</td></tr>
   {% endfor %}
   </tbody>
 </table>

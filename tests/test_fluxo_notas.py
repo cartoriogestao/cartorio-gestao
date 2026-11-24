@@ -648,7 +648,11 @@ def _conferir_termo(b, a: dict, caso, texto: str, odt: bytes) -> None:
           "a data por extenso (CN-MA art. 795, § 4º; art. 798, I)")
     exige(CIDADE in texto, "o local do ato (CN-MA art. 798, I)")
     exige(ESCREVENTE in texto, "quem lavrou (CN-MA art. 798, XIII)")
-    for nome, _qualificacao, testemunha in caso.partes:
+    # O autor da herança é parte para a CESDI, mas não comparece nem assina: a
+    # minuta o qualifica no parágrafo dela (`notas_teor.FALECIDO`, 03/11/2026).
+    comparecentes = [p for p in caso.partes
+                     if not p[1].upper().startswith("AUTOR DA HERAN")]
+    for nome, _qualificacao, testemunha in comparecentes:
         exige(nome in texto, f"a parte {nome} (CN-MA art. 798, V)")
         if not testemunha:
             exige(_sem_acento(PESSOAS[nome]).replace(".", "").replace("-", "")
@@ -661,7 +665,7 @@ def _conferir_termo(b, a: dict, caso, texto: str, odt: bytes) -> None:
     exige(re.search(r"encerr|dou fé", texto, re.I) is not None,
           "o encerramento (CN-MA art. 798, XII)")
     linhas = texto.count("_________________________________")
-    exige(linhas >= len(caso.partes) + 1,
+    exige(linhas >= len(comparecentes) + 1,
           f"uma linha de assinatura por comparecente e a de quem lavrou "
           f"(CN-MA art. 798, XIII): {linhas}")
     exige(a["selo"] in texto, "o número do selo no corpo do ato (CN-MA art. 131)")
@@ -813,6 +817,14 @@ COMPRA = ("JOANA EXEMPLO DA SILVA", "OUTORGADO", False)
 SEGUNDA = ("JOANA EXEMPLO DA SILVA", "OUTORGANTE", False)
 TESTEMUNHAS = [("PAULO EXEMPLO TESTEMUNHA", "TESTEMUNHA", True),
                ("LUCIA EXEMPLO TESTEMUNHA", "TESTEMUNHA", True)]
+# A sucessão não lavra sem o autor da herança (pedido do oficial, 23/11/2026),
+# e a CESDI não aceita OUTORGANTE no inventário: o balcão qualifica quem herda,
+# quem deixou a herança e o advogado que assiste (Res. CNJ 35, art. 8º).
+HERDEIRA = ("ANA EXEMPLO HERDEIRA", "HERDEIRA", False)
+FALECIDO = ("MARIO EXEMPLO DOS SANTOS", "AUTOR DA HERANÇA", False)
+ADVOGADO = ("CARLOS EXEMPLO ADVOGADO", "ADVOGADO", False)
+INVENTARIANTE = ("ANA EXEMPLO HERDEIRA", "INVENTARIANTE", False)
+SUCESSAO = [HERDEIRA, FALECIDO, ADVOGADO]
 CEM_MIL = 10_000_000          # R$ 100.000,00, em centavos
 
 
@@ -831,12 +843,14 @@ CASOS_DE_LIVRO = [
                 "NT-ESC-USUFRUTO")],
     Caso("NT-ESC-PERMUTA", "ESCRITURA", [VENDE, SEGUNDA], valor=CEM_MIL,
          item="FAIXA"),
-    *[Caso(m, "ESCRITURA", [VENDE, SEGUNDA], valor=CEM_MIL, item="FAIXA")
+    *[Caso(m, "ESCRITURA", SUCESSAO, valor=CEM_MIL, item="FAIXA")
       for m in ("NT-ESC-INVENTARIO-PARTILHA", "NT-ESC-SOBREPARTILHA",
                 "NT-ESC-PARTILHA-ADJUDICACAO")],
     # Escrituras sem valor econômico: 13.2.
+    Caso("NT-ESC-NOMEACAO-INVENTARIANTE", "ESCRITURA",
+         [INVENTARIANTE, FALECIDO, ADVOGADO], valor=0),
     *[Caso(m, "ESCRITURA", [VENDE, SEGUNDA], valor=0)
-      for m in ("NT-ESC-NOMEACAO-INVENTARIANTE", "NT-ESC-DIVORCIO",
+      for m in ("NT-ESC-DIVORCIO",
                 "NT-ESC-SEPARACAO", "NT-ESC-CONVERSAO-DIVORCIO",
                 "NT-ESC-RESTABELECIMENTO", "NT-ESC-UNIAO-ESTAVEL",
                 "NT-ESC-DISSOLUCAO-UNIAO-ESTAVEL", "NT-ESC-QUITACAO",

@@ -596,6 +596,7 @@
         <option value="BOLETO">Boleto</option>
         <option value="DINHEIRO">Dinheiro</option>
         <option value="PG_ONR">PG feito pela ONR</option>
+        <option value="PG_CRC">PG feito pela CRC</option>
       </select></label>
     <button class="primary">Cobrar o emolumento devido no meu caixa</button>
     <p class="small">Só quando o apresentante pagou. Entra no caixa de quem clica. Não sela.
@@ -779,7 +780,8 @@
                                ('PIX', 'por PIX'),
                                ('TRANSFERENCIA', 'por transferência bancária'),
                                ('BOLETO', 'por boleto'), ('CARTAO', 'por cartão'),
-                               ('PG_ONR', 'PG feito pela ONR')) %}
+                               ('PG_ONR', 'PG feito pela ONR'),
+                               ('PG_CRC', 'PG feito pela CRC')) %}
           {% if k == 'PIX' and not pix_lavrar %}
           <option value="PIX" disabled>por PIX — só com o crédito conferido (registre em «Pagamento por PIX»)</option>
           {% else %}

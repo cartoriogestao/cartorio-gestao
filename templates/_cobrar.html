@@ -128,6 +128,7 @@
           <option value="CARTAO">Cartão</option>
           <option value="DEPOSITO_PREVIO">Depósito prévio</option>
           <option value="PG_ONR">PG feito pela ONR</option>
+          <option value="PG_CRC">PG feito pela CRC</option>
         </select></label>
       {% endif %}
     </div>
@@ -227,6 +228,7 @@
         <option value="CARTAO"{% if forma_escolhida == 'CARTAO' %} selected{% endif %}>Cartão</option>
         <option value="DEPOSITO_PREVIO"{% if forma_escolhida == 'DEPOSITO_PREVIO' %} selected{% endif %}>Depósito prévio</option>
         <option value="PG_ONR"{% if forma_escolhida == 'PG_ONR' %} selected{% endif %}>PG feito pela ONR</option>
+        <option value="PG_CRC"{% if forma_escolhida == 'PG_CRC' %} selected{% endif %}>PG feito pela CRC</option>
       </select></label>
     <p style="grid-column:1/-1"><small>Vai para o caixa
       <strong>{{ caixa.id }}</strong>, aberto em {{ caixa.data }}. O recibo se emite

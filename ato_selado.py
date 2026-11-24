@@ -471,6 +471,64 @@ def itens_selo_averbacao_rcpn(
     return itens
 
 
+# Retificação e anotação RCPN: o selo é o do PRÓPRIO ato (14.10 / 14.7), e não
+# o quadro inteiro do protocolo. Medido em 19/11/2026: a retificação sem item
+# marcado reservou 14.5.1, 14.4.1, 14.10 e 14.12×5 — oito selos pelo caminho
+# `/retificacao`, a certidão e a averbação inclusive. Em 23/11 a anotação
+# reservou 14.10 e 13.30×3, sem nenhum 14.7. O que não é do ato fica no
+# protocolo para o ato a que pertence (a certidão, a averbação).
+CODIGO_DO_LANCAMENTO_RCPN = {"RETIFICACAO": "14.10", "ANOTACAO": "14.7"}
+
+
+def itens_selo_do_lancamento_rcpn(tipo: Any, itens: list | None) -> list:
+    """Os itens do protocolo que a retificação/anotação RCPN sela. Só calcula.
+
+    Fica o código do ato e os subitens dele (`14.10.1`, a retificação sem
+    cobrança). Tipo que não é retificação nem anotação passa sem mudança.
+    Lista vazia quer dizer «o protocolo não tem o item deste ato» — quem
+    chama pede pelo item da lei, e a trava do selo pago diz o que falta.
+    """
+    codigo = CODIGO_DO_LANCAMENTO_RCPN.get(str(tipo or "").strip().upper())
+    if not codigo:
+        return list(itens or [])
+    return [c for c in (itens or [])
+            if c and (str(c).strip() == codigo
+                      or str(c).strip().startswith(codigo + "."))]
+
+
+# A FOLHA DO SELO TEM DE 1 A 3 ALGARISMOS — medido no Tribunal: «O tamanho do
+# campo "dadosSelo.folha" deve estar entre 1 e 3» (averbações de CPF recusadas
+# de 12/11 a 23/11/2026). O acervo importado guarda a folha como no livro
+# físico, com o verso («137v», «082v», «82v e 83»), e ela ia crua. O número da
+# folha é o que a matrícula também traz (`rc_matricula.partes`, sem o verso).
+_FOLHA_NO_COMECO = re.compile(r"\s*(\d+)")
+
+
+def folha_do_selo(folha: Any) -> str:
+    """A folha como o selador aceita: só o número, sem zeros à esquerda e sem
+    o verso. Só calcula. Devolve "" quando não há número de 1 a 999."""
+    achado = _FOLHA_NO_COMECO.match(str(folha if folha is not None else ""))
+    if not achado:
+        return ""
+    numero = int(achado.group(1))
+    return str(numero) if 1 <= numero <= 999 else ""
+
+
+def _folha_para_o_envelope(folha: Any) -> str:
+    """`folha_do_selo` para os envelopes do civil. Recusa com frase de balcão a
+    folha escrita que não vira número — antes de ela ir ao Tribunal."""
+    escrita = str(folha if folha is not None else "").strip()
+    if not escrita:
+        return ""
+    numero = folha_do_selo(escrita)
+    if not numero:
+        raise AtoError(
+            f"A folha «{escrita}» do assento não cabe no selo: o Tribunal "
+            f"aceita só o número da folha, de 1 a 3 algarismos. Corrija a "
+            f"folha na ficha do assento e peça o selo de novo.")
+    return numero
+
+
 MOTIVO_DA_ISENCAO: dict[str, str] = {
     "14.a": "REGISTRO DE NASCIMENTO",
     "14.c": "REGISTRO DE ÓBITO",
@@ -571,6 +629,7 @@ def envelope_do_civil(*, especie: Any, tipo: Any, escrevente: Any, livro: Any,
             f"O ato fica sem selo até alguém medir qual é.")
     codigo, _procedencia = achado
 
+    folha = _folha_para_o_envelope(folha)
     faltando = [nome for nome, valor in
                 (("o escrevente", escrevente), ("o livro", livro),
                  ("a folha", folha), ("o termo", termo),
@@ -586,7 +645,7 @@ def envelope_do_civil(*, especie: Any, tipo: Any, escrevente: Any, livro: Any,
     dados_selo: dict[str, Any] = {
         "escrevente": str(escrevente).strip(),
         "livro": str(livro).strip(),
-        "folha": str(folha).strip(),
+        "folha": folha,
         "termo": str(termo).strip(),
         "versaoTabelaDeCustas": str(versao_tabela).strip(),
     }
@@ -763,6 +822,7 @@ def envelope_da_averbacao_civil(*, escrevente: Any, livro: Any, folha: Any,
             "A averbação do Registro Civil não tem item da tabela de custas "
             "conhecido (14.4.1). O ato fica sem selo.")
 
+    folha = _folha_para_o_envelope(folha)
     faltando = [nome for nome, valor in
                 (("o escrevente", escrevente), ("o livro", livro),
                  ("a folha", folha), ("o termo", termo),
@@ -794,7 +854,7 @@ def envelope_da_averbacao_civil(*, escrevente: Any, livro: Any, folha: Any,
     dados_selo: dict[str, Any] = {
         "escrevente": str(escrevente).strip(),
         "livro": str(livro).strip(),
-        "folha": str(folha).strip(),
+        "folha": folha,
         "termo": str(termo).strip(),
         "versaoTabelaDeCustas": str(versao_tabela).strip(),
     }
@@ -834,6 +894,137 @@ def envelope_da_averbacao_civil(*, escrevente: Any, livro: Any, folha: Any,
     if selo_retificacao and str(selo_retificacao).strip():
         envelope["seloRetificacao"] = str(selo_retificacao).strip()
     return envelope
+
+
+# ------------------------------- o envelope do selo da anotação do civil
+#
+# Schema oficial `DadosSeloAnotacaoRegistroCivil` (selador_reais.json):
+#   anotacao, codigoAto, dadosSelo  — required
+#
+# O envelope genérico `envelope_do_civil` manda `codigoTipoAtoRegistro` e
+# `nomeParte` — certo para registro/certidão, ERRADO para
+# `/selo/civil/{especie}/anotacao`. O Tribunal recusa com «campo anotacao
+# obrigatório» e «campo codigoAto obrigatório» (medido 23/11/2026).
+#
+# Sem teto de tamanho inventado para `anotacao`: o schema oficial só marca
+# required/optional. O teto 1..500 foi medido só para `alteracao` da averbação.
+
+def envelope_da_anotacao_civil(*, escrevente: Any, livro: Any, folha: Any,
+                               termo: Any, versao_tabela: Any,
+                               anotacao: Any, codigo_tj: Any = None,
+                               isento: bool = False,
+                               motivo_isencao: Any = None) -> dict:
+    """Envelope `DadosSeloAnotacaoRegistroCivil`. Só calcula.
+
+    NÃO FALA COM A REDE E NÃO GRAVA. Recusa com frase de balcão o que falta.
+    Não inventa redação: o teor da anotação vem do chamador.
+    """
+    codigo = str(codigo_tj or CODIGO_DO_ATO_DO_CIVIL["ANOTACAO"][0]).strip()
+    if not codigo:
+        raise AtoError(
+            "A anotação do Registro Civil não tem item da tabela de custas "
+            "conhecido (14.7). O ato fica sem selo.")
+
+    folha = _folha_para_o_envelope(folha)
+    faltando = [nome for nome, valor in
+                (("o escrevente", escrevente), ("o livro", livro),
+                 ("a folha", folha), ("o termo", termo),
+                 ("a versão da tabela de custas", versao_tabela),
+                 ("o teor da anotação (anotacao)", anotacao))
+                if not str(valor or "").strip()]
+    if faltando:
+        raise AtoError(
+            f"O selo da anotação do Registro Civil não sai sem "
+            f"{', '.join(faltando)}.")
+
+    dados_selo: dict[str, Any] = {
+        "escrevente": str(escrevente).strip(),
+        "livro": str(livro).strip(),
+        "folha": folha,
+        "termo": str(termo).strip(),
+        "versaoTabelaDeCustas": str(versao_tabela).strip(),
+    }
+    motivo = MOTIVO_DA_ISENCAO.get(codigo)
+    if motivo:
+        dados_selo["isentoGratuito"] = "ISENTO"
+        dados_selo["motivoIsentoGratuito"] = motivo
+    elif isento:
+        motivo_escrito = str(motivo_isencao or "").strip()
+        if not motivo_escrito:
+            raise AtoError(
+                "Ato gratuito / isento precisa do motivo escrito — é ele que a "
+                "conferência do Tribunal lê no selo.")
+        dados_selo["isentoGratuito"] = "GRATUITO"
+        dados_selo["motivoIsentoGratuito"] = motivo_escrito.upper()
+
+    return {
+        "codigoAto": codigo,
+        "anotacao": str(anotacao).strip(),
+        "dadosSelo": dados_selo,
+    }
+
+
+# ------------------------------- o envelope do selo da retificação do civil
+#
+# Schema oficial `DadosSeloRetificacaoRegistroCivil` (selador_reais.json):
+#   retificacao, codigoAto, dadosSelo  — required
+#
+# Mesmo defeito da anotação: o envelope genérico manda `codigoTipoAtoRegistro`
+# em vez de `codigoAto` + `retificacao`. Caminho `/retificacao`, item 14.10.
+
+def envelope_da_retificacao_civil(*, escrevente: Any, livro: Any, folha: Any,
+                                  termo: Any, versao_tabela: Any,
+                                  retificacao: Any, codigo_tj: Any = None,
+                                  isento: bool = False,
+                                  motivo_isencao: Any = None) -> dict:
+    """Envelope `DadosSeloRetificacaoRegistroCivil`. Só calcula.
+
+    NÃO FALA COM A REDE E NÃO GRAVA. Recusa com frase de balcão o que falta.
+    Não inventa redação: o teor da retificação vem do chamador.
+    """
+    codigo = str(codigo_tj or CODIGO_DO_ATO_DO_CIVIL["RETIFICACAO"][0]).strip()
+    if not codigo:
+        raise AtoError(
+            "A retificação do Registro Civil não tem item da tabela de custas "
+            "conhecido (14.10). O ato fica sem selo.")
+
+    folha = _folha_para_o_envelope(folha)
+    faltando = [nome for nome, valor in
+                (("o escrevente", escrevente), ("o livro", livro),
+                 ("a folha", folha), ("o termo", termo),
+                 ("a versão da tabela de custas", versao_tabela),
+                 ("o teor da retificação (retificacao)", retificacao))
+                if not str(valor or "").strip()]
+    if faltando:
+        raise AtoError(
+            f"O selo da retificação do Registro Civil não sai sem "
+            f"{', '.join(faltando)}.")
+
+    dados_selo: dict[str, Any] = {
+        "escrevente": str(escrevente).strip(),
+        "livro": str(livro).strip(),
+        "folha": folha,
+        "termo": str(termo).strip(),
+        "versaoTabelaDeCustas": str(versao_tabela).strip(),
+    }
+    motivo = MOTIVO_DA_ISENCAO.get(codigo)
+    if motivo:
+        dados_selo["isentoGratuito"] = "ISENTO"
+        dados_selo["motivoIsentoGratuito"] = motivo
+    elif isento:
+        motivo_escrito = str(motivo_isencao or "").strip()
+        if not motivo_escrito:
+            raise AtoError(
+                "Ato gratuito / isento precisa do motivo escrito — é ele que a "
+                "conferência do Tribunal lê no selo.")
+        dados_selo["isentoGratuito"] = "GRATUITO"
+        dados_selo["motivoIsentoGratuito"] = motivo_escrito.upper()
+
+    return {
+        "codigoAto": codigo,
+        "retificacao": str(retificacao).strip(),
+        "dadosSelo": dados_selo,
+    }
 
 
 # ------------------------------- o envelope do selo da habilitação de casamento
@@ -5653,6 +5844,15 @@ def _tirar_aguardando(con, *, tabela: Any, ato_id: Any) -> None:
     banco(con).escrever(
         "DELETE FROM cx_selo_aguardando WHERE tabela = %s AND ato_id = %s",
         (tabela, int(ato_id)))
+
+
+def tirar_do_aguardando(con, *, tabela: Any, ato_id: Any) -> None:
+    """O ato que a tela desfez sai da fila «aguardando cobertura». ESCREVE.
+
+    Sem isto a marca sobrava na tabela de um ato que não existe — a lista da
+    tela já o pulava, mas quem lê a tabela o contava como pendente (P006).
+    """
+    _tirar_aguardando(con, tabela=tabela, ato_id=ato_id)
 
 
 def aguardando_cobertura(con, limite: int = 200) -> list[dict]:

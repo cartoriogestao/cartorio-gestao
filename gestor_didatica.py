@@ -111,6 +111,15 @@ GUIA: dict[str, tuple[str, list[str]]] = {
          "No ato, use «Selar este ato» (no RI, o botão fica na linha do ato).",
          "Se o ato for isento, marque a isenção COM o motivo — isento sem motivo "
          "continua na lista."]),
+    "PROTESTO_ATO_SEM_SELO": (
+        "Todo ato de protesto que sela (intimação, protesto, pagamento, "
+        "desistência, retirada, cancelamento) leva selo de fiscalização. Os "
+        "atos abaixo estão lavrados, vivos, sem selo e sem cobertura no caixa "
+        "(auditoria PR003, achado P4). O robô não sela: o selo é de quem lavra.",
+        ["Clique em «Onde abrir» do item: abre a ficha do título.",
+         "Na ficha, emita o selo que faltou; as intimações em lote saem pela "
+         "lista das intimações sem selo.",
+         "Desistência com emolumento devido: receba no caixa e sele na ficha."]),
     "SELO_CANCELADO_LOCAL": (
         "O selo foi cancelado no sistema, mas o cancelamento no sistema não "
         "cancela no Tribunal: no Portal do Selo ele continua como usado.",

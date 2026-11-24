@@ -29,7 +29,9 @@ mkdir -p "$PASTA" "$AGENTES" "$PASTA/logs"
 chmod 700 "$PASTA"
 
 echo "1/4 código e Python"
-rsync -a --delete --exclude .git --exclude venv --exclude '__pycache__' "$CODIGO_ORIGEM/" "$PASTA/sistema/"
+# A chave de atualização é desta instalação e não vem do repositório: o --delete a apagaria.
+rsync -a --delete --exclude .git --exclude venv --exclude '__pycache__' \
+  --exclude chaves_de_atualizacao.json "$CODIGO_ORIGEM/" "$PASTA/sistema/"
 [ -x "$PASTA/venv/bin/python" ] || "$PY" -m venv "$PASTA/venv"
 "$PASTA/venv/bin/pip" install -q --upgrade pip
 "$PASTA/venv/bin/pip" install -q -r "$PASTA/sistema/requirements.txt"

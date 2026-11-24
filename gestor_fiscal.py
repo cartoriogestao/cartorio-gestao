@@ -40,9 +40,10 @@ O SALDO DO APARELHO É O QUE PEGA O SELO QUE NÃO PASSOU PELO SISTEMA
     máquina). Medido em 09/10/2026 nos 549 selos desde o corte: as quedas são
     múltiplos de R$ 0,45, sem nenhuma recarga no período, e somaram R$ 165,60 a
     mais que o explicado — da ordem de 368 selos. Quem os tirou o agente NÃO
-    sabe: o Protesto ainda é praticado no E-Ofício (gestor_protesto), mas a
-    leitura ao vivo do E-Ofício não foi autorizada nesta passada. Por isso o
-    achado diz «a explicar», e não «emitido indevidamente».
+    sabe: em 09/10/2026 o Protesto ainda era praticado no E-Ofício, que selava
+    no mesmo aparelho (desligado em 26/10/2026 — a frase do achado diz isso
+    conforme o mês, `_quem_tirou_por_fora`). Por isso o achado diz «a
+    explicar», e não «emitido indevidamente».
 
     O CUSTO DE CADA SELO NÃO SE SUPÕE: MEDE-SE NO PRÓPRIO PERÍODO. É a queda
     mais frequente entre dois selos seguidos da mesma classe (pago, isento). Se
@@ -548,10 +549,34 @@ def _regras_do_saldo(con, hoje: date) -> list[dict]:
         f"{m['selos']} selo(s) saíram do aparelho em {mes[5:]}/{mes[:4]} sem passar pelo "
         f"sistema (R$ {GC._brl(m['valor'])} de saldo)",
         f"Em {m['dias']} dia(s). Preço medido de um selo: R$ "
-        f"{GC._brl(s['custo']['pago'])}. Quem os tirou não se sabe daqui — o Protesto ainda "
-        "é praticado no sistema antigo. A lista por dia está no relatório fiscal.",
+        f"{GC._brl(s['custo']['pago'])}. {_quem_tirou_por_fora(mes)} A lista por dia está "
+        "no relatório fiscal.",
         None, "saldo devolvido pelo selador a cada selo")
         for mes, m in sorted(por_mes.items()) if m["selos"]]
+
+
+#: O dia em que o E-Ofício foi desligado (`cenprot_pendencias`). Até ele o
+#: Protesto também selava pelo sistema antigo, no mesmo aparelho; depois dele,
+#: não há programa da casa que explique o selo tirado por fora.
+EOFICIO_DESLIGADO = "2026-10-26"
+
+
+def _quem_tirou_por_fora(mes: str) -> str:
+    """A frase de quem pode ter tirado o selo por fora naquele mês (`AAAA-MM`).
+
+    ATÉ 20/11/2026 ela dizia, para todo mês, que o Protesto continuava no
+    sistema antigo — e o E-Ofício foi desligado em 26/10/2026 (auditoria PR003,
+    achado P16): em novembro a frase mandava procurar onde não há mais nada."""
+    if mes < EOFICIO_DESLIGADO[:7]:
+        return ("Quem os tirou não se sabe daqui: neste mês o Protesto ainda selava "
+                "pelo E-Ofício, no mesmo aparelho.")
+    if mes == EOFICIO_DESLIGADO[:7]:
+        return ("Quem os tirou não se sabe daqui: o Protesto selou pelo E-Ofício, no "
+                "mesmo aparelho, até ele ser desligado em 26/10/2026; o que saiu depois "
+                "disso foi outro programa ou outra máquina.")
+    return ("Quem os tirou não se sabe daqui, e não é o E-Ofício, desligado em "
+            "26/10/2026: foi outro programa ou outra máquina usando o selador. Confira "
+            "no Portal do Selo de que atribuição são esses selos.")
 
 
 def _isentos_do_dia(bd, hoje: date) -> list[dict]:
@@ -696,8 +721,9 @@ def relatorio_html(con, ano: int, mes: int, hoje: date) -> str:
             f"no período (pares com recarga não entram na conta).{fora}</small></p>"
             f"<table><tr><th>Dia</th><th>Selos por fora</th><th>Saldo a mais</th></tr>{dias}</table>"
             "<p><small>«Por fora» quer dizer: o saldo do aparelho caiu mais do que os selos do "
-            "sistema explicam. Quem os tirou o agente não sabe — o Protesto ainda é praticado "
-            "no sistema antigo, que sela no mesmo aparelho.</small></p>")
+            "sistema explicam. Quem os tirou o agente não sabe. Até 26/10/2026 o Protesto "
+            "também selava pelo E-Ofício, no mesmo aparelho; depois disso o E-Ofício está "
+            "desligado, e o que sai por fora é outro programa ou outra máquina.</small></p>")
     return f"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Fiscal {mes:02d}/{ano}</title><style>

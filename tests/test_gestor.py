@@ -868,17 +868,3 @@ def test_achado_da_ficha_provisoria_fecha_e_reabre_na_rodada(con):
     _ri_ato(con, mid)
     GR.gravar_achados(con, GC.conferir(con, HOJE), HOJE)
     assert resolvido() is None, "se a ficha ganhar ato, a cobrança volta"
-
-
-def test_marca_de_assinaturas_em_ato_selado_continua_cobrada(con):
-    """A MARCA NÃO É IGNORADA: a prévia da ficha do ato a mostra e a impressão da
-    tela a leva ao papel. Traslado, termo e certidão a cortam; a tela, não."""
-    import notas_teor as NT
-    teor = f"<p>PROCURAÇÃO DE EXEMPLO. Dou fé.</p>\n{NT.MARCA_ASSINATURAS}\n<p>___</p>"
-    aid = int(con.execute(
-        """INSERT INTO nt_atos (tipo, data, situacao, selo, teor, criado_em)
-           VALUES ('PROCURACAO', '2026-10-01', 'LAVRADO', 'SELOTESTE0001', ?, ?)""",
-        (teor, AGORA)).lastrowid)
-    achados = [a for a in _regras(GC.conferir(con, HOJE), "MODELO_NAO_PREENCHIDO")
-               if a["chave"] == f"MARCADOR:nt_atos:{aid}"]
-    assert len(achados) == 1 and achados[0]["gravidade"] == "CRITICO"

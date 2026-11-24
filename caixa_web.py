@@ -1224,13 +1224,38 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         p = q1("SELECT * FROM cx_protocolos WHERE id=%s", (protocolo_id,))
         if not p:
             abort(404)
-        itens = [i for i in q(
+        # O ITEM PAGO PELO DEPÓSITO PRÉVIO TAMBÉM ENTRA (F005, 24/11/2026). O
+        # JOIN no lançamento deixava de fora o que a cobrança da Parcela, a do
+        # Inter ou o «usar» do depósito quitaram — o cliente que pagou parte
+        # em dinheiro e parte no cartão saía com dois papéis, e nenhum era o
+        # recibo do ato. O pago pelo depósito não tem lançamento: a forma e o
+        # valor de cada parte vêm dos usos do depósito (`partes_do_item`).
+        itens = [dict(i) for i in q(
             """SELECT a.*, l.forma_pagamento, l.pagador, l.pagador_documento,
                       l.recibo_id, l.data AS registrado_em, l.data_pagamento
                  FROM cx_protocolo_atos a
-                 JOIN cx_lancamentos l ON l.id = a.lancamento_id
-                WHERE a.protocolo_id=%s AND COALESCE(l.excluido, 0) = 0
+                 LEFT JOIN cx_lancamentos l ON l.id = a.lancamento_id
+                WHERE a.protocolo_id=%s
+                  AND ((l.id IS NOT NULL AND COALESCE(l.excluido, 0) = 0)
+                       OR (a.lancamento_id IS NULL AND COALESCE(a.quitado, 0) = 1
+                           AND starts_with(COALESCE(a.quitado_por, ''),
+                                           'DEPÓSITO PRÉVIO')))
                 ORDER BY a.id""", (protocolo_id,))]
+        pelo_deposito = [i for i in itens if not i["lancamento_id"]]
+        if pelo_deposito:
+            with db.connect() as con:
+                for i in pelo_deposito:
+                    partes = DEP.partes_do_item(con, i["id"])
+                    i["formas"] = [{"forma": pt["rotulo"], "valor": reais(pt["valor"]),
+                                    "deposito": pt["numero"]} for pt in partes]
+                    i["forma_pagamento"] = "DEPOSITO_PREVIO"
+                    i["registrado_em"] = str(i["quitado_em"] or "")[:10] or None
+                    i["pagador"] = next((pt["depositante"] for pt in partes
+                                         if pt["depositante"]), None)
+                    i["pagador_documento"] = next(
+                        (pt["depositante_documento"] for pt in partes
+                         if pt["depositante_documento"]), None)
+                    i["_partes"] = partes
         if not itens:
             flash("Nenhum serviço deste protocolo entrou no caixa ainda. "
                   "Recibo é prova de pagamento — quite os itens primeiro.",
@@ -1246,7 +1271,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                    or "Não informado")
         documento = (itens[0]["pagador_documento"]
                      or p["interessado_documento"])
-        forma = FORMAS_PAGAMENTO.get(itens[0]["forma_pagamento"] or "", "")
+        # TODAS AS FORMAS, COM O VALOR DE CADA UMA (F005): «Dinheiro R$ 400,00;
+        # Cartão (Parcela Express) R$ 600,00». A forma do primeiro item só
+        # dizia a verdade quando o protocolo inteiro foi pago de um jeito — e,
+        # nesse caso, o recibo continua dizendo só a forma, como antes.
+        por_forma: dict[str, int] = {}
+        for i in itens:
+            if i["lancamento_id"]:
+                rotulo = FORMAS_PAGAMENTO.get(i["forma_pagamento"] or "", "")
+                por_forma[rotulo] = por_forma.get(rotulo, 0) + centavos(i["valor_total"])
+            else:
+                for pt in i.pop("_partes"):
+                    por_forma[pt["rotulo"]] = por_forma.get(pt["rotulo"], 0) + pt["valor"]
+        if len(por_forma) == 1:
+            forma = next(iter(por_forma))
+        else:
+            forma = "; ".join(f"{rotulo or 'Forma não informada'} R$ {reais(valor)}"
+                              for rotulo, valor in por_forma.items())
 
         with db.transaction() as con:
             bd = banco(con)
@@ -1257,8 +1298,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             com_recibo = {r["id"] for r in bd.ler(
                 """SELECT id, recibo_id FROM cx_lancamentos
                     WHERE id = ANY(%s) ORDER BY id FOR UPDATE""",
-                ([int(i["lancamento_id"]) for i in itens],)) if r["recibo_id"]}
-            ja = [i for i in itens if i["lancamento_id"] in com_recibo]
+                ([int(i["lancamento_id"]) for i in itens if i["lancamento_id"]],))
+                if r["recibo_id"]}
+            # O item pago pelo depósito leva a marca nele mesmo (não tem
+            # lançamento), conferida do mesmo jeito: presa, depois da trava.
+            itens_com_recibo = {r["id"] for r in bd.ler(
+                """SELECT id, recibo_id FROM cx_protocolo_atos
+                    WHERE id = ANY(%s) ORDER BY id FOR UPDATE""",
+                ([int(i["id"]) for i in pelo_deposito],)) if r["recibo_id"]}
+            ja = [i for i in itens if i["lancamento_id"] in com_recibo
+                  or (not i["lancamento_id"] and i["id"] in itens_com_recibo)]
             if ja:
                 flash(f"{len(ja)} serviço(s) deste protocolo já estão num recibo. "
                       f"Dois recibos do mesmo dinheiro é o que ninguém consegue "
@@ -1296,8 +1345,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # dinheiro sairia num segundo recibo — e dois recibos do mesmo
             # pagamento é o que ninguém consegue conferir depois.
             for i in itens:
-                bd.escrever("UPDATE cx_lancamentos SET recibo_id=%s WHERE id=%s",
-                            (recibo_id, i["lancamento_id"]))
+                if i["lancamento_id"]:
+                    bd.escrever("UPDATE cx_lancamentos SET recibo_id=%s WHERE id=%s",
+                                (recibo_id, i["lancamento_id"]))
+                else:
+                    bd.escrever("UPDATE cx_protocolo_atos SET recibo_id=%s WHERE id=%s",
+                                (recibo_id, i["id"]))
             # O código de acompanhamento nasce no POST, como no recibo do
             # lançamento — a impressão é o GET seguinte.
             ACOMP.codigo_para_o_papel(con, protocolo_id)
@@ -1769,6 +1822,37 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 exigencias=exigencias_abertas, tarefas=tarefas_do_protocolo,
                 lancamentos=lanc, acompanhamento=acompanhamento)
         quitados = sum(1 for a in atos if a["quitado"])
+        # O PAGAMENTO QUE AINDA NÃO FECHA (F005). O dinheiro do cliente que
+        # está nos depósitos do protocolo — a parte em espécie ou Pix, ou o
+        # que a cobrança trouxe a menos — não quita item enquanto a soma não
+        # fecha, e a ficha diz quanto falta em vez de deixar só o saldo.
+        with db.connect() as con:
+            abertos = [a for a in atos if not a["quitado"] and not a.get("gratuito")]
+            pagos = DEP.pago_dos_itens(con, [a["id"] for a in abertos])
+            saldo_dos_depositos = DEP.saldo_do_protocolo(con, protocolo_id)
+            # As formas que pagaram cada item pelo depósito — é por elas que o
+            # oficial estorna UMA parte (`estornar_parte`).
+            if usuario_papel() in ("ADMIN", "MANAGER"):
+                for a in atos:
+                    if (str(a.get("quitado_por") or "").startswith("DEPÓSITO PRÉVIO")
+                            or pagos.get(int(a["id"]))):
+                        a["partes"] = [{"deposito_id": pt["deposito_id"],
+                                        "numero": pt["numero"], "rotulo": pt["rotulo"],
+                                        "valor": reais(pt["valor"])}
+                                       for pt in DEP.partes_do_item(con, a["id"])
+                                       if pt["valor"] > 0]
+        for a in abertos:
+            a["pago_parcial"] = pagos.get(int(a["id"]), 0)
+            a["falta_parcial"] = max(0, centavos(a["valor_total"]) - a["pago_parcial"])
+            a["pago_parcial_rs"] = reais(a["pago_parcial"])
+            a["falta_parcial_rs"] = reais(a["falta_parcial"])
+        devido = sum(a["falta_parcial"] for a in abertos)
+        parcial = None
+        if abertos and (saldo_dos_depositos or any(a["pago_parcial"] for a in abertos)) \
+                and devido > saldo_dos_depositos:
+            parcial = {"falta": reais(devido - saldo_dos_depositos),
+                       "nos_depositos": reais(saldo_dos_depositos),
+                       "pago_nos_itens": reais(sum(a["pago_parcial"] for a in abertos))}
 
         def _pagamento_integrado() -> str:
             import cobranca as CB
@@ -1808,6 +1892,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                prenotacoes_ri=prenotacoes_ri,
                                acima_do_teto=acima_do_teto,
                                acompanhamento=acompanhamento,
+                               parcial=parcial,
                                pagamento_integrado=_pagamento_integrado())
 
     # ---------------------------------------- o cálculo que vira serviço
@@ -2688,6 +2773,43 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                           f"de novo.", "danger")
             return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
 
+        if acao == "estornar_parte":
+            # O ESTORNO DE UMA DAS FORMAS (F005). O item pago por dois depósitos
+            # — o dinheiro do balcão e a Parcela, por exemplo — não se reabre
+            # pelo «reabrir»: o valor ficaria gasto no depósito. Aqui a parte
+            # de UM depósito volta ao saldo dele, com o rastro, e o item fica
+            # a pagar; a outra parte continua paga. A devolução ao cliente, se
+            # houver, é a do depósito (Caixa → Depósito prévio → devolver).
+            if usuario_papel() not in ("ADMIN", "MANAGER"):
+                flash("Estornar a parte de um depósito é do oficial ou do gerente.",
+                      "danger")
+                return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
+            item_id = numero_digitado(request.form.get("item_id"))
+            deposito_id = numero_digitado(request.form.get("deposito_id"))
+            motivo = (request.form.get("motivo") or "").strip()
+            if item_id is None or deposito_id is None:
+                flash("Escolha o item e o depósito da parte a estornar.", "danger")
+                return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
+            try:
+                with db.transaction() as con:
+                    dono = banco(con).valor(
+                        "SELECT protocolo_id FROM cx_protocolo_atos WHERE id=%s",
+                        (item_id,))
+                    if dono is None or int(dono) != int(protocolo_id):
+                        raise ValueError("Este item não é deste protocolo.")
+                    feito = DEP.estornar_parte(con, item_id, deposito_id,
+                                               agora=db.now(), quem=usuario_nome(),
+                                               motivo=motivo)
+            except ValueError as erro:
+                flash(str(erro), "danger")
+                return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
+            audit("DEPOSITO_PREVIO_PARTE_ESTORNADA", "PROTOCOLO", protocolo_id,
+                  {"item": item_id, "deposito": deposito_id, "motivo": motivo,
+                   "valor": reais(feito["valor_centavos"])})
+            flash(f"R$ {reais(feito['valor_centavos'])} voltaram ao depósito. O item "
+                  f"está a pagar: falta R$ {reais(feito['falta_centavos'])}.", "warning")
+            return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
+
         if acao == "desquitar":
             # DESQUITAR NAO APAGA O LANCAMENTO. Dinheiro que entrou no caixa
             # sai por ESTORNO, que deixa rastro — apagar a linha faria a
@@ -2736,6 +2858,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             item_id = numero_digitado(request.form.get("item_id"))
             with db.transaction() as con:
                 bd = banco(con)
+                # O ITEM COM PARTE PAGA PELO DEPÓSITO (F005) NÃO SE REMOVE: o
+                # uso do depósito apontaria para um item que não existe, e o
+                # dinheiro do cliente sumiria da conta do protocolo.
+                ja_pago = 0
+                if item_id is not None:
+                    bd._escrita()
+                    bd.um("SELECT id FROM cx_protocolo_atos WHERE id=%s FOR UPDATE",
+                          (item_id,))
+                    ja_pago = DEP.pago_do_item(bd, item_id)
+                if ja_pago > 0:
+                    flash(f"Este item já tem R$ {reais(ja_pago)} pagos pelo depósito "
+                          f"prévio e não se remove. Se o pagamento foi engano, leve ao "
+                          f"oficial — a correção é no depósito, com o rastro.", "danger")
+                    return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
                 bd.escrever("""DELETE FROM cx_protocolo_atos
                                WHERE id=%s AND protocolo_id=%s AND quitado=0""",
                             (item_id, protocolo_id))

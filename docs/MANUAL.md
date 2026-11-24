@@ -503,6 +503,15 @@ No layout novo, a ficha abre nos itens, e o resto fica em abas (seção 23.4).
 **Depósito prévio** registra o valor adiantado: o depósito é recebimento;
 usar o saldo não é receita nova; devolver gera saída, com motivo.
 
+**Um item pago em duas formas** (parte em dinheiro ou Pix, parte no cartão
+pela Parcela Express): lance a parte em espécie ou Pix como **depósito prévio**
+do protocolo e emita a **cobrança** pelo que falta (o valor já vem sugerido).
+Quando o banco confirma, os dois depósitos se somam e o item é quitado; o
+recibo do protocolo lista cada forma com o seu valor. Enquanto a soma não fecha,
+o item continua a pagar, o selo fica travado e a ficha diz «parcial: falta
+R$ X». O **Quitar todos** grava uma forma só para o lote: para dividir entre
+formas, quite item a item.
+
 ### 6.3 Boleto, nota fiscal, despesas e livro diário
 
 - **Cobrança por boleto**: a cobrança nasce do protocolo, com o que falta pagar

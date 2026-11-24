@@ -5397,9 +5397,13 @@ def _devolver_ao_deposito(bd, linha: dict, *, agora: str, motivo: str) -> None:
     que cobre outro ato do mesmo protocolo (item → depósito) se esperavam um
     ao outro, e o PostgreSQL derrubava um dos dois por deadlock — a trava
     única da ponte só escondia isso.
+
+    O ITEM PAGO POR MAIS DE UM DEPÓSITO (F005) devolve a cada um o que saiu
+    dele: a reserva guarda o primeiro depósito e o total, e as partes se
+    leem dos usos do item para este ato. Quando elas não somam o total da
+    reserva (rastro de antes), volta tudo ao depósito da reserva, como era.
     """
-    import caixa_protocolo as CXP
-    from caixa_schema import centavos, reais
+    import caixa_depositos as DEP
     valor = int(linha.get("valor_centavos") or 0)
     if valor <= 0:
         return
@@ -5407,31 +5411,21 @@ def _devolver_ao_deposito(bd, linha: dict, *, agora: str, motivo: str) -> None:
     item = (bd.um("SELECT * FROM cx_protocolo_atos WHERE id = %s FOR UPDATE",
                   (int(linha["item_id"]),))
             if linha.get("item_id") else None)
-    d = bd.um("SELECT * FROM cx_depositos WHERE id = %s FOR UPDATE",
-              (int(linha["deposito_id"]),))
-    if d:
-        novo = centavos(d["saldo"]) + valor
-        bd.escrever(
-            """UPDATE cx_depositos SET saldo = %s, encerrado = 0, atualizado_em = %s
-                WHERE id = %s""", (reais(novo), agora, int(d["id"])))
-        if bd.tem_tabela("cx_deposito_usos"):
-            bd.escrever(
-                """INSERT INTO cx_deposito_usos
-                       (deposito_id, valor_centavos, saldo_depois_centavos,
-                        protocolo_id, item_id, tabela, ato_id, motivo,
-                        criado_em, criado_por)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (int(d["id"]), -valor, novo, linha.get("protocolo_id"),
-                 linha.get("item_id"), linha.get("tabela"), linha.get("ato_id"),
-                 f"Estorno da reserva do selo {linha['referencia']}: {motivo}",
-                 agora, linha.get("usuario")))
+    partes = [(int(p["deposito_id"]), int(p["valor"]))
+              for p in DEP.partes_da_cobertura(bd, linha.get("item_id"),
+                                               tabela=linha.get("tabela"),
+                                               ato_id=linha.get("ato_id"))]
+    if sum(v for _, v in partes) != valor:
+        partes = [(int(linha["deposito_id"]), valor)]
+    for deposito_id, parte in partes:
+        DEP.devolver_parte(
+            bd, deposito_id, parte, agora=agora, quem=linha.get("usuario"),
+            motivo=f"Estorno da reserva do selo {linha['referencia']}: {motivo}",
+            protocolo_id=linha.get("protocolo_id"), item_id=linha.get("item_id"),
+            tabela=linha.get("tabela"), ato_id=linha.get("ato_id"))
     # Só desfaz a quitação que o depósito fez: a do caixa não é desta reserva.
-    if item and str(item.get("quitado_por") or "").startswith("DEPÓSITO PRÉVIO"):
-        bd.escrever(
-            """UPDATE cx_protocolo_atos
-                  SET quitado = 0, quitado_em = NULL, quitado_por = NULL
-                WHERE id = %s""", (int(item["id"]),))
-        CXP.atualizar_situacao(bd, item["protocolo_id"])
+    if item:
+        DEP.reabrir_o_item(bd, item)
 
 
 def _devolver_a_unidade(bd, linha: dict) -> None:

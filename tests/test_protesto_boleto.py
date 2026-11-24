@@ -252,7 +252,7 @@ def test_titulo_pago_no_balcao_aparece_para_cancelar_e_o_pagamento_dobrado_vira_
                             data_extenso="vinte de outubro", valor_pago="1310.45",
                             forma_pagamento="ESPECIE")
     with db.connect() as con:
-        assert [b["id"] for b in BOL.vivos_de_titulo_encerrado(con)] == [r["boleto_id"]]
+        assert [b["id"] for b in BOL.a_cancelar(con, ambiente="PRODUCAO")] == [r["boleto_id"]]
     banco_.simular_pagamento(r["nosso_numero"], pago_em="2026-10-21")
     res = _pagamentos(casa, banco_)
     assert len(res["conferir"]) == 1 and "PAGO" in res["conferir"][0]["motivo"]

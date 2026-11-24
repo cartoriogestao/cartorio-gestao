@@ -779,18 +779,6 @@ def boletos_do_titulo(con: Any, titulo_id: int) -> list[dict]:
             ORDER BY id""", (int(titulo_id), INTEG.PRODUCAO))]
 
 
-def vivos_de_titulo_encerrado(con: Any) -> list[dict]:
-    """Boleto EMITIDO de título que já se resolveu por outro caminho — pago no
-    balcão, desistido, cancelado. SÓ LÊ. É o boleto que tem de ser cancelado no
-    banco antes que o devedor pague duas vezes."""
-    return [dict(x) for x in banco(con).ler(
-        """SELECT b.*, t.numero_titulo, t.protocolo, t.situacao AS situacao_do_titulo
-             FROM pt_boletos b JOIN pt_titulos t ON t.id = b.titulo_id
-            WHERE b.ambiente = %s AND b.situacao = 'EMITIDO'
-              AND t.situacao NOT IN ('APONTADO', 'INTIMADO')
-            ORDER BY b.id""", (INTEG.PRODUCAO,))]
-
-
 # ------------------------------------- a cobrança que vai com a intimação
 #
 # PR007 (24/11/2026). Pedido do oficial: «Preciso que as intimações já saiam

@@ -140,7 +140,7 @@ cai na mesma armadilha — token de uma hora guardado na memória do processo �
 **o módulo já trazia a função pronta; faltava chamá-la**. Hoje é inofensivo
 porque nada pede token; viraria real no dia em que o atualizador rodasse.
 
-**2. A ficha do imóvel envelheceria a cada leitura.** `cnib_referencia`
+**2. A ficha do imóvel envelheceria a cada leitura.** (Revisto em 23/11/2026: ver o item 9.) `cnib_referencia`
 (`ri_web.py`) respondia «até quando esta cópia vale» com `MAX(data_pedido)` — e
 uma leitura de hoje que trouxesse o cancelamento de uma ordem de 2012 **baixaria**
 a data mostrada. Agora ela pergunta à última leitura boa, e cai no
@@ -163,3 +163,40 @@ trouxe, nunca o quê. É só do ADMIN, como a própria tela de credenciais.
 
 **E o CPF de quem consulta**, que a Central exige em todo pedido — ele não é
 segredo e fica em `settings`, ao lado do interruptor da rotina.
+
+---
+
+## 9. A LEITURA DA FILA — 23/11/2026
+
+**O que se viu.** A cópia local parou em 12/08/2026. Desde 25/09 a rotina
+diária recebeu 59 respostas vazias seguidas, e cada uma movia a marca da
+janela: a ficha seguia dizendo «cópia local até hoje». O mesmo pedido com
+`ordens_visualizadas=True` tinha trazido milhares de linhas em agosto. Tudo
+indica que `True` só devolve o que a serventia já visualizou, e que as ordens
+novas estão na fila. **A Central não confirmou**, e o contrato não descreve o
+campo.
+
+**O que mudou.**
+
+1. **Leitura vazia não move mais a marca** (`SITUACOES_QUE_ANDAM = {OK}`). Ela
+   continua anotada e conta como tentativa do dia, mas a janela do dia volta
+   até a última leitura que trouxe ordem, com teto de 31 dias, e o mês da posta
+   em dia só fica «lido» com leitura que trouxe ordem.
+2. **A data da base é honesta** (`data_da_base`): a menor entre o fim da última
+   leitura que trouxe ordem e o dia da ordem mais nova da cópia. A ficha, a
+   consulta e o recado da consulta CNIB usam esta data.
+3. **A leitura da fila existe, desligada.** `cnib_api.uma_pagina_da_fila` manda
+   o corpo medido em 18/09 (`False`, sem datas, página 1, 200 por página).
+   `cnib_atualizador.ler_a_fila` guarda cada página no disco
+   (`cnib_fila_guardada/` na pasta de dados), grava no banco numa transação só
+   dela, apaga o arquivo e só então pede a próxima. Página que não entrou fica
+   no disco e entra antes de se pedir mais. Para quando a fila repete as mesmas
+   ordens, quando a Central erra e no teto de 200 páginas por rodada.
+4. **Quem liga é o ADMIN, na tela, marcando que está ciente** de que a leitura
+   tira as ordens da fila e não se desfaz. Ligada, a rotina diária lê uma
+   rodada da fila em vez da janela, e a tela tem o botão de rodada extra.
+
+**O que falta, e não é código.** Perguntar ao ONR o que `ordens_visualizadas`
+faz e se ler a fila tem efeito de ciência para a serventia. Ler a fila com
+janela de datas e com 500 por página nunca foi medido. O atraso estimado é de
+cerca de 410 mil ordens: umas dez rodadas de 40 mil.

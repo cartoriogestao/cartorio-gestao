@@ -19,7 +19,10 @@ O QUE MANDA NO DESENHO, e cada item foi medido em 18/09/2026, na produção
    ficaram 341.497 depois de uma página de 200. Um trabalho que roda sozinho,
    todo dia, com `False`, esvaziaria a fila desta casa sem ninguém ver — e
    ninguém saberia o que passou por ali. Este módulo **não tem parâmetro** para
-   mudar isso: o que não se pode escolher errado não se oferece.
+   mudar isso: o que não se pode escolher errado não se oferece. A leitura que
+   consome é **outra função**, `ler_a_fila`, desligada de fábrica, que só o
+   oficial liga e que guarda cada página antes de pedir a próxima (23/11/2026;
+   ver a seção «a fila», abaixo).
 
 2. **AS PÁGINAS NÃO SÃO DISJUNTAS** — numa varredura de 3.000 ordens vieram
    2.996 distintas, quatro repetidas entre páginas. Por isso a gravação é
@@ -56,7 +59,10 @@ O QUE MANDA NO DESENHO, e cada item foi medido em 18/09/2026, na produção
 """
 from __future__ import annotations
 
+import json
+import os
 import sqlite3
+import threading
 from collections.abc import Callable
 from contextlib import closing
 from datetime import date, timedelta
@@ -72,10 +78,24 @@ from ri_schema import normalizar_busca
 
 PEDIDA, OK, VAZIA, RECUSADA, ERRO = "PEDIDA", "OK", "VAZIA", "RECUSADA", "ERRO"
 
-# AS QUE CONTAM COMO «A CENTRAL RESPONDEU E EU ENTENDI». São as duas que movem
-# a marca da janela. `RECUSADA` e `ERRO` **não movem**: janela que anda em cima
-# de resposta não entendida é buraco silencioso no espelho.
-SITUACOES_QUE_ANDAM: frozenset[str] = frozenset({OK, VAZIA})
+# A QUE MOVE A MARCA DA JANELA: a leitura que trouxe ordem. `RECUSADA` e `ERRO`
+# nunca moveram, porque janela que anda em cima de resposta não entendida é
+# buraco silencioso no espelho.
+#
+# **`VAZIA` DEIXOU DE MOVER EM 23/11/2026.** Ela movia, e foi assim que a cópia
+# parou em 12/08/2026 sem ninguém ver: 59 respostas vazias seguidas, cada uma
+# anotada como janela lida, a marca andando todo dia e a ficha dizendo «cópia
+# local até hoje». O país tem centenas de ordens por dia, e uma semana inteira
+# sem nenhuma não é resposta em que se possa confiar. A vazia continua
+# anotada, para a lista mostrar o que aconteceu, e conta como tentativa do dia
+# (`ja_leu_hoje`), mas não diz que a base está em dia.
+SITUACOES_QUE_ANDAM: frozenset[str] = frozenset({OK})
+
+# O MAIOR PEDAÇO QUE A JANELA DO DIA PEDE. Sem a vazia mover a marca, a janela
+# volta até a última leitura que trouxe ordem, e cresceria um dia por dia
+# enquanto a Central não responder. Trinta e um dias é o pedaço de um mês, o
+# mesmo da posta em dia. O que ficar para trás aparece lá como mês por ler.
+MAIOR_JANELA_DO_DIA_EM_DIAS = 31
 
 ORIGEM_DA_CENTRAL = "CNIB"
 CHAVE_DO_RETRATO = "cnib_retrato_do_acervo"
@@ -239,6 +259,34 @@ def ultima_leitura(con: sqlite3.Connection) -> dict | None:
         (sorted(SITUACOES_QUE_ANDAM),))
 
 
+def data_da_base(con: sqlite3.Connection, *, hoje: date) -> str | None:
+    """Até quando a cópia local responde. **É o que a ficha e a consulta mostram.**
+
+    É a menor de duas datas: o fim da última leitura que trouxe ordem, e o dia
+    da ordem mais nova da cópia (sem contar data no futuro, que é erro de
+    dado).
+
+    POR QUE AS DUAS (23/11/2026). Só a leitura não basta: a cópia parou em
+    12/08/2026 e a ficha seguiu dizendo «até hoje», porque leitura sem ordem
+    nenhuma movia a marca. Só a ordem mais nova também não basta, e o item 7
+    do cabeçalho diz por quê: a janela filtra pela atividade, e o que chega
+    pode ser cancelamento de ordem de 2012. Mas a ordem mais nova da tabela
+    inteira não anda para trás quando entra ordem antiga, e o país pede
+    centenas por dia. Se ela é de agosto, a cópia não sabe nada depois de
+    agosto, diga a leitura o que disser.
+
+    Sem leitura nenhuma, vale a ordem mais nova, que é o que a casa tem.
+    """
+    amanha = (hoje + timedelta(days=1)).isoformat()
+    mais_nova = _dia(banco(con).valor(
+        "SELECT MAX(data_pedido) AS d FROM ri_cnib_ordens WHERE data_pedido < %s",
+        (amanha,)))
+    ultima = ultima_leitura(con)
+    lida = _dia(ultima["ate"]) if ultima else None
+    datas = [d for d in (mais_nova, lida) if d]
+    return min(datas) if datas else None
+
+
 def leituras(con: sqlite3.Connection, limite: int = 30) -> list[dict]:
     """As últimas leituras, **inclusive as que deram errado**.
 
@@ -286,6 +334,7 @@ def janela_do_dia(con: sqlite3.Connection, *, hoje: date) -> tuple[str, str]:
             inicio = date.fromisoformat(str(ultima["ate"])[:10]) - timedelta(days=MARGEM_EM_DIAS)
         except (TypeError, ValueError):
             inicio = hoje - timedelta(days=PRIMEIRA_JANELA_EM_DIAS)
+    inicio = max(inicio, hoje - timedelta(days=MAIOR_JANELA_DO_DIA_EM_DIAS))
     inicio = min(inicio, hoje)
     return inicio.isoformat(), hoje.isoformat()
 
@@ -339,9 +388,9 @@ def janelas_da_posta_em_dia(con: sqlite3.Connection, *, hoje: date) -> list[dict
         de, ate = passo.isoformat(), fim.isoformat()
         feita = bd.um(
             """SELECT 1 AS um FROM ri_cnib_leituras
-                WHERE de<=%s AND ate>=%s AND situacao IN (%s,%s)
+                WHERE de<=%s AND ate>=%s AND situacao = ANY(%s)
                   AND parou_no_teto=0 AND terminada_em IS NOT NULL LIMIT 1""",
-            (de, ate, OK, VAZIA)) is not None
+            (de, ate, sorted(SITUACOES_QUE_ANDAM))) is not None
         fora.append({"de": de, "ate": ate, "feita": feita,
                      "titulo": f"{passo.month:02d}/{passo.year}"})
         passo = fim + timedelta(days=1)
@@ -502,6 +551,259 @@ def gravar(con: sqlite3.Connection, *, de: str, ate: str, leitura: dict,
     return {"situacao": situacao, "lidas": lidas, "novas": novas,
             "atualizadas": atualizadas, "canceladas": canceladas,
             "parou_no_teto": bool(leitura.get("parou_no_teto"))}
+
+
+# ------------------------------------------------------------------ a fila
+#
+# A LEITURA QUE CONSOME, e por que ela existe (23/11/2026). Desde 12/08/2026 a
+# leitura por janela, com `ordens_visualizadas=True`, não traz ordem nova: 59
+# leituras vazias seguidas desde 25/09. Tudo indica que `True` só devolve o
+# que a serventia já visualizou, e que o que chegou depois está na fila. A
+# Central não confirmou, e por isso esta leitura nasce **desligada**: só anda
+# com `CHAVE_DA_FILA` em «1», que só o oficial liga, pela tela, depois de
+# saber do ONR o que consumir a fila quer dizer para a serventia.
+#
+# O QUE MANDA NO DESENHO
+#
+# 1. **CADA PÁGINA FICA GUARDADA ANTES DE SE PEDIR A PRÓXIMA.** O que a Central
+#    mandou sai da fila e não volta. A página vai primeiro para um arquivo na
+#    pasta de dados, depois para o banco, numa transação só dela, e o arquivo
+#    só se apaga quando o banco confirmou. Se o banco falhar, a rodada para ali,
+#    o arquivo fica, e a rodada seguinte o grava **antes** de pedir mais.
+# 2. **SEMPRE A PÁGINA 1.** Com `False` a página 1 já é a próxima da fila (ver
+#    `cnib_api.TAMANHO_DA_PAGINA_DA_FILA`).
+# 3. **SE A FILA NÃO ANDA, PARA.** Página cujas ordens já vieram todas nesta
+#    rodada quer dizer que a Central não está consumindo como se mediu. Seguir
+#    seria pedir a mesma coisa duzentas vezes.
+# 4. **A REDE CONTINUA FORA DA TRANSAÇÃO** (item 6 do cabeçalho): cada pedido
+#    sai sem conexão aberta, e cada gravação abre e fecha a sua.
+
+CHAVE_DA_FILA = "cnib_leitura_da_fila"
+PASTA_DA_GUARDA = "cnib_fila_guardada"
+
+# Uma rodada por vez neste processo. Duas ao mesmo tempo não perderiam ordem
+# (cada página se guarda), mas dobrariam o que se pede à Central sem ninguém
+# ter pedido.
+_UMA_RODADA = threading.Lock()
+
+
+def fila_autorizada(con: sqlite3.Connection) -> bool:
+    """O oficial autorizou ler a fila? **Padrão: não.**"""
+    linha = banco(con).um("SELECT value FROM settings WHERE key=%s",
+                          (CHAVE_DA_FILA,))
+    return bool(linha) and _texto(linha["value"]) == "1"
+
+
+def paginas_guardadas(pasta: Path) -> list[Path]:
+    """As páginas que vieram da Central e ainda não entraram no banco."""
+    if not pasta.is_dir():
+        return []
+    return sorted(pasta.glob("pagina-*.json"))
+
+
+def _guardar_pagina(pasta: Path, nome: str, ordens: list) -> Path:
+    """Escreve a página no disco **e espera o disco confirmar**."""
+    pasta.mkdir(parents=True, exist_ok=True)
+    destino = pasta / nome
+    provisorio = destino.with_suffix(".parcial")
+    with open(provisorio, "w", encoding="utf-8") as f:
+        json.dump(ordens, f, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(provisorio, destino)
+    return destino
+
+
+def _gravar_pagina(con: sqlite3.Connection, ordens: list) -> dict:
+    """Grava as ordens de uma página da fila. Devolve as contas.
+
+    **Ordem sem protocolo não derruba a página.** Na janela ela recusa a leitura
+    inteira, e a janela se relê. Aqui a página já saiu da fila: recusar tudo
+    perderia as outras 199. A ordem sem protocolo fica contada e de fora.
+    """
+    contas = {"lidas": 0, "novas": 0, "atualizadas": 0, "canceladas": 0,
+              "sem_protocolo": 0}
+    for ordem in ordens:
+        contas["lidas"] += 1
+        if not isinstance(ordem, dict) or not API.protocolo_da_ordem(ordem):
+            contas["sem_protocolo"] += 1
+            continue
+        resultado = _gravar_ordem(con, ordem)
+        if resultado == "NOVA":
+            contas["novas"] += 1
+        elif resultado == "CANCELOU":
+            contas["canceladas"] += 1
+        else:
+            contas["atualizadas"] += 1
+    return contas
+
+
+def _abrir_leitura(con, *, hoje: date, agora: str, usuario, automatica) -> int:
+    """A linha da rodada, **sem `terminada_em`** até ela acabar."""
+    dia = hoje.isoformat()
+    novo = banco(con).escrever(
+        """INSERT INTO ri_cnib_leituras
+              (de, ate, pedida_em, situacao, mensagem, automatica, pedida_por)
+           VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+        (dia, dia, agora, PEDIDA, "Fila da serventia: lendo.",
+         1 if automatica else 0, usuario))
+    return int(novo[0]["id"])
+
+
+def _somar(con, leitura_id: int, contas: dict) -> None:
+    banco(con).escrever(
+        """UPDATE ri_cnib_leituras
+              SET lidas=lidas+%s, novas=novas+%s, atualizadas=atualizadas+%s,
+                  canceladas=canceladas+%s, paginas=paginas+1
+            WHERE id=%s""",
+        (contas["lidas"], contas["novas"], contas["atualizadas"],
+         contas["canceladas"], leitura_id))
+
+
+def _fechar(db, leitura_id: int, *, situacao: str, mensagem: str,
+            parou_no_teto: bool = False) -> dict:
+    with db.transaction() as con:
+        bd = banco(con)
+        bd.escrever(
+            """UPDATE ri_cnib_leituras
+                  SET situacao=%s, terminada_em=%s, mensagem=%s, parou_no_teto=%s
+                WHERE id=%s""",
+            (situacao, db.now(), mensagem, 1 if parou_no_teto else 0, leitura_id))
+        linha = bd.um("SELECT * FROM ri_cnib_leituras WHERE id=%s", (leitura_id,))
+    return {"situacao": situacao, "mensagem": mensagem,
+            "parou_no_teto": parou_no_teto,
+            **{k: int(linha[k]) for k in
+               ("lidas", "novas", "atualizadas", "canceladas", "paginas")}}
+
+
+def _regravar_guardadas(db, pasta: Path) -> int:
+    """Grava as páginas que ficaram no disco numa rodada anterior.
+
+    Levanta erro se alguma não entrar: com página guardada e não gravada, a
+    rodada não pede mais nada à Central.
+    """
+    feitas = 0
+    for arquivo in paginas_guardadas(pasta):
+        try:
+            ordens = json.loads(arquivo.read_text(encoding="utf-8"))
+            with db.transaction() as con:
+                _gravar_pagina(con, ordens if isinstance(ordens, list) else [])
+        except Exception as erro:  # noqa: BLE001 — vira frase, e a rodada para
+            raise CnibAtualizadorError(
+                f"Há página da fila guardada em {arquivo} que não entrou no "
+                f"banco ({erro}). Nada mais foi pedido à Central: essas ordens "
+                "já saíram da fila e só existem nesse arquivo.") from None
+        arquivo.unlink()
+        feitas += 1
+    return feitas
+
+
+def ler_a_fila(db, *, hoje: date, pasta: Path, usuario: int | None = None,
+               automatica: bool = False, pedir: Callable[..., dict] | None = None,
+               maximo_de_paginas: int = API.MAXIMO_DE_PAGINAS_DA_FILA) -> dict:
+    """Uma rodada da fila: pede, guarda, grava, e só então pede a próxima.
+
+    `db` é o `Database` da casa (precisa de `connect`, `transaction` e `now`),
+    porque a rodada alterna rede e banco muitas vezes. `pedir` existe para o
+    teste trocar a rede, como o `ler` de `ler_da_central`.
+
+    Devolve as contas da rodada, com `situacao`:
+      `OK` quando veio ordem e a fila terminou, ou parou no teto
+      (`parou_no_teto`, que não conta como base em dia);
+      `VAZIA` quando a primeira página já veio sem nada;
+      `ERRO` e `RECUSADA` quando parou no meio, com a frase do porquê.
+    """
+    with db.connect() as con:
+        if not fila_autorizada(con):
+            raise CnibAtualizadorError(
+                "A leitura da fila está desligada. Ela tira da fila da "
+                "serventia, na Central, o que vier, e não se desfaz; só o "
+                "oficial liga, na tela do CNIB.")
+        cpf = cpf_de_quem_consulta(con)
+    if not cpf:
+        raise CnibAtualizadorError(
+            "Falta o CPF de quem consulta o CNIB. Grave em Administrativo → "
+            "Configurações antes de ler a fila.")
+    if not _UMA_RODADA.acquire(blocking=False):
+        raise CnibAtualizadorError(
+            "Já há uma leitura da fila em andamento. Espere ela terminar.")
+    try:
+        _regravar_guardadas(db, pasta)
+        chamar = pedir or API.uma_pagina_da_fila
+        with db.transaction() as con:
+            referencia = retrato_do_acervo(con)
+            if referencia:
+                banco(con).escrever(
+                    "INSERT INTO settings(key,value) VALUES (%s,%s) "
+                    "ON CONFLICT DO NOTHING", (CHAVE_DO_RETRATO, referencia))
+            leitura_id = _abrir_leitura(con, hoje=hoje, agora=db.now(),
+                                        usuario=usuario, automatica=automatica)
+        vistos: set[str] = set()
+        sem_protocolo = 0
+        restantes = None
+        for numero in range(1, int(maximo_de_paginas) + 1):
+            try:
+                p = chamar(cpf_usuario=cpf)
+            except API.CnibError as erro:
+                return _fechar(db, leitura_id, situacao=ERRO,
+                               mensagem=f"Fila da serventia, página {numero}: {erro}")
+            if p.get("forma") == "outra":
+                return _fechar(db, leitura_id, situacao=RECUSADA, mensagem=(
+                    f"Fila da serventia, página {numero}: a Central respondeu "
+                    "numa forma que este sistema não conhece. Parei. Se essa "
+                    "resposta tirou ordens da fila, elas não vieram legíveis."))
+            ordens = p.get("ordens") or []
+            if not ordens:
+                break
+            restantes = p.get("restantes")
+            arquivo = _guardar_pagina(pasta, f"pagina-{leitura_id:08d}-{numero:04d}.json",
+                                      ordens)
+            try:
+                with db.transaction() as con:
+                    contas = _gravar_pagina(con, ordens)
+                    _somar(con, leitura_id, contas)
+            except Exception as erro:  # noqa: BLE001 — vira frase, e a rodada para
+                return _fechar(db, leitura_id, situacao=ERRO, mensagem=(
+                    f"Fila da serventia, página {numero}: veio da Central e "
+                    f"não entrou no banco ({erro}). Ficou guardada em {arquivo} "
+                    "e entra na próxima rodada. Parei para não tirar mais "
+                    "ordens da fila."))
+            arquivo.unlink()
+            sem_protocolo += contas["sem_protocolo"]
+            protocolos = {API.protocolo_da_ordem(o) for o in ordens
+                          if isinstance(o, dict)} - {""}
+            if protocolos and protocolos <= vistos:
+                return _fechar(db, leitura_id, situacao=ERRO, mensagem=(
+                    f"Fila da serventia, página {numero}: a Central mandou de "
+                    "novo as mesmas ordens. A fila não está andando como se "
+                    "mediu em 18/09/2026, e parei. O que veio está gravado."))
+            vistos |= protocolos
+            if not p.get("paginacao", {}).get("tem_proxima_pagina"):
+                break
+        else:
+            return _fechar(db, leitura_id, situacao=OK, parou_no_teto=True,
+                           mensagem=_frase_da_fila(restantes, sem_protocolo,
+                                                   teto=True))
+
+        with db.connect() as con:
+            lidas = int(banco(con).valor(
+                "SELECT lidas FROM ri_cnib_leituras WHERE id=%s", (leitura_id,)) or 0)
+        return _fechar(db, leitura_id, situacao=OK if lidas else VAZIA,
+                       mensagem=_frase_da_fila(restantes, sem_protocolo))
+    finally:
+        _UMA_RODADA.release()
+
+
+def _frase_da_fila(restantes, sem_protocolo: int, *, teto: bool = False) -> str:
+    partes = ["Fila da serventia."]
+    if teto:
+        partes.append("Parou no teto de páginas da rodada; a próxima continua.")
+    if restantes is not None:
+        partes.append(f"A Central disse que restavam {restantes} ordens.")
+    if sem_protocolo:
+        partes.append(f"{sem_protocolo} ordens vieram sem protocolo e ficaram "
+                      "de fora.")
+    return " ".join(partes)
 
 
 def anotar(con: sqlite3.Connection, *, de: str, ate: str, situacao: str,

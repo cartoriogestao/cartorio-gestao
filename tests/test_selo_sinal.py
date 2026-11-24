@@ -182,6 +182,9 @@ def test_o_atendimento_antigo_e_dito_e_o_marcado_vale_mais():
     assert s["cor"] == SINAL.VERMELHO
     assert "que você já atendia" in _texto(s)
     assert s["protocolo"]["do_atendimento"] is True
+    # pré-marcado na lista (é o do atendimento), o aviso continua
+    pre = _sinal(con, "nt_cartoes", _form(protocolo_selo=str(antigo["protocolo_id"])))
+    assert "que você já atendia" in _texto(pre)
     s = _sinal(con, "nt_cartoes",
                _form(protocolo_selo=str(deste_cliente["protocolo_id"])))
     assert s["cor"] == SINAL.VERDE

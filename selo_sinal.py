@@ -305,8 +305,10 @@ def sinal_da_cobertura(con, *, tabela: Any, usuario: Any, pedidos: Any,
         protocolo = bd.um("SELECT * FROM cx_protocolos WHERE id = %s", (escolhido,))
         veio_do_atendimento = False
     else:
+        # O da lista vem PRÉ-MARCADO quando é o do atendimento: marcado não
+        # quer dizer escolhido, e o aviso do «já atendia» vale igual.
         protocolo = atendendo
-        veio_do_atendimento = bool(atendendo) and escolhido is None
+        veio_do_atendimento = bool(atendendo)
     if not protocolo:
         if ligados:
             n = ligados[0].get("protocolo_numero")

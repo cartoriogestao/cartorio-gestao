@@ -455,3 +455,127 @@ def test_a_tela_de_corrigir_abre_cada_testemunha_na_sua_gaveta(tmp_path):
         ("CARLA ENSAIO TESTEMUNHA", "BRASILEIRA"),
         ("BEATRIZ ENSAIO TESTEMUNHA", None)]
     c.close()
+
+
+# ------------------------------------------------------------ retirar pessoa
+#
+# 24/11/2026: apagar os campos do pai e salvar NÃO retirava a linha de
+# rc_pessoas — a certidão e a folha continuavam com o pai lançado por
+# engano. Só a caixa «Retirar esta pessoa» remove, e nunca o falecido /
+# registrado.
+
+
+def _obito_com_pai(con, *, chave="ACERVO-OBITO-RETIRAR") -> int:
+    r = RC.lavrar_assento(
+        con, especie="OBITO", nome="MARIO EXEMPLO FALECIDO", sv=SV,
+        agora=AGORA, data_extenso=EXTENSO, data_fato="2026-09-01",
+        origem="EOFICIO", origem_chave=chave,
+        dados={"sexo": "M"},
+        pessoas=[
+            {"papel": "FALECIDO", "nome": "MARIO EXEMPLO FALECIDO",
+             "sexo": "M"},
+            {"papel": "MAE", "nome": "ANA EXEMPLO MAE"},
+            {"papel": "PAI", "nome": "JOSE EXEMPLO PAI ERRADO"},
+        ],
+        usuario="carga",
+    )
+    return r["assento_id"]
+
+
+def _papeis(con, aid) -> list[str]:
+    return [r[0] for r in con.execute(
+        "SELECT papel FROM rc_pessoas WHERE assento_id=? ORDER BY id",
+        (aid,)).fetchall()]
+
+
+def test_retirar_pai_do_obito_apaga_a_linha_e_registra_o_nome():
+    con = banco()
+    aid = _obito_com_pai(con)
+    out = RC.corrigir_informacoes(
+        con, aid,
+        motivo="Pai lançado por engano — oficial autorizou retirar",
+        agora=AGORA, usuario="Escrevente Ana",
+        pessoas=[{"papel": "PAI", "retirar": True}],
+    )
+    assert "PAI" not in _papeis(con, aid)
+    assert "FALECIDO" in _papeis(con, aid)
+    assert "MAE" in _papeis(con, aid)
+    mud = out["mudancas"]["pessoa:PAI"]
+    assert mud["removido"] is True
+    assert mud["de"] == "JOSE EXEMPLO PAI ERRADO"
+    assert mud["para"] is None
+    assert "pessoa:PAI" in out["campos"]
+
+
+def test_campos_vazios_sem_caixa_nao_apagaram_o_pai():
+    con = banco()
+    aid = _obito_com_pai(con, chave="ACERVO-OBITO-VAZIO")
+    with pytest.raises(RC.RcError, match="Nada foi alterado"):
+        RC.corrigir_informacoes(
+            con, aid,
+            motivo="Apaguei os campos do pai sem marcar retirar",
+            agora=AGORA, usuario="Escrevente",
+            # Campos vazios: o laço antigo dava `continue` e a linha ficava.
+            pessoas=[{"papel": "PAI", "nome": "", "sexo": ""}],
+        )
+    assert "PAI" in _papeis(con, aid)
+    pai = con.execute(
+        "SELECT nome FROM rc_pessoas WHERE assento_id=? AND papel='PAI'",
+        (aid,)).fetchone()
+    assert pai["nome"] == "JOSE EXEMPLO PAI ERRADO"
+
+
+def test_falecido_nao_pode_ser_removido():
+    con = banco()
+    aid = _obito_com_pai(con, chave="ACERVO-OBITO-TITULAR")
+    with pytest.raises(RC.RcError, match="Não é possível retirar"):
+        RC.corrigir_informacoes(
+            con, aid,
+            motivo="Tentativa de retirar o falecido do assento",
+            agora=AGORA, usuario="Escrevente",
+            pessoas=[{"papel": "FALECIDO", "retirar": True}],
+        )
+    assert "FALECIDO" in _papeis(con, aid)
+
+
+def test_a_tela_de_corrigir_oferece_retirar_o_pai_e_nao_o_falecido(tmp_path):
+    from app import create_app
+    from database import Database
+
+    dados = tmp_path / "dados"
+    dados.mkdir()
+    app = create_app({"DATA_DIR": str(dados)})
+    banco_path = Path(glob.glob(f"{dados}/*.sqlite3")[0])
+    Database(banco_path).create_user(
+        "tabeliao", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    client = app.test_client()
+    client.post("/login", data={
+        "username": "tabeliao", "password": SENHA,
+        "csrf_token": _token(client.get("/login").get_data(as_text=True)),
+    }, follow_redirects=True)
+    con = sqlite3.connect(banco_path)
+    con.row_factory = sqlite3.Row
+    with con:
+        aid = _obito_com_pai(con, chave="ACERVO-OBITO-TELA")
+    con.close()
+
+    body = client.get(f"/rcpn/{aid}/editar").get_data(as_text=True)
+    assert 'name="retirar_filiacao2"' in body
+    assert 'name="retirar_pessoa"' not in body
+
+    resp = client.post(f"/rcpn/{aid}/editar", data={
+        "csrf_token": _token(body),
+        "motivo": "Pai lançado por engano — oficial autorizou retirar",
+        "nome": "MARIO EXEMPLO FALECIDO",
+        "data_fato": "2026-09-01",
+        "sexo": "M",
+        "pessoa_nome": "MARIO EXEMPLO FALECIDO",
+        "filiacao1_nome": "ANA EXEMPLO MAE",
+        "filiacao2_nome": "JOSE EXEMPLO PAI ERRADO",
+        "retirar_filiacao2": "1",
+    }, follow_redirects=True)
+    assert resp.status_code == 200
+    c = sqlite3.connect(banco_path)
+    assert "PAI" not in _papeis(c, aid)
+    assert "FALECIDO" in _papeis(c, aid)
+    c.close()

@@ -21,6 +21,7 @@ def _load_fns():
         "MOTIVO_DA_ISENCAO = {}\n"
         "CODIGO_DO_ATO_DO_CIVIL = {'AVERBACAO': ('14.4.1', 'TABELA')}\n"
         "from typing import Any\n"
+        "import re\n"
     )
     ns: dict = {}
     exec(pre + chunk, ns)

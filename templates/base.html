@@ -326,6 +326,9 @@
         <a href="{{ url_for('ri_onr_painel') }}">ONR — índice real e editais</a>
         {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('onr_certidoes') }}">ONR — certidões a emitir</a>{% endif %}
         {% if user.role in ['ADMIN','MANAGER','USER','AUDITOR'] %}<a href="{{ url_for('onr_acompanhamento') }}">ONR — acompanhamento de títulos</a>{% endif %}
+        {# O PAINEL DE CONFORMIDADE DO ONR (RI010): Provimento 143, Provimento 195 e ITN 003 —
+           o declarado, o que existe, o entregue com prova e o que falta. Só mostra e imprime. #}
+        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('ri_onr_conformidade') }}">ONR — painel de conformidade</a>{% endif %}
         {#
           A CONFERENCIA DO ENDERECO VEM AO LADO, E ANTES — e a ordem nao e por
           acaso: e o passo anterior ao envio. O indicador real exige cep, tipo

@@ -3313,6 +3313,8 @@ def _montar_app(test_config: dict | None = None) -> Flask:
         "NT_COMUNICACAO_ORIGEM": ("notas_ato",),
         "PROTOCOLO": ("caixa_protocolo",),
         "RI_PROTOCOLO": ("ri_protocolo_ver",),
+        # O COMPROVANTE DA PENDENCIA DO PAINEL DO ONR (RI010): abre para quem ve o painel.
+        "ONR_PENDENCIA": ("ri_onr_conformidade",),
         "RG_ATO": ("rcpj_rtd_registro",),
         "RG_REGISTRO": ("rcpj_rtd_registro",),
         "RG_TITULO": ("rcpj_rtd_titulo",),
@@ -3702,6 +3704,13 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     import ri_onr_web
     ri_onr_web.registrar_rotas(app, db, login_required, roles_required, audit,
                                fmt_date)
+
+    # O PAINEL DE CONFORMIDADE DO ONR (RI010, 23/11/2026) — Provimento 143, Provimento
+    # 195 e ITN 003: o declarado, o que existe, o entregue com prova e o que falta.
+    # Nao envia nada ao ONR; so mostra, recebe o que a pessoa digitou e imprime.
+    import onr_conformidade_web
+    onr_conformidade_web.registrar_rotas(app, db, login_required, roles_required, audit,
+                                         fmt_date)
 
     # O LAYOUT NOVO (30/10/2026): a chave por pessoa e o contexto da casca. O registro
     # de tudo o que a barra, o Novo e a busca oferecem mora em `navegacao.py`.

@@ -47,6 +47,10 @@ TELA = {
     # na fila de remessas de Notas; até 19/11/2026 o achado da CENSEC saía
     # «sem tela» na checklist e a tarefa mandava abrir um menu que não existe.
     "CENSEC": ("Notas → Remessa às centrais", "/notas/remessas"),
+    # O painel de conformidade do ONR (RI010): as três regras levam à mesma tela.
+    "ONR_PAINEL_DIVERGENCIA": ("Registro de Imóveis → ONR: painel de conformidade", "/ri/onr/conformidade"),
+    "ONR_PAINEL_OBRIGACAO": ("Registro de Imóveis → ONR: painel de conformidade", "/ri/onr/conformidade"),
+    "ONR_PAINEL_PENDENCIA": ("Registro de Imóveis → ONR: painel de conformidade", "/ri/onr/conformidade"),
 }
 
 FECHA_SOZINHA = ("Cada item sai desta lista sozinho na conferência seguinte (07:30, "

@@ -75,6 +75,7 @@ from pathlib import Path
 from typing import Any
 
 import banco_pg
+import onr_conformidade as OC
 import tetos_de_entrada as TETO
 from bd_nativo import banco as _bd_de
 from gestor_schema import init_gestor_schema
@@ -134,6 +135,8 @@ ROTULOS = {
     "ONR_AGENTE_PARADO": "ONR — o agente de cargas não rodou",
     "ONR_PASTA": "ONR — pasta de carga inexistente",
 }
+#: As regras do painel de conformidade do ONR (RI010): o declarado sem lastro e as pendências.
+ROTULOS.update(OC.ROTULOS)
 
 
 # ---------------------------------------------------------------- miúdos
@@ -1225,6 +1228,16 @@ def conferir(con: sqlite3.Connection, hoje: date, *, pasta_cred=None) -> list[di
                         f"ONR_IMG:{num.strip()}", "ONR_IMAGEM_PROBLEMA", "ATENCAO", "RI",
                         f"Matrícula {num.strip()}: a imagem não foi para a pasta do ONR",
                         motivo.strip()))
+
+    # O PAINEL DE CONFORMIDADE (RI010): o que foi declarado ao ONR sem lastro, a obrigação
+    # sem responsável e prazo, e as pendências com prazo. Sem número lançado, não acusa nada.
+    try:
+        achados += OC.achados_para_o_gestor(con, hoje)
+    except Exception as erro:                          # noqa: BLE001
+        achados.append(_achado(
+            "ONR_PAINEL_NAO_MEDIU", "ONR_PAINEL_PENDENCIA", "NAO_MEDIU", "RI",
+            "O painel de conformidade do ONR não mediu",
+            f"{type(erro).__name__}: {erro}"))
     return achados
 
 

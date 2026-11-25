@@ -3264,10 +3264,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                        (numero, livro, livro_destino, data_prenotacao, hora,
                         apresentante, apresentante_documento,
                         natureza_titulo, objeto, matricula_id, matricula_numero, data_limite,
-                        telefone, email, documento_descricao,
+                        telefone, email, documento_descricao, procuracao_citada,
                         reurb, reurb_tipo,
                         situacao, anotacao, origem, criado_em, criado_por)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'ABERTO', %s, 'MANUAL', %s, %s)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'ABERTO', %s, 'MANUAL', %s, %s)
                        RETURNING id""",
                     (numero, livro, destino, data, datetime.now().strftime("%H:%M:%S"),
                      (request.form.get("apresentante") or "").strip() or None,
@@ -3278,6 +3278,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                      (request.form.get("telefone") or "").strip() or None,
                      (request.form.get("email") or "").strip() or None,
                      (request.form.get("documento_descricao") or "").strip() or None,
+                     (request.form.get("procuracao_citada") or "").strip() or None,
                      # A MARCA FICA GRAVADA, e não só o prazo que ela produziu:
                      # prenotação com 40 dias tem de dizer por que tem 40.
                      1 if reurb else 0,
@@ -3449,6 +3450,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         ("telefone", "Telefone"),
         ("email", "E-mail"),
         ("documento_descricao", "Documento apresentado"),
+        ("procuracao_citada", "Procuração citada (de outra serventia)"),
         ("anotacao", "Anotação"),
     )
 
@@ -3694,6 +3696,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # O QUE ESTE TÍTULO JÁ DISSE AO ONR (Acompanhamento de Títulos) — só lê.
         with db.connect() as _ac:
             acompanhamento_onr = ACOMP.da_prenotacao(_ac, protocolo_id)
+        # A LISTA DE ATENÇÃO PARA FRAUDES, sobre o ATO DE OUTRA SERVENTIA que o
+        # título cita (24/11/2026): a procuração suspensa por circular só por
+        # livro e folha. Só LÊ; o rastro se grava quando alguém reconhece.
+        with db.connect() as _fr:
+            fraudes = FR.atos_citados_na_prenotacao(_fr, p)
         def fases_da_ficha() -> dict:
             """A régua do layout novo. Só ele chama."""
             return RIFASESP.fases_da_prenotacao(
@@ -3702,6 +3709,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 tem_onr=bool(acompanhamento_onr and acompanhamento_onr.get("eventos")))
 
         return render_template("ri_protocolo_ver.html", p=dict(p),
+                               fraudes=fraudes,
                                fases_da_ficha=fases_da_ficha,
                                acompanhamento_onr=acompanhamento_onr,
                                documentos=documentos, e_imagem=RDOC.e_imagem,

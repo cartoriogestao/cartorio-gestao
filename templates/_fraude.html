@@ -15,12 +15,23 @@
 
 {% macro alerta(fraudes, csrf_token, onde, referencia, volta) %}
 {% for f in fraudes %}
-<div class="flash {{ 'danger' if f.forca == 'DOCUMENTO' else 'warning' }}">
+<div class="flash {{ 'danger' if f.forca in ('DOCUMENTO', 'SERVENTIA') else 'warning' }}">
   <strong>Atenção para fraudes — {{ f.papel_rotulo }}</strong>
   {%- if f.papel_no_ato %} ({{ f.papel_no_ato }}:
     {{ f.conferido_nome or f.conferido_documento }}){% endif %}
   <br>
-  {% if f.forca == 'DOCUMENTO' %}
+  {% if f.papel == 'ATO' %}
+    {# O ATO DE OUTRA SERVENTIA (24/11/2026): o que bateu é livro e folha, e a
+       força depende de a serventia bater junto. #}
+    <strong>Na lista:</strong> {{ f.ato_descricao }}.<br>
+    Bateu pelo <strong>{{ f.por_que }}</strong>.
+    {% if f.forca == 'CIDADE' %}
+      A cidade pode ter mais de uma serventia: confira se é a mesma.
+    {% elif f.forca == 'LIVRO_FOLHA' %}
+      Livro e folha se repetem entre serventias: confira se o ato citado é da
+      serventia da comunicação antes de concluir que é o mesmo.
+    {% endif %}
+  {% elif f.forca == 'DOCUMENTO' %}
     Bateu pelo <strong>documento</strong>, que não tem homônimo.
   {% else %}
     Bateu pelo <strong>nome</strong>. Nome bate por coincidência: confira a

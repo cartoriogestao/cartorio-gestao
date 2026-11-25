@@ -202,6 +202,11 @@
     <label class="span2">Documento apresentado
       <input name="documento_descricao"
              placeholder="ex.: escritura de compra e venda, 4 laudas, 2ª via"{{ valor('documento_descricao') }}></label>
+    {# 24/11/2026: a procuração de outra serventia que o título cita, conferida na
+       lista de atenção para fraudes (ato suspenso ou fraudado). #}
+    <label class="span2">Procuração citada no título (de outra serventia)
+      <input name="procuracao_citada"
+             placeholder="ex.: 2º Tabelionato de Cidade Exemplo/SP, livro 120, fls. 45"{{ valor('procuracao_citada') }}></label>
     <label class="span2">Objeto<textarea name="objeto" rows="2" required>{{ digitado.get('objeto', '') }}</textarea></label>
     <label class="span2">Anotação<input name="anotacao"{{ valor('anotacao') }}></label>
         <label class="span2">Modalidade REURB

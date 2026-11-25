@@ -4,7 +4,8 @@
 <div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a>
   {# O MAPA DO ONR (revisão de telas, 30/10/2026): o manual mandava baixar por
      este endereço, e nenhum clique chegava nele. Só o ADMIN: `QUEM_BAIXA`. #}
-  {% if user.role == 'ADMIN' %}<a class="button" href="{{ url_for('ri_mapa_onr_csv') }}">Baixar o mapa do ONR (.csv)</a>{% endif %}</div>
+  {% if user.role == 'ADMIN' %}<a class="button" href="{{ url_for('ri_mapa_onr_csv') }}">Baixar o mapa do ONR (.csv)</a>{% endif %}
+  <a class="button" href="{{ url_for('ri_geo') }}">Mapa do ONR — polígonos</a></div>
 
 <div class="notice">
   O formato destes arquivos foi levantado <strong>dos envios que esta serventia já fez</strong>,

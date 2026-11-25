@@ -81,6 +81,7 @@ from rg_schema import init_rg_schema
 from ri_onr_central_schema import init_ri_onr_central_schema
 from onr_conformidade_schema import init_onr_conformidade_schema
 from ri_mapa_onr import init_mapa_onr_schema
+from ri_geo import init_geo_schema
 from ri_georref import init_georref_schema
 from apostila import init_apostila_schema
 from livro_diario import init_livro_diario_schema
@@ -854,6 +855,9 @@ class Database:
         # QGIS le e o de-para da area, refeito a cada subida. Depois do RI,
         # porque a VIEW le `ri_matriculas` e `ri_partes`.
         init_mapa_onr_schema(con)
+        # OS POLIGONOS DO MAPA (RI011, S9): a geometria ligada a matricula, com a origem. Depois do RI (chave
+        # estrangeira em `ri_matriculas`).
+        init_geo_schema(con)
         # A CONFERENCIA DO GEORREFERENCIAMENTO NO ATO (RI011, art. 343-F, II do CNN): quem conferiu o mosaico,
         # quando e o que declarou. Depois do RI — aponta para `ri_matriculas`.
         init_georref_schema(con)

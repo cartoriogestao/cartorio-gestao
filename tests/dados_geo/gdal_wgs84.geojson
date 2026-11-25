@@ -1,0 +1,9 @@
+{
+"type": "FeatureCollection",
+"name": "g",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "MATRICULA": "4015", "PROPRIETAR": "JOSÉ EXEMPLO; MARIA AÇÃO", "AREA_HA": 1.2345 }, "geometry": { "type": "Polygon", "coordinates": [ [ [ -45.5, -7.2 ], [ -45.49, -7.2 ], [ -45.49, -7.19 ], [ -45.5, -7.19 ], [ -45.5, -7.2 ] ], [ [ -45.498, -7.198 ], [ -45.496, -7.198 ], [ -45.496, -7.196 ], [ -45.498, -7.196 ], [ -45.498, -7.198 ] ] ] } },
+{ "type": "Feature", "properties": { "MATRICULA": "4016-A", "PROPRIETAR": "FULANO", "AREA_HA": 2.0 }, "geometry": { "type": "MultiPolygon", "coordinates": [ [ [ [ -45.4, -7.2 ], [ -45.39, -7.2 ], [ -45.39, -7.19 ], [ -45.4, -7.2 ] ] ], [ [ [ -45.3, -7.2 ], [ -45.29, -7.2 ], [ -45.29, -7.19 ], [ -45.3, -7.2 ] ] ] ] } }
+]
+}

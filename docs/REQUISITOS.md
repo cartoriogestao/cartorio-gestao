@@ -51,6 +51,7 @@ uma função**. A instalação passo a passo está em
 | lxml | canonicalização XML da assinatura da carga da CRC |
 | cryptography | cifra o arquivo do SIRC e confere a assinatura das atualizações |
 | PyMuPDF | lê PDF nas intimações em lote do Protesto e nas imagens enviadas ao ONR |
+| geographiclib | a área dos polígonos do Mapa do ONR no elipsoide do SIRGAS 2000 (pura em Python, 390 KB) |
 
 ### LibreOffice — papéis em `.odt` e PDF
 Certidões, termos, recibos, traslados e fichas saem em **`.odt`** (formato

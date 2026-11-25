@@ -691,21 +691,20 @@
 
 {# O VALOR DE TERCEIRO DA MATERIALIZAÇÃO (F010, 25/11/2026): o que o cliente
    pagou para o outro cartório. Não é item do protocolo nem emolumento desta
-   casa — entra no recibo em bloco próprio e sai pelo repasse. #}
+   casa — entra no recibo em bloco próprio e no saldo de repasse da CRC. #}
 {% if terceiros_do_protocolo %}
 <section class="panel" id="terceiros" data-fase="movimento">
   <div class="panel-head"><span>Valores de terceiros (repasse a outro cartório)</span>
-    <a class="small" href="{{ url_for('rcpn_materializacao_repasses') }}">repasses</a></div>
+    <a class="small" href="{{ url_for('rcpn_materializacao_repasses') }}">saldo da CRC</a></div>
   <div class="table-wrap"><table>
     <thead><tr><th>Pedido CRC</th><th>Cartório de origem</th><th>Situação</th>
-      <th>Repasse até</th><th style="text-align:right">Valor</th></tr></thead>
+      <th style="text-align:right">Valor</th></tr></thead>
     <tbody>{% for t in terceiros_do_protocolo %}
       <tr {% if not t.lancamento_vivo %}class="pendente"{% endif %}>
         <td class="small">{{ t.pedido_crc }}</td>
         <td class="small">{{ t.cartorio_nome }} ({{ t.cartorio_cidade }}/{{ t.cartorio_uf }})</td>
         <td class="small">{{ t.situacao_rotulo }}{% if not t.lancamento_vivo %}
           <span class="badge alta">lançamento desfeito</span>{% endif %}</td>
-        <td class="small">{{ fmt_date(t.prazo) }}</td>
         <td style="text-align:right">{{ t.valor }}</td></tr>
     {% endfor %}</tbody>
   </table></div>

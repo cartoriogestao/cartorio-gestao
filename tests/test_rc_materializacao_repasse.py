@@ -6,12 +6,13 @@ O QUE ESTES TESTES GUARDAM
     nem fundo desta casa e com «receita do titular = não».
     **Nenhum leitor o conta como receita**: relatório financeiro, carnê-leão,
     NFS-e (base do ISS e descrição da nota) e «selos × caixa» do mês.
-    **O repasse exige comprovante** e sai por despesa da categoria própria
-    (natureza REPASSE: fora do Livro Diário e do SIAFERJ) ou pelos créditos da
-    CRC; valor que não fecha não concilia; o mesmo pedido não se recebe duas
-    vezes.
-    **A pendência nasce do lançamento**, com prazo e atraso; o lançamento
-    desfeito sai da pendência e vira aviso; o já repassado não se estorna.
+    **O saldo de repasse da CRC** é o recebido (lançamento vivo) menos o
+    destinado, e se destina no valor que o oficial quiser, até o saldo:
+    ENVIAR À CRC exige despesa paga da categoria própria (natureza REPASSE:
+    fora do Livro Diário e do SIAFERJ) e comprovante; TRANSFORMAR EM CAIXA não
+    lança nada no caixa e é só do oficial. O mesmo pedido não se recebe duas
+    vezes; o lançamento desfeito sai do saldo e vira aviso; o que o saldo já
+    não cobre não se devolve nem se estorna.
     **O recibo do cliente leva o valor de terceiro em bloco separado** do
     emolumento desta casa.
     **O selo da materialização não muda**: o envelope é o mesmo, com ou sem
@@ -44,10 +45,9 @@ import rc_materializacao_repasse as RMR                               # noqa: E4
 from bd_nativo import banco                                           # noqa: E402
 from caixa_schema import NATUREZAS, NATUREZAS_DO_BALCAO, reais        # noqa: E402
 
-HOJE = "2026-11-18"            # quarta-feira: o prazo de 1 dia útil é quinta
+HOJE = "2026-11-18"
 AGORA = HOJE + "T10:00:00"
 OPERADOR = "MARIO EXEMPLO DOS SANTOS"
-SEM_FERIADO: set = set()
 PEDIDO = {"pedido_crc": "crc 2026/000123", "cartorio_nome": "CARTORIO EXEMPLO DO 1 OFICIO",
           "cartorio_cidade": "CIDADE EXEMPLO", "cartorio_uf": "pi",
           "emolumentos_origem": "40,00", "fundos_origem": "5,50",
@@ -86,8 +86,7 @@ def _caixa(db, operador=OPERADOR) -> int:
 def _receber(db, pid, caixa_id, hoje=HOJE, **mudar) -> dict:
     with db.transaction() as con:
         return RMR.receber(con, pid, {**PEDIDO, **mudar}, caixa_id=caixa_id, hoje=hoje,
-                           hora="10:00", agora=hoje + "T10:00:00", usuario=OPERADOR,
-                           feriados=SEM_FERIADO)
+                           hora="10:00", agora=hoje + "T10:00:00", usuario=OPERADOR)
 
 
 def _lan(db, lid) -> dict:
@@ -95,9 +94,20 @@ def _lan(db, lid) -> dict:
         return dict(banco(con).um("SELECT * FROM cx_lancamentos WHERE id=%s", (lid,)))
 
 
-def _pend(db, hoje=HOJE) -> dict:
+def _pend(db) -> dict:
     with db.connect() as con:
-        return RMR.pendentes(con, hoje=hoje)
+        return RMR.pendentes(con)
+
+
+def _saldo(db) -> int:
+    with db.connect() as con:
+        return RMR.saldo(con)["saldo_centavos"]
+
+
+def _destinar(db, destino, valor, **kw) -> dict:
+    with db.transaction() as con:
+        return RMR.destinar(con, destino=destino, valor=valor, dia=kw.pop("dia", HOJE),
+                            hoje=HOJE, agora=AGORA, usuario="mario", **kw)
 
 
 def _despesa(db, *, valor=4550, categoria=RMR.CATEGORIA_DA_DESPESA, pagar=True) -> int:
@@ -123,7 +133,7 @@ def test_o_valor_entra_numa_natureza_propria_ligado_ao_protocolo_e_ao_pedido(cas
     db = casa["db"]
     pid, cx = _protocolo(db), _caixa(db)
     res = _receber(db, pid, cx)
-    assert res["valor_centavos"] == 4550 and res["prazo"] == "2026-11-19"
+    assert res["valor_centavos"] == 4550 and "prazo" not in res
     lan = _lan(db, res["lancamento_id"])
     assert (lan["natureza"], lan["sentido"]) == ("VALOR_DE_TERCEIRO", "ENTRADA")
     assert lan["protocolo_id"] == pid and lan["caixa_id"] == cx
@@ -132,7 +142,8 @@ def test_o_valor_entra_numa_natureza_propria_ligado_ao_protocolo_e_ao_pedido(cas
     assert lan["receita_do_titular"] == 0
     assert lan["origem"] == RMR.ORIGEM
     assert lan["origem_chave"] == f"{RMR.TABELA}:{res['repasse_id']}"
-    assert "CRC 2026/000123" in lan["descricao"] and "Não é emolumento" in lan["descricao"]
+    assert "CRC 2026/000123" in lan["descricao"] and "não é emolumento" in lan["descricao"]
+    assert "CARTORIO EXEMPLO DO 1 OFICIO" in lan["descricao"]
     assert lan["hash_lancamento"] and lan["numero"]
     with db.connect() as con:
         r = RMR.registro(con, res["repasse_id"])
@@ -261,7 +272,83 @@ def test_a_natureza_nao_aparece_no_lancamento_avulso_do_balcao():
     assert "VALOR_DE_TERCEIRO" not in NATUREZAS_DO_BALCAO
 
 
-def test_a_categoria_do_repasse_e_repasse_e_nao_vai_ao_livro_diario_nem_ao_siaferj(casa):
+# ------------------------------------------------- o saldo de repasse da CRC
+
+
+def test_o_saldo_e_o_recebido_menos_o_destinado_e_nao_tem_prazo(casa):
+    db = casa["db"]
+    cx = _caixa(db)
+    a = _receber(db, _protocolo(db), cx)
+    b = _receber(db, _protocolo(db, "2026.11.905"), cx, pedido_crc="CRC 2026/000124")
+    p = _pend(db)
+    assert [x["id"] for x in p["no_saldo"]] == [a["repasse_id"], b["repasse_id"]]
+    assert p["saldo"]["saldo_centavos"] == 9100 and p["saldo"]["recebido"] == "91,00"
+    assert all("prazo" not in x and "vencido" not in x for x in p["no_saldo"])
+    with db.connect() as con:
+        assert RMR.achados(con) == []                 # dinheiro no saldo não é aviso
+    _destinar(db, RMR.CAIXA, "50,00")
+    _destinar(db, RMR.ENVIO_CRC, "30,00", despesa_id=str(_despesa(db, valor=3000)),
+              comprovante="AUT 123456")
+    with db.connect() as con:
+        s = RMR.saldo(con)
+        destinos = RMR.destinacoes(con)
+    assert (s["em_caixa_centavos"], s["enviado_crc_centavos"], s["saldo_centavos"]) \
+        == (5000, 3000, 1100)
+    assert [d["destino"] for d in destinos] == [RMR.ENVIO_CRC, RMR.CAIXA]
+    # o pedido continua no saldo, sabendo de onde veio: a destinação não é por pedido
+    assert [x["situacao"] for x in _pend(db)["no_saldo"]] == [RMR.RECEBIDO] * 2
+
+
+def test_enviar_a_crc_exige_despesa_da_categoria_paga_e_comprovante(casa):
+    db = casa["db"]
+    _receber(db, _protocolo(db), _caixa(db))
+
+    def enviar(**kw):
+        base = {"despesa_id": None, "comprovante": "AUT 123456"}
+        return _destinar(db, RMR.ENVIO_CRC, kw.pop("valor", "45,50"), **{**base, **kw})
+
+    with pytest.raises(RMR.RepasseTerceiroError, match="número da despesa"):
+        enviar()
+    errada = _despesa(db, categoria="OUTRAS")
+    with pytest.raises(RMR.RepasseTerceiroError, match="Livro Diário e ao SIAFERJ"):
+        enviar(despesa_id=str(errada))
+    nao_paga = _despesa(db, pagar=False)
+    with pytest.raises(RMR.RepasseTerceiroError, match="ainda não foi paga"):
+        enviar(despesa_id=str(nao_paga))
+    pequena = _despesa(db, valor=1000)
+    with pytest.raises(RMR.RepasseTerceiroError, match="não cabem nela"):
+        enviar(despesa_id=str(pequena))
+    certa = _despesa(db)
+    with pytest.raises(RMR.RepasseTerceiroError, match="comprovante"):
+        enviar(despesa_id=str(certa), comprovante="")
+    with pytest.raises(RMR.RepasseTerceiroError, match="futuro"):
+        enviar(despesa_id=str(certa), dia="2026-12-01")
+    with pytest.raises(RMR.RepasseTerceiroError, match="não se destina"):
+        enviar(despesa_id=str(certa), valor="50,00")
+    feito = enviar(despesa_id=str(certa))
+    assert feito["despesa_id"] == certa and feito["saldo_centavos"] == 0
+    assert _saldo(db) == 0
+
+
+def test_transformar_em_caixa_nao_lanca_nada_nem_vira_receita(casa):
+    db = casa["db"]
+    _receber(db, _protocolo(db), _caixa(db))
+    with db.connect() as con:
+        antes = banco(con).ler("SELECT * FROM cx_lancamentos ORDER BY id")
+    with pytest.raises(RMR.RepasseTerceiroError, match="maior que zero"):
+        _destinar(db, RMR.CAIXA, "")
+    with pytest.raises(RMR.RepasseTerceiroError, match="destino do saldo"):
+        _destinar(db, "CREDITOS_CRC", "10,00")
+    feito = _destinar(db, RMR.CAIXA, "45,50", observacao="o saldo da CRC se pagou")
+    assert feito["saldo_centavos"] == 0 and feito["despesa_id"] is None
+    with db.connect() as con:
+        depois = banco(con).ler("SELECT * FROM cx_lancamentos ORDER BY id")
+    assert [dict(x) for x in depois] == [dict(x) for x in antes]
+    with pytest.raises(RMR.RepasseTerceiroError, match="não se destina"):
+        _destinar(db, RMR.CAIXA, "0,01")
+
+
+def test_a_categoria_do_envio_e_repasse_e_nao_vai_ao_livro_diario_nem_ao_siaferj(casa):
     db = casa["db"]
     assert DP.CATEGORIAS[RMR.CATEGORIA_DA_DESPESA][1] == DP.REPASSE
     i = _despesa(db)
@@ -276,21 +363,18 @@ def test_a_categoria_do_repasse_e_repasse_e_nao_vai_ao_livro_diario_nem_ao_siafe
     assert DP.lancamentos_para_o_siaferj(rel) == []      # ...e não no SIAFERJ
 
 
-# ---------------------------------------------------- a pendência e o repasse
-
-
-def test_recebido_e_nao_repassado_e_pendencia_com_prazo_e_atraso(casa):
+def test_o_lancamento_desfeito_sai_do_saldo_e_vira_aviso_ate_encerrar(casa):
     db = casa["db"]
-    pid, cx = _protocolo(db), _caixa(db)
-    res = _receber(db, pid, cx)
-    [x] = _pend(db)["a_repassar"]
-    assert x["id"] == res["repasse_id"] and not x["vencido"]
-    [x] = _pend(db, "2026-11-23")["a_repassar"]
-    assert x["vencido"] and x["dias_de_atraso"] == 4
+    res = _receber(db, _protocolo(db), _caixa(db))
+    with db.transaction() as con:
+        banco(con).escrever("UPDATE cx_lancamentos SET estornado=1 WHERE id=%s",
+                            (res["lancamento_id"],))
+    p = _pend(db)
+    assert p["no_saldo"] == [] and [x["id"] for x in p["desfeitos"]] == [res["repasse_id"]]
+    assert p["saldo"]["saldo_centavos"] == 0
     with db.connect() as con:
-        [aviso] = RMR.achados(con, hoje="2026-11-23")
-    assert aviso["chave"] == f"REPASSE_TERCEIRO:{res['repasse_id']}"
-    assert "não repassado" in aviso["titulo"]
+        [aviso] = RMR.achados(con)
+    assert aviso["chave"] == f"REPASSE_TERCEIRO_DESFEITO:{res['repasse_id']}"
     con = sqlite3.connect(casa["banco"])
     con.row_factory = sqlite3.Row
     try:
@@ -298,83 +382,6 @@ def test_recebido_e_nao_repassado_e_pendencia_com_prazo_e_atraso(casa):
     finally:
         con.close()
     assert g["regra"] == "REPASSE_DE_TERCEIRO" and g["gravidade"] == "ATENCAO"
-
-
-def test_o_prazo_da_casa_e_configuravel(casa):
-    db = casa["db"]
-    db.set_settings({RMR.CHAVE_DO_PRAZO: "3"})
-    res = _receber(db, _protocolo(db), _caixa(db))
-    assert res["prazo"] == "2026-11-24"   # qui 19, (sex 20 é feriado nacional), seg 23, ter 24
-
-
-def test_o_repasse_exige_comprovante_e_despesa_da_categoria_paga(casa):
-    db = casa["db"]
-    res = _receber(db, _protocolo(db), _caixa(db))
-    rid = res["repasse_id"]
-
-    def repassar(**kw):
-        base = {"forma": "DESPESA", "comprovante": "AUT 123456", "repassado_em": HOJE,
-                "despesa_id": None}
-        with db.transaction() as con:
-            return RMR.registrar_repasse(con, rid, hoje=HOJE, agora=AGORA,
-                                         usuario="mario", **{**base, **kw})
-
-    with pytest.raises(RMR.RepasseTerceiroError, match="comprovante"):
-        repassar(comprovante="")
-    with pytest.raises(RMR.RepasseTerceiroError, match="número da despesa"):
-        repassar()
-    errada = _despesa(db, categoria="OUTRAS")
-    with pytest.raises(RMR.RepasseTerceiroError, match="Livro Diário e ao SIAFERJ"):
-        repassar(despesa_id=str(errada))
-    nao_paga = _despesa(db, pagar=False)
-    with pytest.raises(RMR.RepasseTerceiroError, match="ainda não foi paga"):
-        repassar(despesa_id=str(nao_paga))
-    pequena = _despesa(db, valor=1000)
-    with pytest.raises(RMR.RepasseTerceiroError, match="não cabe nela"):
-        repassar(despesa_id=str(pequena))
-    with pytest.raises(RMR.RepasseTerceiroError, match="futuro"):
-        repassar(forma="CREDITOS_CRC", repassado_em="2026-12-01")
-    certa = _despesa(db)
-    feito = repassar(despesa_id=str(certa))
-    assert feito["no_prazo"] and feito["despesa_id"] == certa
-    p = _pend(db)
-    assert p["a_repassar"] == [] and [x["id"] for x in p["a_conciliar"]] == [rid]
-    with pytest.raises(RMR.RepasseTerceiroError, match="não está esperando repasse"):
-        repassar(forma="CREDITOS_CRC")
-
-
-def test_valor_que_nao_fecha_nao_concilia(casa):
-    db = casa["db"]
-    rid = _receber(db, _protocolo(db), _caixa(db))["repasse_id"]
-    with db.transaction() as con:
-        RMR.registrar_repasse(con, rid, forma="CREDITOS_CRC", comprovante="DEBITO CRC 99",
-                              repassado_em=HOJE, hoje=HOJE, agora=AGORA)
-    with pytest.raises(RMR.RepasseTerceiroError, match="não fecha"):
-        with db.transaction() as con:
-            RMR.conciliar(con, rid, valor_confirmado="45,00", referencia="pedido na CRC",
-                          agora=AGORA)
-    with db.transaction() as con:
-        RMR.conciliar(con, rid, valor_confirmado="45,50", referencia="pedido na CRC",
-                      agora=AGORA)
-    with db.connect() as con:
-        assert RMR.registro(con, rid)["situacao"] == RMR.CONCILIADO
-    p = _pend(db)
-    assert p["a_repassar"] == [] and p["a_conciliar"] == []
-
-
-def test_o_lancamento_desfeito_sai_da_pendencia_e_vira_aviso_ate_encerrar(casa):
-    db = casa["db"]
-    res = _receber(db, _protocolo(db), _caixa(db))
-    with db.transaction() as con:
-        banco(con).escrever("UPDATE cx_lancamentos SET estornado=1 WHERE id=%s",
-                            (res["lancamento_id"],))
-    p = _pend(db)
-    assert p["a_repassar"] == [] and [x["id"] for x in p["desfeitos"]] == [res["repasse_id"]]
-    with pytest.raises(RMR.RepasseTerceiroError, match="estornado ou excluído"):
-        with db.transaction() as con:
-            RMR.registrar_repasse(con, res["repasse_id"], forma="CREDITOS_CRC",
-                                  comprovante="X 1", repassado_em=HOJE, hoje=HOJE,
-                                  agora=AGORA)
     with db.transaction() as con:
         assert RMR.encerrar_sem_repasse(con, res["repasse_id"], agora=AGORA,
                                         motivo="Lançado no protocolo errado")["situacao"] \
@@ -384,7 +391,7 @@ def test_o_lancamento_desfeito_sai_da_pendencia_e_vira_aviso_ate_encerrar(casa):
     _receber(db, _protocolo(db, "2026.11.905"), _caixa(db, "OUTRA PESSOA"))
 
 
-def test_pedido_negado_so_encerra_com_a_devolucao_lancada_no_caixa(casa):
+def test_pedido_negado_so_sai_do_saldo_com_a_devolucao_lancada_no_caixa(casa):
     db = casa["db"]
     pid, cx = _protocolo(db), _caixa(db)
     res = _receber(db, pid, cx)
@@ -412,21 +419,23 @@ def test_pedido_negado_so_encerra_com_a_devolucao_lancada_no_caixa(casa):
     with pytest.raises(RMR.RepasseTerceiroError, match="devolução parcial"):
         encerrar("900/2026")
     assert encerrar("901/2026")["situacao"] == RMR.DEVOLVIDO
+    assert _saldo(db) == 0
     with db.connect() as con:
         assert RMR.ids_de_devolucao(con) == {int(inteira[0]["id"])}
 
 
-def test_o_ja_repassado_nao_se_estorna_pelo_caixa(casa):
+def test_o_que_o_saldo_ja_nao_cobre_nao_se_devolve_nem_se_estorna(casa):
     db = casa["db"]
     res = _receber(db, _protocolo(db), _caixa(db))
     with db.connect() as con:
         assert RMR.recusa_ao_desfazer(con, res["lancamento_id"]) is None
-    with db.transaction() as con:
-        RMR.registrar_repasse(con, res["repasse_id"], forma="CREDITOS_CRC",
-                              comprovante="DEBITO CRC 99", repassado_em=HOJE, hoje=HOJE,
-                              agora=AGORA)
+    _destinar(db, RMR.CAIXA, "10,00")
     with db.connect() as con:
-        assert "já foi repassado" in RMR.recusa_ao_desfazer(con, res["lancamento_id"])
+        assert "já não está no saldo" in RMR.recusa_ao_desfazer(con, res["lancamento_id"])
+    with pytest.raises(RMR.RepasseTerceiroError, match="já não está no saldo"):
+        with db.transaction() as con:
+            RMR.encerrar_sem_repasse(con, res["repasse_id"], agora=AGORA,
+                                     motivo="Pedido negado pela CRC", devolucao="1/2026")
 
 
 # ------------------------------------------------------------- as telas
@@ -514,15 +523,31 @@ def test_o_lancamento_avulso_recusa_o_valor_de_terceiro(casa):
                                     "WHERE natureza='VALOR_DE_TERCEIRO'")
 
 
-def test_a_tela_dos_repasses_mostra_a_pendencia(casa):
+def test_a_tela_do_saldo_mostra_de_onde_veio_e_destina(casa):
     db, c = casa["db"], casa["c"]
     _receber(db, _protocolo(db), _caixa(db), hoje=date.today().isoformat())
     html = c.get("/rcpn/materializacoes/repasses").get_data(as_text=True)
-    assert "A repassar" in html and "CRC 2026/000123" in html
-    assert "registrar repasse" in html
+    assert "Saldo — R$ 45,50" in html and "CRC 2026/000123" in html
+    assert "CARTORIO EXEMPLO DO 1 OFICIO" in html
+    assert "Enviar à CRC" in html and "Transformar em caixa" in html
     tela = c.get("/rcpn/materializacoes").get_data(as_text=True)
-    assert "Valor de outro cartório parado na casa" in tela
+    assert "Saldo de repasse da CRC:</strong> R$ 45,50" in tela
     assert "Receber o valor do outro cartório" in tela
+    html = _post(c, "/rcpn/materializacoes/repasses/virar-caixa",
+                 "/rcpn/materializacoes/repasses", valor="20,00",
+                 dia=date.today().isoformat())
+    assert "R$ 20,00 transformado em caixa" in _avisos(html), _avisos(html)
+    despesa = _despesa(db, valor=2550)
+    html = _post(c, "/rcpn/materializacoes/repasses/enviar-crc",
+                 "/rcpn/materializacoes/repasses", valor="25,50",
+                 dia=date.today().isoformat(), despesa_id=str(despesa),
+                 comprovante="AUT 777")
+    assert "R$ 25,50 enviado à CRC" in _avisos(html), _avisos(html)
+    assert "Saldo — R$ 0,00" in html and "Para onde foi" in html
+    # transformar em caixa é decisão do oficial; enviar à CRC, de quem responde pelo caixa
+    vistas = casa["app"].view_functions
+    assert vistas["rcpn_materializacao_virar_caixa"].papeis_exigidos == ("ADMIN",)
+    assert vistas["rcpn_materializacao_enviar_crc"].papeis_exigidos == ("ADMIN", "MANAGER")
 
 
 # ------------------------------------------------------------- o selo

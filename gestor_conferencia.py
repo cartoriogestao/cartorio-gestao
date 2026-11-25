@@ -1719,12 +1719,13 @@ def regra_fechamento_do_mes(con, hoje: date) -> list[dict]:
 
 
 def regra_repasse_de_terceiro(con, hoje: date) -> list[dict]:
-    """O valor de outro cartório recebido na materialização e não repassado.
+    """O valor de outro cartório com o lançamento desfeito e o pedido aberto.
 
     F010 (25/11/2026), solução B da CR004: o cliente paga aqui a certidão que o
-    outro cartório emite, e esse dinheiro é de lá. Passou do prazo da casa sem
-    repasse — ou o lançamento foi desfeito com o registro aberto — é aviso ao
-    oficial. A régua e a frase moram em `rc_materializacao_repasse.achados`."""
+    outro cartório emite, e esse dinheiro forma o saldo de repasse da CRC. Não
+    há prazo (a CRC cobra do saldo dela, e recarregar é decisão do oficial):
+    o aviso é o lançamento desfeito com o pedido aberto. A frase mora em
+    `rc_materializacao_repasse.achados`."""
     import rc_materializacao_repasse as RMR
     return [_achado(a["chave"], "REPASSE_DE_TERCEIRO", a["gravidade"], "GESTAO",
                     a["titulo"], a["detalhe"], a["prazo"],

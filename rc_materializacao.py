@@ -152,7 +152,7 @@ def listar(con, limite: int = 50) -> list[dict]:
                  FROM rc_materializacoes m
                  LEFT JOIN rc_materializacao_repasses r
                         ON r.materializacao_id = m.id
-                       AND r.situacao IN ('RECEBIDO', 'REPASSADO', 'CONCILIADO')
+                       AND r.situacao = 'RECEBIDO'
                 ORDER BY m.id DESC LIMIT %s""", (int(limite),))]
     return [dict(x) for x in bd.ler(
         "SELECT * FROM rc_materializacoes ORDER BY id DESC LIMIT %s",

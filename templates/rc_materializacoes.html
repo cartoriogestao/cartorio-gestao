@@ -4,16 +4,14 @@
 {% include '_serventia.html' %}
 <div class="actions">
   <a class="button" href="{{ url_for('rcpn_certidoes') }}">&larr; Certidões</a>
-  <a class="button" href="{{ url_for('rcpn_materializacao_repasses') }}">Repasses aos cartórios de origem</a>
+  <a class="button" href="{{ url_for('rcpn_materializacao_repasses') }}">Saldo de repasse da CRC</a>
 </div>
 
-{% if pend.a_repassar or pend.desfeitos %}
-<div class="notice warning">
-  <strong>Valor de outro cartório parado na casa:</strong>
-  {{ pend.a_repassar | length }} pedido(s), R$ {{ pend.total_a_repassar }}
-  {% if pend.vencidos %}— <strong>{{ pend.vencidos }} fora do prazo</strong>{% endif %}
-  {% if pend.desfeitos %}; {{ pend.desfeitos | length }} com o lançamento desfeito, a encerrar{% endif %}.
-  <a href="{{ url_for('rcpn_materializacao_repasses') }}">Ver os repasses</a>.
+{% if pend.saldo.saldo_centavos > 0 or pend.desfeitos %}
+<div class="notice {{ 'warning' if pend.desfeitos else 'info' }}">
+  <strong>Saldo de repasse da CRC:</strong> R$ {{ pend.saldo.saldo }}
+  {% if pend.desfeitos %}; {{ pend.desfeitos | length }} pedido(s) com o lançamento desfeito, a encerrar{% endif %}.
+  <a href="{{ url_for('rcpn_materializacao_repasses') }}">Enviar à CRC ou transformar em caixa</a>.
 </div>
 {% endif %}
 
@@ -21,7 +19,8 @@
    cliente paga aqui a materialização (o item do protocolo) E a certidão que
    o outro cartório emite. Essa segunda parte entra no caixa como «valor de
    terceiro»: não é receita do titular, nem base do ISS, nem receita do Livro
-   Diário, e sai para o outro cartório pelo repasse, com comprovante. #}
+   Diário, e forma o saldo de repasse da CRC — que o oficial envia à CRC ou
+   transforma em caixa. #}
 <section class="panel">
   <div class="panel-head"><span>Receber o valor do outro cartório</span></div>
   <form method="post" class="grid2" style="padding:14px"

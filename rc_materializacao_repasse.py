@@ -1,75 +1,69 @@
-"""O VALOR DE TERCEIRO DA MATERIALIZAÇÃO — o dinheiro do outro cartório, até sair da casa.
+"""O VALOR DE TERCEIRO DA MATERIALIZAÇÃO e o SALDO DE REPASSE DA CRC.
 
 F010 do agente financeiro (25/11/2026), a solução B do estudo CR004, escolhida
-pelo titular no mesmo dia.
+pelo titular no mesmo dia, e refeita no mesmo dia com a explicação dele de como
+a CRC cobra.
 
 O QUE ACONTECE NO BALCÃO
     O cliente pede, pela CRC, a certidão de um registro que mora em outro
     cartório. Esta casa cobra a MATERIALIZAÇÃO (item 14.5.1, no protocolo,
     como qualquer ato) e recebe também o que o cartório de origem cobra pela
-    certidão. Essa segunda parte NÃO É DA CASA: ela passa pelo caixa e sai,
-    inteira, para o outro cartório (ou para a CRC, que cobra por ele).
+    certidão. Essa segunda parte entra no caixa SABENDO DE ONDE VEIO: o pedido
+    da CRC e o cartório de origem.
+
+COMO A CRC COBRA (o titular, 25/11/2026)
+    O outro cartório não recebe de nós: a CRC paga a ele com o SALDO que esta
+    casa tem lá. Esse saldo pode se manter sozinho — as certidões que esta casa
+    emite para pedidos de outros cartórios entram nele e pagam as que ela pede
+    — ou pode precisar de recarga. Por isso o dinheiro do cliente não vai, um
+    pedido por vez, ao cartório de origem: ele forma o SALDO DE REPASSE DA CRC,
+    que o oficial DESTINA (`DESTINOS`), no valor que quiser, até o saldo:
+      - ENVIAR À CRC: completar o saldo de lá. Sai por uma despesa da categoria
+        `REPASSE_SERVENTIA_CRC` (natureza REPASSE: fora do Livro Diário e do
+        SIAFERJ), paga, e com o comprovante;
+      - TRANSFORMAR EM CAIXA: quando o saldo da CRC se paga com as certidões
+        emitidas, o dinheiro fica na casa. Ele já está na gaveta ou na conta
+        (o fechamento o conta desde a entrada): nada se lança no caixa, só se
+        registra que ele deixou de ser saldo de repasse.
 
 POR QUE UMA NATUREZA PRÓPRIA NO CAIXA (`VALOR_DE_TERCEIRO`)
     Lançado como RECEBIMENTO, o valor viraria receita do titular (o
-    carnê-leão o estima como renda), base do ISS (se fosse no campo do
-    emolumento) e «selos × caixa» com diferença sem explicação. Lançado como
-    «outra entrada», ficaria certo nas contas, mas solto: sem o pedido, sem o
-    cartório, sem o aviso do que ainda não foi repassado. Aqui o valor entra
-    numa natureza que NENHUM leitor conta como receita — e cada leitor diz
-    isso com todas as letras e com teste:
-      - relatório financeiro (`gestor_financeiro`): bloco próprio, fora da
-        receita e fora das «outras entradas»;
-      - carnê-leão (`carne_leao`): só conta RECEBIMENTO e a «outra entrada»
-        marcada; esta natureza não é nenhuma das duas;
-      - NFS-e e ISS (`nfse.base_do_recibo`): fora da base, e a descrição da
-        nota diz que o recibo leva valor de terceiro;
-      - Livro Diário (`livro_diario`): a receita sai do SELO, e não do caixa;
-        e o selo da materialização é o do 14.5.1 (ver `MEDIDO` abaixo);
-      - «selos × caixa» do mês (`gestor_conferencia.regra_fechamento_do_mes`):
-        fora da conta do caixa, porque nenhum selo o declara.
-    O dinheiro continua no caixa (o fechamento o conta, como conta qualquer
-    entrada): ele está na gaveta ou na conta, e a gaveta tem de fechar.
+    carnê-leão o estima como renda), base do ISS e «selos × caixa» com
+    diferença sem explicação. Aqui ele entra numa natureza que NENHUM leitor
+    conta como receita — e cada leitor diz isso com todas as letras e com
+    teste: o relatório financeiro (bloco próprio), o carnê-leão, a NFS-e e o
+    ISS, o Livro Diário (a receita sai do selo, que é o do 14.5.1) e «selos ×
+    caixa» do mês.
+    O VALOR QUE VIRA CAIXA TAMBÉM NÃO VIRA RECEITA AQUI. O saldo da CRC que
+    pagou o outro cartório veio das certidões que esta casa emitiu, e essas já
+    são receita no recebimento delas («PG feito pela CRC»): contar de novo o
+    dinheiro do cliente seria contar duas vezes. Se o contador disser outra
+    coisa, é pergunta aberta (relatório F010), e não regra inventada aqui.
 
-O REPASSE, NO MOLDE DO REPASSE AO APRESENTANTE (`protesto_repasse`)
-    Um registro por pedido da CRC (`rc_materializacao_repasses`), ligado ao
-    protocolo do balcão, ao lançamento do caixa e — quando o selo sair — à
-    materialização. As situações:
-        RECEBIDO → REPASSADO → CONCILIADO
-        RECEBIDO → DEVOLVIDO   (o pedido não deu certo e o dinheiro voltou)
-        RECEBIDO → CANCELADO   (o lançamento do caixa foi desfeito)
-    A PENDÊNCIA NASCE DO LANÇAMENTO, e não de uma lista à parte: recebido, com
-    o lançamento vivo e sem repasse, É a pendência. O lançamento estornado ou
-    excluído sai da pendência e aparece em «desfeitos», para alguém encerrar.
+O PEDIDO (`rc_materializacao_repasses`, um por pedido da CRC)
+    Ligado ao protocolo do balcão, ao lançamento do caixa e — quando o selo
+    sair — à materialização. As situações:
+        RECEBIDO   (está no saldo de repasse da CRC)
+        DEVOLVIDO  (o pedido não deu certo e o dinheiro voltou ao cliente)
+        CANCELADO  (o lançamento do caixa foi desfeito)
     O MESMO PEDIDO NÃO SE RECEBE DUAS VEZES: a regra mora no banco.
 
-    O REPASSE EXIGE COMPROVANTE, e sai por um dos caminhos que já têm
-    autorização do titular (`FORMAS_DE_REPASSE`): a despesa do módulo de
-    despesas, na categoria `REPASSE_SERVENTIA_CRC` (natureza REPASSE: fora do
-    Livro Diário e do SIAFERJ, como o repasse ao apresentante), ou o débito
-    nos créditos que a casa tem na CRC. Repasse em espécie, tirado do caixa,
-    NÃO existe aqui: é pergunta aberta ao titular (relatório F010).
+O SALDO (`saldo`)
+    Recebido (pedidos RECEBIDO com o lançamento vivo) menos o destinado
+    (`rc_crc_saldo_destinacoes`). Não se destina mais do que há, e não se
+    devolve nem se estorna o que o saldo já não cobre: o dinheiro já foi para
+    a CRC ou para o caixa.
 
 O QUE ESTE MÓDULO NÃO DECIDE (perguntas do titular, relatório F010)
-    Como a CRC cobra a casa, quem paga a taxa da CRC, se o cliente paga antes
-    ou quando a certidão chega, o que fazer com o pedido negado (devolver ou
-    deixar crédito) e de onde sai o repasse. Onde a resposta muda o sistema, há
-    uma chave em `settings` com o padrão mais seguro:
-      - `rc_repasse_prazo_dias_uteis` (1): o prazo DA CASA para o aviso —
-        não há prazo legal medido; o padrão curto avisa cedo;
-      - `rc_repasse_cobra_taxa_crc` (0): a taxa da CRC só entra no valor do
-        cliente com a chave ligada — cobrar do cliente o que o titular não
-        decidiu cobrar seria inventar regra.
+    Quem paga a taxa da CRC: `rc_repasse_cobra_taxa_crc` (0) — a taxa só entra
+    no valor do cliente com a chave ligada.
 
 MEDIDO EM 25/11/2026 (produção, só leitura)
-    Nenhuma materialização registrada nem selada (0 em `rc_materializacoes`,
-    0 selos pelo caminho da materialização). O envelope do selo manda
+    Nenhuma materialização registrada nem selada. O envelope do selo manda
     `codigoAto: "14.5.1"` e o valor de origem num campo próprio
-    (`valorEmolumentosCertidao`), que descreve a certidão de lá. Nos 1.251
-    selos do acervo com «Ato: 14.5.1» (2ª via e atos em geral do civil), o
-    texto do TJ declara sempre o valor DA TABELA para o 14.5.1 (Total R$ 53,58
-    / Emol R$ 47,84 na vigente), e nunca um valor digitado. Que o TJ faça o
-    mesmo no caminho da materialização só se prova com o primeiro selo dela.
+    (`valorEmolumentosCertidao`). Nos 1.251 selos do acervo com «Ato: 14.5.1»
+    o texto do TJ declara sempre o valor DA TABELA para o 14.5.1, e nunca um
+    valor digitado; no caminho da materialização, só o primeiro selo prova.
     ESTE MÓDULO NÃO MEXE NO SELO, nem no FERJ e no FERC.
 
 PostgreSQL nativo, pelo `bd_nativo`. Dinheiro em centavos. Data e hora se
@@ -82,43 +76,37 @@ from typing import Any
 
 from bd_nativo import banco
 from caixa_schema import centavos, hash_lancamento, reais
-from ri_schema import ler_feriados_locais, soma_dias_uteis
 
 TABELA = "rc_materializacao_repasses"
+TABELA_DESTINOS = "rc_crc_saldo_destinacoes"
 NATUREZA = "VALOR_DE_TERCEIRO"
 ORIGEM = "TERCEIRO_MATERIALIZACAO"
 CODIGO_DA_MATERIALIZACAO = "14.5.1"
-#: A categoria do módulo de despesas por onde o repasse sai da conta.
+#: A categoria do módulo de despesas por onde o envio à CRC sai da conta.
 CATEGORIA_DA_DESPESA = "REPASSE_SERVENTIA_CRC"
 
-RECEBIDO, REPASSADO, CONCILIADO = "RECEBIDO", "REPASSADO", "CONCILIADO"
-DEVOLVIDO, CANCELADO = "DEVOLVIDO", "CANCELADO"
+RECEBIDO, DEVOLVIDO, CANCELADO = "RECEBIDO", "DEVOLVIDO", "CANCELADO"
 SITUACOES = {
-    RECEBIDO: "Recebido — falta repassar ao cartório de origem",
-    REPASSADO: "Repassado — falta conciliar",
-    CONCILIADO: "Repassado e conciliado",
+    RECEBIDO: "Recebido — no saldo de repasse da CRC",
     DEVOLVIDO: "Devolvido ao cliente",
     CANCELADO: "Cancelado — o lançamento do caixa foi desfeito",
 }
 #: As situações em que o pedido ainda ocupa a vaga (índice único).
-VIVAS = (RECEBIDO, REPASSADO, CONCILIADO)
+VIVAS = (RECEBIDO,)
 
-#: Por onde o repasse sai — só caminhos que já passam pela autorização do
-#: titular. `despesa` diz se a forma exige a despesa paga do módulo.
-FORMAS_DE_REPASSE: dict[str, dict[str, Any]] = {
-    "DESPESA": {"rotulo": "pela conta da serventia, numa despesa do módulo de "
-                          "despesas (categoria «Repasse a outra serventia — CRC»)",
-                "despesa": True},
-    "CREDITOS_CRC": {"rotulo": "débito nos créditos que a serventia tem na CRC",
-                     "despesa": False},
+ENVIO_CRC, CAIXA = "CRC", "CAIXA"
+#: Para onde o saldo de repasse vai. `despesa` diz se exige a despesa paga.
+DESTINOS: dict[str, dict[str, Any]] = {
+    ENVIO_CRC: {"rotulo": "Enviar à CRC (completar o saldo de lá)",
+                "curto": "enviado à CRC", "despesa": True},
+    CAIXA: {"rotulo": "Transformar em caixa (o saldo da CRC se paga sozinho)",
+            "curto": "transformado em caixa", "despesa": False},
 }
 SITUACOES_DA_DESPESA_PAGA = ("PAGA", "CONCILIADA", "PAGA_FORA")
 
-CHAVE_DO_PRAZO = "rc_repasse_prazo_dias_uteis"
-PRAZO_PADRAO = 1
 CHAVE_DA_TAXA_CRC = "rc_repasse_cobra_taxa_crc"
 
-TRAVA = "rc_materializacao_repasses.pedido"
+TRAVA = "rc_materializacao_repasses.saldo"
 
 SCHEMA = (
     ("rc_materializacao_repasses", """
@@ -127,7 +115,7 @@ SCHEMA = (
             protocolo_id bigint NOT NULL REFERENCES cx_protocolos(id),
             pedido_crc TEXT NOT NULL,              -- o nº do pedido na CRC
             materializacao_id bigint REFERENCES rc_materializacoes(id),
-            cartorio_nome TEXT NOT NULL,           -- quem recebe o repasse
+            cartorio_nome TEXT NOT NULL,           -- de onde veio a certidão
             cartorio_cidade TEXT NOT NULL,
             cartorio_uf TEXT NOT NULL,
             emolumentos_origem_centavos bigint NOT NULL DEFAULT 0,
@@ -136,18 +124,7 @@ SCHEMA = (
             valor_centavos bigint NOT NULL CHECK (valor_centavos > 0),
             lancamento_id bigint REFERENCES cx_lancamentos(id),
             recebido_em TEXT NOT NULL,
-            prazo TEXT NOT NULL,
             situacao TEXT NOT NULL DEFAULT 'RECEBIDO',
-            forma TEXT,
-            comprovante TEXT,
-            favorecido TEXT,
-            despesa_id bigint,
-            repassado_em TEXT,
-            repassado_por TEXT,
-            valor_confirmado_centavos bigint,
-            referencia_conciliacao TEXT,
-            conciliado_em TEXT,
-            conciliado_por TEXT,
             devolucao_lancamento_id bigint REFERENCES cx_lancamentos(id),
             motivo_encerramento TEXT,
             encerrado_em TEXT,
@@ -160,7 +137,7 @@ SCHEMA = (
     ("ux_rc_mat_repasse_pedido_vivo", """
         CREATE UNIQUE INDEX IF NOT EXISTS ux_rc_mat_repasse_pedido_vivo
             ON rc_materializacao_repasses (pedido_crc)
-         WHERE situacao IN ('RECEBIDO', 'REPASSADO', 'CONCILIADO')"""),
+         WHERE situacao = 'RECEBIDO'"""),
     ("ux_rc_mat_repasse_lancamento", """
         CREATE UNIQUE INDEX IF NOT EXISTS ux_rc_mat_repasse_lancamento
             ON rc_materializacao_repasses (lancamento_id)
@@ -168,6 +145,20 @@ SCHEMA = (
     ("ix_rc_mat_repasse_protocolo", """
         CREATE INDEX IF NOT EXISTS ix_rc_mat_repasse_protocolo
             ON rc_materializacao_repasses (protocolo_id)"""),
+    # Para onde o saldo foi. Uma linha por decisão do oficial, no valor que
+    # ele escolheu — não por pedido: a CRC cobra do saldo, e não do pedido.
+    ("rc_crc_saldo_destinacoes", """
+        CREATE TABLE IF NOT EXISTS rc_crc_saldo_destinacoes (
+            id bigint GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+            destino TEXT NOT NULL CHECK (destino IN ('CRC', 'CAIXA')),
+            valor_centavos bigint NOT NULL CHECK (valor_centavos > 0),
+            dia TEXT NOT NULL,
+            despesa_id bigint,                     -- o envio à CRC
+            comprovante TEXT,
+            observacao TEXT,
+            criado_em TEXT NOT NULL,
+            criado_por TEXT
+        )"""),
     # O pedido também fica na materialização, para o selo se ligar ao valor
     # recebido. Coluna opcional: a materialização de antes não tem pedido.
     ("rc_materializacoes.pedido_crc", """
@@ -180,7 +171,7 @@ class RepasseTerceiroError(ValueError):
 
 
 def init_rc_materializacao_repasse_schema(con) -> None:
-    """Cria a tabela. Idempotente. Vem depois do caixa (chaves estrangeiras)."""
+    """Cria as tabelas. Idempotente. Vem depois do caixa (chaves estrangeiras)."""
     bd = banco(con)
     for _nome, sql in SCHEMA:
         bd.escrever(sql)
@@ -196,45 +187,20 @@ def _setting(bd, chave: str) -> str:
     return str((linha or {}).get("value") or "").strip()
 
 
-def prazo_em_dias_uteis(con) -> int:
-    """O prazo da casa para repassar, em dias úteis. Só LÊ.
-
-    Não é prazo legal (nenhum foi medido para esta situação): é a régua do
-    aviso. Vazio ou ilegível vale o padrão, que é curto — avisar cedo é o lado
-    seguro de uma régua que ninguém decidiu."""
-    bruto = _setting(banco(con), CHAVE_DO_PRAZO)
-    try:
-        dias = int(bruto)
-    except ValueError:
-        return PRAZO_PADRAO
-    return dias if 0 <= dias <= 60 else PRAZO_PADRAO
-
-
 def cobra_taxa_da_crc(con) -> bool:
     """A taxa da CRC entra no valor que o cliente paga? Só LÊ. Padrão: não."""
     return _setting(banco(con), CHAVE_DA_TAXA_CRC) == "1"
 
 
-def feriados_da_casa(con) -> set[date]:
-    """Os feriados locais da casa — a mesma lista do RI e do Protesto."""
-    return ler_feriados_locais(_setting(banco(con), "ri_feriados_locais"))
-
-
-def prazo_do_repasse(recebido_em: Any, dias: int,
-                     feriados: set[date] | None = None) -> str:
-    dia = date.fromisoformat(str(recebido_em)[:10])
-    return soma_dias_uteis(dia, int(dias), feriados or set()).isoformat()
-
-
-def _br(dia: Any) -> str:
-    try:
-        return date.fromisoformat(str(dia or "")[:10]).strftime("%d/%m/%Y")
-    except ValueError:
-        return str(dia or "—")
-
-
 def _limpo(valor: Any) -> str:
     return " ".join(str(valor or "").split())
+
+
+def _dia(valor: Any, rotulo: str) -> str:
+    try:
+        return date.fromisoformat(str(valor or "")[:10]).isoformat()
+    except ValueError:
+        raise RepasseTerceiroError(f"Informe {rotulo}.") from None
 
 
 # ---------------------------------------------------------- o recebimento
@@ -288,9 +254,8 @@ def conferir(dados: dict, *, taxa_permitida: bool = False) -> dict:
     if limpo["forma_pagamento"] in ("GRATUITO", "DEPOSITO_PREVIO", "PG_CRC", "PG_ONR"):
         raise RepasseTerceiroError(
             "Esta forma não serve para valor de terceiro: ele é dinheiro que o "
-            "cliente entrega agora, e sai inteiro para o outro cartório. O "
-            "depósito prévio vira receita no uso, e «PG feito pela CRC» é "
-            "receita que a Central paga a esta casa.")
+            "cliente entrega agora. O depósito prévio vira receita no uso, e «PG "
+            "feito pela CRC» é receita que a Central paga a esta casa.")
     limpo.update({f"{k}_centavos": v for k, v in valores.items()})
     limpo["valor_centavos"] = total
     return limpo
@@ -324,14 +289,14 @@ def _protocolo_da_materializacao(bd, protocolo_id: int) -> dict:
 
 
 def descricao_do_lancamento(d: dict) -> str:
-    return (f"Valor de terceiro — repasse ao {d['cartorio_nome']} "
+    return (f"Valor de terceiro — certidão do {d['cartorio_nome']} "
             f"({d['cartorio_cidade']}/{d['cartorio_uf']}), pedido CRC nº "
-            f"{d['pedido_crc']}. Não é emolumento desta serventia.")
+            f"{d['pedido_crc']}. Saldo de repasse da CRC; não é emolumento desta "
+            f"serventia.")
 
 
 def receber(con, protocolo_id: int, dados: dict, *, caixa_id: int, hoje: str,
-            hora: str, agora: str, usuario: Any = None, usuario_id: Any = None,
-            feriados: set[date] | None = None) -> dict:
+            hora: str, agora: str, usuario: Any = None, usuario_id: Any = None) -> dict:
     """Recebe o valor do outro cartório: o registro e o lançamento. ESCREVE.
 
     O lançamento é `VALOR_DE_TERCEIRO`, de ENTRADA, com as colunas do
@@ -353,21 +318,17 @@ def receber(con, protocolo_id: int, dados: dict, *, caixa_id: int, hoje: str,
         raise RepasseTerceiroError(
             f"O pedido CRC nº {d['pedido_crc']} já foi recebido (registro "
             f"{ja['id']}). Receber de novo cobraria o cliente duas vezes.")
-    dias = prazo_em_dias_uteis(bd)
-    prazo = prazo_do_repasse(hoje, dias, feriados if feriados is not None
-                             else feriados_da_casa(bd))
     repasse_id = int(bd.escrever(
         f"""INSERT INTO {TABELA}(protocolo_id, pedido_crc, cartorio_nome,
                cartorio_cidade, cartorio_uf, emolumentos_origem_centavos,
                fundos_origem_centavos, taxa_crc_centavos, valor_centavos,
-               recebido_em, prazo, situacao, favorecido, criado_em, criado_por)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'RECEBIDO',%s,%s,%s)
+               recebido_em, situacao, criado_em, criado_por)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'RECEBIDO',%s,%s)
            RETURNING id""",
         (int(protocolo_id), d["pedido_crc"], d["cartorio_nome"],
          d["cartorio_cidade"], d["cartorio_uf"], d["emolumentos_origem_centavos"],
          d["fundos_origem_centavos"], d["taxa_crc_centavos"], d["valor_centavos"],
-         str(hoje)[:10], prazo, d["cartorio_nome"], agora,
-         str(usuario or "") or None))[0]["id"])
+         str(hoje)[:10], agora, str(usuario or "") or None))[0]["id"])
     # O LANÇAMENTO, no mesmo jeito do lançamento do balcão (`caixa_web`):
     # número de ordem do ano e hash encadeado no último DO MESMO CAIXA — uma
     # das duas grafias que a conferência da cadeia aceita (`compliance`).
@@ -399,7 +360,7 @@ def receber(con, protocolo_id: int, dados: dict, *, caixa_id: int, hoje: str,
                 (lancamento_id, repasse_id))
     return {"repasse_id": repasse_id, "lancamento_id": lancamento_id,
             "lancamento": f"{numero}/{ano}", "valor_centavos": d["valor_centavos"],
-            "prazo": prazo, "protocolo": p["numero"], "pedido_crc": d["pedido_crc"]}
+            "protocolo": p["numero"], "pedido_crc": d["pedido_crc"]}
 
 
 # ------------------------------------------------------------- as leituras
@@ -419,16 +380,12 @@ _SELECT = f"""
 """
 
 
-def _enfeitar(linha: dict, hoje_d: date | None = None) -> dict:
+def _enfeitar(linha: dict) -> dict:
     d = dict(linha)
     d["lancamento_vivo"] = bool(d.get("lancamento_id")) and not (
         int(d.get("lancamento_estornado") or 0) or int(d.get("lancamento_excluido") or 0))
     d["situacao_rotulo"] = SITUACOES.get(d["situacao"], d["situacao"])
     d["valor"] = reais(int(d["valor_centavos"]))
-    if hoje_d is not None:
-        atraso = (hoje_d - date.fromisoformat(str(d["prazo"])[:10])).days
-        d["dias_de_atraso"] = max(0, atraso)
-        d["vencido"] = atraso > 0
     return d
 
 
@@ -448,33 +405,59 @@ def listar(con, *, limite: int = 100) -> list[dict]:
         _SELECT + " ORDER BY r.id DESC LIMIT %s", (int(limite),))]
 
 
-def pendentes(con, *, hoje: str) -> dict:
-    """O que foi recebido e ainda não saiu, e o que precisa de alguém. Só LÊ.
+def destinacoes(con, *, limite: int = 100) -> list[dict]:
+    """Para onde o saldo foi, da mais nova à mais velha. Só LÊ."""
+    bd = banco(con)
+    if not bd.tem_tabela(TABELA_DESTINOS):
+        return []
+    saida = []
+    for x in bd.ler(f"SELECT * FROM {TABELA_DESTINOS} ORDER BY id DESC LIMIT %s",
+                    (int(limite),)):
+        d = dict(x)
+        d["valor"] = reais(int(d["valor_centavos"]))
+        d["destino_rotulo"] = DESTINOS.get(d["destino"], {}).get("curto", d["destino"])
+        saida.append(d)
+    return saida
 
-    `a_repassar`: recebido, com o lançamento vivo e sem repasse — com prazo e
-    atraso contados (contagem, e não juízo). `a_conciliar`: repassado e ainda
-    não conferido com o que o outro lado confirmou. `desfeitos`: o lançamento
-    do caixa foi estornado ou excluído, e o registro continua aberto — alguém
-    tem de encerrá-lo (ou conferir, se o dinheiro já tinha saído)."""
-    hoje_d = date.fromisoformat(str(hoje)[:10])
-    linhas = [_enfeitar(x, hoje_d) for x in banco(con).ler(
-        _SELECT + " WHERE r.situacao = ANY(%s) ORDER BY r.prazo, r.id",
-        ([RECEBIDO, REPASSADO, CONCILIADO],))]
-    a_repassar = [x for x in linhas if x["situacao"] == RECEBIDO and x["lancamento_vivo"]]
-    a_conciliar = [x for x in linhas if x["situacao"] == REPASSADO and x["lancamento_vivo"]]
-    desfeitos = [x for x in linhas if not x["lancamento_vivo"]]
-    for x in a_repassar:
-        x["explicacao"] = (
-            f"Recebido em {_br(x['recebido_em'])}; repasse até {_br(x['prazo'])}"
-            + (f" — {x['dias_de_atraso']} dia(s) de atraso" if x["vencido"] else "")
-            + f". R$ {x['valor']} do {x['cartorio_nome']} ({x['cartorio_cidade']}/"
-              f"{x['cartorio_uf']}), pedido CRC nº {x['pedido_crc']}, protocolo "
-              f"{x['protocolo_numero']}.")
-    return {"a_repassar": a_repassar, "a_conciliar": a_conciliar,
-            "desfeitos": desfeitos,
-            "total_a_repassar_centavos": sum(int(x["valor_centavos"]) for x in a_repassar),
-            "total_a_repassar": reais(sum(int(x["valor_centavos"]) for x in a_repassar)),
-            "vencidos": sum(int(x["vencido"]) for x in a_repassar)}
+
+def saldo(con) -> dict:
+    """O saldo de repasse da CRC: o recebido menos o destinado. Só LÊ.
+
+    Recebido é o pedido RECEBIDO com o lançamento vivo — o estornado ou
+    excluído no caixa sai sozinho, porque o dinheiro não ficou."""
+    bd = banco(con)
+    recebido = int(bd.valor(
+        f"""SELECT coalesce(sum(r.valor_centavos), 0) AS n FROM {TABELA} r
+              JOIN cx_lancamentos l ON l.id = r.lancamento_id
+             WHERE r.situacao = 'RECEBIDO'
+               AND coalesce(l.estornado, 0) = 0 AND coalesce(l.excluido, 0) = 0""") or 0)
+    por_destino = {k: 0 for k in DESTINOS}
+    if bd.tem_tabela(TABELA_DESTINOS):
+        for x in bd.ler(f"""SELECT destino, coalesce(sum(valor_centavos), 0) AS n
+                              FROM {TABELA_DESTINOS} GROUP BY destino ORDER BY destino"""):
+            por_destino[x["destino"]] = int(x["n"] or 0)
+    livre = recebido - sum(por_destino.values())
+    return {"recebido_centavos": recebido,
+            "enviado_crc_centavos": por_destino[ENVIO_CRC],
+            "em_caixa_centavos": por_destino[CAIXA],
+            "saldo_centavos": livre,
+            "recebido": reais(recebido), "enviado_crc": reais(por_destino[ENVIO_CRC]),
+            "em_caixa": reais(por_destino[CAIXA]), "saldo": reais(max(livre, 0))}
+
+
+def pendentes(con, *, hoje: str | None = None) -> dict:
+    """O saldo e o que precisa de alguém. Só LÊ.
+
+    `no_saldo`: os pedidos recebidos com o lançamento vivo, de onde o saldo
+    veio. `desfeitos`: o lançamento do caixa foi estornado ou excluído e o
+    registro continua RECEBIDO — alguém tem de encerrá-lo. Não há prazo: a CRC
+    cobra do saldo dela, e quando recarregar é decisão do oficial."""
+    linhas = [_enfeitar(x) for x in banco(con).ler(
+        _SELECT + " WHERE r.situacao = 'RECEBIDO' ORDER BY r.id")]
+    s = saldo(con)
+    return {"no_saldo": [x for x in linhas if x["lancamento_vivo"]],
+            "desfeitos": [x for x in linhas if not x["lancamento_vivo"]],
+            "saldo": s}
 
 
 def terceiros_para_o_recibo(con, protocolo_id: int) -> list[dict]:
@@ -511,78 +494,70 @@ def do_lancamento(con, lancamento_id: int) -> dict | None:
     return _enfeitar(linha) if linha else None
 
 
+def _frase_do_saldo_curto(r: dict, livre: int, acao: str) -> str:
+    return (f"O valor de terceiro do pedido CRC nº {r['pedido_crc']} (R$ {r['valor']}) "
+            f"já não está no saldo de repasse da CRC, que tem R$ {reais(max(livre, 0))}: "
+            f"o dinheiro já foi enviado à CRC ou transformado em caixa. {acao} "
+            f"desfaria a prova de que ele entrou. Fale com o oficial.")
+
+
 def recusa_ao_desfazer(con, lancamento_id: int) -> str | None:
     """Pode estornar ou excluir este lançamento? A frase da recusa, ou None.
 
-    O valor que já saiu da casa (repassado ou conciliado) não se desfaz pelo
-    caixa: o dinheiro do cliente já está no outro cartório, e estornar a
-    entrada faria o caixa dizer que ele nunca entrou."""
+    Só enquanto o saldo de repasse cobre o valor: se o saldo já foi destinado,
+    o dinheiro do cliente já foi para a CRC ou para o caixa, e estornar a
+    entrada deixaria o saldo negativo."""
     if not banco(con).tem_tabela(TABELA):
         return None
     r = do_lancamento(con, lancamento_id)
-    if r and r["situacao"] in (REPASSADO, CONCILIADO):
-        return (f"Este lançamento é o valor de terceiro do pedido CRC nº "
-                f"{r['pedido_crc']}, e ele já foi repassado ao {r['cartorio_nome']}. "
-                f"O dinheiro já saiu da casa: estornar a entrada desfaria a prova "
-                f"de que ele entrou. Fale com o oficial.")
+    if not r or r["situacao"] != RECEBIDO or not r["lancamento_vivo"]:
+        return None
+    livre = saldo(con)["saldo_centavos"]
+    if livre < int(r["valor_centavos"]):
+        return _frase_do_saldo_curto(r, livre, "Estornar a entrada")
     return None
 
 
-# ------------------------------------------------------------- o repasse
+# ------------------------------------------------- a destinação do saldo
 
 
-def _prender(bd, repasse_id: int) -> dict:
-    bd.travar(TRAVA)
-    linha = bd.um(_SELECT + " WHERE r.id=%s", (int(repasse_id),))
-    if not linha:
-        raise RepasseTerceiroError(f"Registro {repasse_id} não encontrado.")
-    return _enfeitar(linha)
+def destinar(con, *, destino: str, valor: Any, dia: Any, hoje: str, agora: str,
+             despesa_id: Any = None, comprovante: Any = None, observacao: Any = None,
+             usuario: Any = None) -> dict:
+    """Destina parte do saldo de repasse da CRC. ESCREVE.
 
-
-def registrar_repasse(con, repasse_id: int, *, forma: str, comprovante: str,
-                      repassado_em: str, hoje: str, agora: str,
-                      despesa_id: Any = None, favorecido: Any = None,
-                      usuario: Any = None) -> dict:
-    """Registra que o valor saiu para o outro cartório. ESCREVE.
-
-    O comprovante é obrigatório: repasse sem prova é repasse que o outro lado
-    pode dizer que não recebeu. Pela despesa, ela tem de ser da categoria
-    própria e estar paga — e a soma do que se liga a ela não passa do valor
-    dela (uma despesa pode pagar vários pedidos, se a CRC cobrar em lote)."""
+    ENVIO À CRC: pela despesa paga da categoria própria, com o comprovante; a
+    soma do que se liga a uma despesa não passa do valor dela. CAIXA: só o
+    registro — o dinheiro já está na casa desde a entrada. Nos dois, não se
+    destina mais do que o saldo."""
     bd = banco(con)
-    r = _prender(bd, repasse_id)
-    if r["situacao"] != RECEBIDO:
+    chave = str(destino or "").strip().upper()
+    if chave not in DESTINOS:
         raise RepasseTerceiroError(
-            f"O pedido CRC nº {r['pedido_crc']} não está esperando repasse "
-            f"({r['situacao_rotulo'].lower()}).")
-    if not r["lancamento_vivo"]:
-        raise RepasseTerceiroError(
-            "O lançamento deste valor foi estornado ou excluído no caixa: não há "
-            "o que repassar. Encerre o registro.")
-    chave = str(forma or "").strip().upper()
-    if chave not in FORMAS_DE_REPASSE:
-        raise RepasseTerceiroError(
-            "Escolha por onde o repasse saiu: "
-            + "; ".join(f["rotulo"] for f in FORMAS_DE_REPASSE.values()) + ".")
-    prova = _limpo(comprovante)
-    if len(prova) < 3:
-        raise RepasseTerceiroError(
-            "Informe o comprovante do repasse (autenticação do pagamento, número "
-            "da transação ou do débito na CRC).")
+            "Escolha o destino do saldo: "
+            + "; ".join(f["rotulo"] for f in DESTINOS.values()) + ".")
     try:
-        dia = date.fromisoformat(str(repassado_em or "")[:10]).isoformat()
-    except ValueError:
-        raise RepasseTerceiroError("Informe o dia do repasse.") from None
-    if dia < str(r["recebido_em"])[:10]:
-        raise RepasseTerceiroError("O repasse não pode ser anterior ao recebimento.")
-    if dia > str(hoje)[:10]:
-        raise RepasseTerceiroError("O dia do repasse está no futuro: registre quando ele sair.")
+        quanto = centavos(valor) if str(valor or "").strip() else 0
+    except (TypeError, ValueError):
+        quanto = 0
+    if quanto <= 0:
+        raise RepasseTerceiroError("Informe o valor a destinar, maior que zero.")
+    quando = _dia(dia, "o dia")
+    if quando > str(hoje)[:10]:
+        raise RepasseTerceiroError("O dia está no futuro: registre quando acontecer.")
+    bd.travar(TRAVA)
+    livre = saldo(con)["saldo_centavos"]
+    if quanto > livre:
+        raise RepasseTerceiroError(
+            f"O saldo de repasse da CRC é de R$ {reais(max(livre, 0))}: não se destina "
+            f"R$ {reais(quanto)}.")
+    prova = _limpo(comprovante)
     despesa = None
-    if FORMAS_DE_REPASSE[chave]["despesa"]:
+    if DESTINOS[chave]["despesa"]:
         numero = str(despesa_id or "").strip()
         if not numero.isdigit():
             raise RepasseTerceiroError(
-                "Informe o número da despesa (módulo de despesas) que pagou o repasse.")
+                "Informe o número da despesa (módulo de despesas) que pagou o envio à CRC.")
         if not bd.tem_tabela("dp_despesas"):
             raise RepasseTerceiroError("O módulo de despesas não está instalado.")
         despesa = bd.um("SELECT * FROM dp_despesas WHERE id=%s FOR UPDATE", (int(numero),))
@@ -595,86 +570,58 @@ def registrar_repasse(con, repasse_id: int, *, forma: str, comprovante: str,
                 f"como despesa da serventia, e não é.")
         if despesa["situacao"] not in SITUACOES_DA_DESPESA_PAGA:
             raise RepasseTerceiroError(
-                f"A despesa {numero} ainda não foi paga: o repasse só se registra "
+                f"A despesa {numero} ainda não foi paga: o envio à CRC só se registra "
                 f"quando o dinheiro sai.")
         ja_ligado = int(bd.valor(
-            f"""SELECT coalesce(sum(valor_centavos), 0) AS n FROM {TABELA}
-                 WHERE despesa_id=%s AND situacao IN ('REPASSADO', 'CONCILIADO')""",
-            (int(numero),)) or 0)
-        if ja_ligado + int(r["valor_centavos"]) > int(despesa["valor"]):
+            f"""SELECT coalesce(sum(valor_centavos), 0) AS n FROM {TABELA_DESTINOS}
+                 WHERE despesa_id=%s""", (int(numero),)) or 0)
+        if ja_ligado + quanto > int(despesa["valor"]):
             raise RepasseTerceiroError(
-                f"A despesa {numero} é de R$ {reais(int(despesa['valor']))} e já paga "
-                f"R$ {reais(ja_ligado)} de outros pedidos: este (R$ {r['valor']}) "
-                f"não cabe nela.")
-    quem = _limpo(favorecido) or r["cartorio_nome"]
-    bd.escrever(
-        f"""UPDATE {TABELA} SET situacao='REPASSADO', forma=%s, comprovante=%s,
-               favorecido=%s, despesa_id=%s, repassado_em=%s, repassado_por=%s
-             WHERE id=%s""",
-        (chave, prova, quem, int(despesa["id"]) if despesa else None, dia,
-         str(usuario or "") or None, int(repasse_id)))
-    return {"repasse_id": int(repasse_id), "pedido_crc": r["pedido_crc"],
-            "valor_centavos": int(r["valor_centavos"]), "forma": chave,
-            "no_prazo": dia <= str(r["prazo"])[:10],
-            "despesa_id": int(despesa["id"]) if despesa else None}
+                f"A despesa {numero} é de R$ {reais(int(despesa['valor']))} e já leva "
+                f"R$ {reais(ja_ligado)} do saldo: R$ {reais(quanto)} não cabem nela.")
+        if len(prova) < 3:
+            raise RepasseTerceiroError(
+                "Informe o comprovante do envio à CRC (autenticação do pagamento ou "
+                "número da transação).")
+    nova = int(bd.escrever(
+        f"""INSERT INTO {TABELA_DESTINOS}(destino, valor_centavos, dia, despesa_id,
+               comprovante, observacao, criado_em, criado_por)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+        (chave, quanto, quando, int(despesa["id"]) if despesa else None,
+         prova or None, _limpo(observacao) or None, agora,
+         str(usuario or "") or None))[0]["id"])
+    return {"destinacao_id": nova, "destino": chave, "valor_centavos": quanto,
+            "despesa_id": int(despesa["id"]) if despesa else None,
+            "saldo_centavos": livre - quanto}
 
 
-def conciliar(con, repasse_id: int, *, valor_confirmado: Any, referencia: str,
-              agora: str, usuario: Any = None) -> dict:
-    """Confere o repasse com o que o outro lado confirmou. ESCREVE.
-
-    Valor que não fecha não concilia — a mesma regra da guia do protesto."""
-    bd = banco(con)
-    r = _prender(bd, repasse_id)
-    if r["situacao"] != REPASSADO:
-        raise RepasseTerceiroError(
-            f"Só se concilia o que já foi repassado ({r['situacao_rotulo'].lower()}).")
-    try:
-        confirmado = centavos(valor_confirmado)
-    except (TypeError, ValueError):
-        confirmado = -1
-    if confirmado < 0 or not str(valor_confirmado or "").strip():
-        raise RepasseTerceiroError("Informe o valor que o outro lado confirmou.")
-    if confirmado != int(r["valor_centavos"]):
-        diferenca = confirmado - int(r["valor_centavos"])
-        raise RepasseTerceiroError(
-            f"O valor confirmado (R$ {reais(confirmado)}) não fecha com o repassado "
-            f"(R$ {r['valor']}): diferença de R$ {reais(abs(diferenca))} "
-            f"{'a mais' if diferenca > 0 else 'a menos'}. Valor que não fecha não "
-            f"concilia — confira antes.")
-    ref = _limpo(referencia)
-    if len(ref) < 3:
-        raise RepasseTerceiroError(
-            "Informe onde a confirmação está (o pedido na CRC, o recibo do outro "
-            "cartório, o extrato).")
-    bd.escrever(
-        f"""UPDATE {TABELA} SET situacao='CONCILIADO', valor_confirmado_centavos=%s,
-               referencia_conciliacao=%s, conciliado_em=%s, conciliado_por=%s
-             WHERE id=%s""",
-        (confirmado, ref, agora, str(usuario or "") or None, int(repasse_id)))
-    return {"repasse_id": int(repasse_id), "pedido_crc": r["pedido_crc"]}
+# ---------------------------------------------------- o pedido que não vale
 
 
 def encerrar_sem_repasse(con, repasse_id: int, *, motivo: str, agora: str,
                          devolucao: Any = None, usuario: Any = None) -> dict:
-    """Encerra o valor que não vai ser repassado. ESCREVE.
+    """Tira do saldo o pedido que não vale. ESCREVE.
 
     Dois casos, e o sistema não escolhe entre eles — o caixa já disse:
       - o lançamento foi estornado ou excluído: CANCELADO (o dinheiro não
         ficou na casa);
       - o lançamento está vivo: só com a DEVOLUÇÃO ao cliente lançada no caixa
         (natureza «Devolução ao cliente», no mesmo protocolo e do mesmo
-        valor): DEVOLVIDO. Deixar como crédito do cliente é pergunta aberta
-        ao titular, e não existe aqui."""
+        valor), e enquanto o saldo cobre o valor: DEVOLVIDO."""
     bd = banco(con)
-    r = _prender(bd, repasse_id)
+    bd.travar(TRAVA)
+    linha = bd.um(_SELECT + " WHERE r.id=%s", (int(repasse_id),))
+    if not linha:
+        raise RepasseTerceiroError(f"Registro {repasse_id} não encontrado.")
+    r = _enfeitar(linha)
     if r["situacao"] != RECEBIDO:
         raise RepasseTerceiroError(
-            f"Só se encerra o que ainda não foi repassado ({r['situacao_rotulo'].lower()}).")
+            f"O pedido CRC nº {r['pedido_crc']} já está encerrado "
+            f"({r['situacao_rotulo'].lower()}).")
     razao = _limpo(motivo)
     if len(razao) < 10:
         raise RepasseTerceiroError(
-            "Escreva por que este valor não vai ser repassado (o pedido foi negado, "
+            "Escreva por que este valor sai do saldo (o pedido foi negado, "
             "cancelado, o lançamento estava errado…).")
     if not r["lancamento_vivo"]:
         bd.escrever(
@@ -682,19 +629,21 @@ def encerrar_sem_repasse(con, repasse_id: int, *, motivo: str, agora: str,
                    encerrado_em=%s, encerrado_por=%s WHERE id=%s""",
             (razao, agora, str(usuario or "") or None, int(repasse_id)))
         return {"repasse_id": int(repasse_id), "situacao": CANCELADO}
+    livre = saldo(con)["saldo_centavos"]
+    if livre < int(r["valor_centavos"]):
+        raise RepasseTerceiroError(_frase_do_saldo_curto(r, livre, "Devolver por aqui"))
     numero = str(devolucao or "").strip()
     if not numero:
         raise RepasseTerceiroError(
             "O dinheiro deste valor continua no caixa. Lance antes a devolução ao "
             "cliente no caixa (natureza «Devolução ao cliente», neste protocolo) e "
             "informe aqui o número do lançamento (nº/ano).")
+    dev = None
     if "/" in numero:
         n, _, a = numero.partition("/")
-        dev = (bd.um("SELECT * FROM cx_lancamentos WHERE numero=%s AND ano=%s",
-                     (int(n), int(a))) if n.strip().isdigit() and a.strip().isdigit()
-               else None)
-    else:
-        dev = None
+        if n.strip().isdigit() and a.strip().isdigit():
+            dev = bd.um("SELECT * FROM cx_lancamentos WHERE numero=%s AND ano=%s",
+                        (int(n), int(a)))
     if not dev:
         raise RepasseTerceiroError(f"O lançamento {numero} não existe (use nº/ano).")
     if (dev["natureza"] != "DEVOLUCAO" or dev["sentido"] != "SAIDA"
@@ -740,38 +689,24 @@ def vincular_materializacao(con, materializacao_id: int, pedido_crc: Any) -> int
 # --------------------------------------------------------------- o aviso
 
 
-def achados(con, *, hoje: str) -> list[dict]:
-    """Os avisos para o oficial: o que passou do prazo e o que ficou torto. Só LÊ.
+def achados(con, *, hoje: str | None = None) -> list[dict]:
+    """Os avisos para o oficial: o que ficou torto. Só LÊ.
 
+    Não há aviso de prazo — a CRC cobra do saldo dela, e quando recarregar é
+    decisão do oficial. Fica o lançamento desfeito com o registro aberto.
     Cada um com `chave`, `gravidade`, `titulo` e `detalhe` — a forma das regras
     da conferência do gestor (`gestor_conferencia`), que os mostra no painel."""
     bd = banco(con)
     if not bd.tem_tabela(TABELA):
         return []
-    p = pendentes(con, hoje=hoje)
-    saida = []
-    for x in p["a_repassar"]:
-        if not x["vencido"]:
-            continue
-        saida.append({
-            "chave": f"REPASSE_TERCEIRO:{x['id']}", "gravidade": "ATENCAO",
-            "titulo": (f"Valor do {x['cartorio_nome']} ({x['cartorio_uf']}) recebido e não "
-                       f"repassado — pedido CRC nº {x['pedido_crc']}, R$ {x['valor']}"),
-            "detalhe": x["explicacao"] + (
-                " Registre o repasse em Registro Civil → Materializar certidão → "
-                "Repasses aos cartórios de origem, com o comprovante."),
-            "prazo": x["prazo"]})
-    for x in p["desfeitos"]:
-        saida.append({
-            "chave": f"REPASSE_TERCEIRO_DESFEITO:{x['id']}", "gravidade": "ATENCAO",
-            "titulo": (f"Valor de terceiro com o lançamento desfeito — pedido CRC nº "
-                       f"{x['pedido_crc']}, R$ {x['valor']}"),
-            "detalhe": (f"O lançamento do caixa foi estornado ou excluído e o registro está "
-                        f"«{x['situacao_rotulo'].lower()}». "
-                        + ("Encerre-o na tela dos repasses." if x["situacao"] == RECEBIDO
-                           else "O dinheiro já tinha saído: confira com o oficial.")),
-            "prazo": None})
-    return saida
+    return [{
+        "chave": f"REPASSE_TERCEIRO_DESFEITO:{x['id']}", "gravidade": "ATENCAO",
+        "titulo": (f"Valor de terceiro com o lançamento desfeito — pedido CRC nº "
+                   f"{x['pedido_crc']}, R$ {x['valor']}"),
+        "detalhe": ("O lançamento do caixa foi estornado ou excluído e o pedido "
+                    "continua aberto. Encerre-o em Registro Civil → Materializar "
+                    "certidão → Saldo de repasse da CRC."),
+        "prazo": None} for x in pendentes(con)["desfeitos"]]
 
 
 # --------------------------------------------------- o que os leitores usam

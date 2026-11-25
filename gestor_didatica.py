@@ -268,13 +268,10 @@ GUIA: dict[str, tuple[str, list[str]]] = {
          "(depósito em outro dia, ato gratuito, cobrança esquecida)."]),
     "REPASSE_DE_TERCEIRO": (
         "O cliente pagou aqui a certidão que outro cartório emite (materialização "
-        "pedida pela CRC), e esse dinheiro ainda não saiu para lá — ou o "
-        "lançamento dele foi desfeito no caixa com o registro aberto.",
-        ["Abra Registro Civil → Materializar certidão → Repasses aos cartórios de "
-         "origem.",
-         "Registre o repasse com o comprovante (a despesa da categoria «Repasse a "
-         "outra serventia — CRC» ou o débito nos créditos da CRC), ou encerre o "
-         "registro com o motivo e a devolução lançada no caixa."]),
+        "pedida pela CRC), e o lançamento desse valor foi desfeito no caixa com o "
+        "pedido ainda aberto no saldo de repasse da CRC.",
+        ["Abra Registro Civil → Materializar certidão → Saldo de repasse da CRC.",
+         "Encerre o pedido com o motivo (ele já não conta no saldo)."]),
     "BACKUP": (
         "O backup completo está atrasado.",
         ["Rode FERRAMENTAS/BACKUP_AGORA.cmd no servidor (ele também espelha fora)."]),

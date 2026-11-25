@@ -419,11 +419,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 natureza = request.form.get("natureza") or "RECEBIMENTO"
                 # O VALOR DE TERCEIRO NÃO SE DIGITA AQUI (F010, 25/11/2026): ele
                 # nasce na tela da materialização, ligado ao pedido da CRC e ao
-                # repasse. Avulso, seria dinheiro alheio sem dono no caixa.
+                # cartório de origem. Avulso, seria dinheiro alheio sem dono no caixa.
                 if natureza in NATUREZAS_SO_DO_SISTEMA:
                     flash("«Valor de terceiro» se recebe na tela da materialização "
                           "(Registro Civil → Materializar certidão → valor do outro "
-                          "cartório), que o liga ao pedido e ao repasse. "
+                          "cartório), que o liga ao pedido e ao cartório de origem. "
                           "Lançamento não feito.", "danger")
                     return redirect(url_for("caixa"))
                 sentido = NATUREZAS.get(natureza, ("ENTRADA", ""))[0]
@@ -596,7 +596,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     return redirect(url_for("caixa"))
                 natureza = request.form.get("natureza") or l["natureza"]
                 # O VALOR DE TERCEIRO NÃO SE EDITA NEM SE CRIA POR EDIÇÃO (F010):
-                # o valor e o pedido moram no registro do repasse, e mudar só o
+                # o valor e o pedido moram no registro do pedido da CRC, e mudar só o
                 # lançamento deixaria os dois dizendo coisas diferentes.
                 if (l["natureza"] in NATUREZAS_SO_DO_SISTEMA
                         or natureza in NATUREZAS_SO_DO_SISTEMA):

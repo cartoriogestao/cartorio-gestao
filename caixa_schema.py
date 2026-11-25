@@ -56,12 +56,12 @@ NATUREZAS = {
     "COMPLEMENTO": ("ENTRADA", "Complemento de emolumentos"),
     "OUTRA_ENTRADA": ("ENTRADA", "Outra entrada"),
     # O VALOR DE TERCEIRO (F010, 25/11/2026): o dinheiro do outro cartório na
-    # materialização pedida pela CRC. Entra na gaveta e sai inteiro para lá —
-    # não é receita do titular, nem base do ISS, nem receita do Livro Diário.
-    # Só nasce pela tela da materialização (`rc_materializacao_repasse`), que o
-    # liga ao protocolo, ao pedido e ao repasse: digitado no lançamento avulso,
-    # ficaria sem nada disso.
-    "VALOR_DE_TERCEIRO": ("ENTRADA", "Valor de terceiro (repasse a outro cartório)"),
+    # materialização pedida pela CRC. Entra na gaveta e forma o saldo de
+    # repasse da CRC — não é receita do titular, nem base do ISS, nem receita
+    # do Livro Diário. Só nasce pela tela da materialização
+    # (`rc_materializacao_repasse`), que o liga ao protocolo, ao pedido e ao
+    # cartório de origem: digitado no lançamento avulso, ficaria sem nada disso.
+    "VALOR_DE_TERCEIRO": ("ENTRADA", "Valor de terceiro (certidão de outro cartório, pela CRC)"),
     "DEVOLUCAO": ("SAIDA", "Devolução ao cliente"),
     "SANGRIA": ("SAIDA", "Sangria / retirada"),
     "DESPESA": ("SAIDA", "Despesa da serventia"),

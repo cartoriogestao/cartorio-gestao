@@ -241,7 +241,7 @@ def apurar_mes(con, ano: int, mes: int) -> dict:
             r["entrou"][chave] = r["entrou"].get(chave, 0.0) + valor
             continue
         # O VALOR DE TERCEIRO (F010, 25/11/2026): o dinheiro do outro cartório
-        # na materialização. Entrou e sai inteiro para lá — bloco próprio, fora
+        # na materialização (saldo de repasse da CRC). Bloco próprio, fora
         # da receita e fora das «outras entradas», para ninguém o somar a nada.
         if str(lan["natureza"] or "").upper() == "VALOR_DE_TERCEIRO":
             r["valores_de_terceiros"][0] += 1

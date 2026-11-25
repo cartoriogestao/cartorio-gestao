@@ -15,6 +15,11 @@ DE ONDE VEM — UMA FONTE SÓ, E NÃO UMA SEGUNDA GAVETA
     tela não guarda nada: mede na hora, e o achado que a conferência seguinte
     fecha sai da cor sozinho. Ninguém «pinta de verde» uma área à mão.
 
+    O QUE NÃO CABE À GESTÃO (25/11/2026, T019) segue esta regra: o achado que
+    o oficial ou o gerente retira da checklist (`gestao_retirados`) continua
+    na cor oficial. A cor «sem os retirados» é uma SEGUNDA leitura
+    (`medir(excluir_chaves=...)`), mostrada ao lado da oficial, nunca no lugar.
+
 O CRITÉRIO, E ELE É O DO PLANO DO GESTOR
     | cor      | quando                                                         |
     |----------|----------------------------------------------------------------|
@@ -208,7 +213,8 @@ def _rodada(con, hoje: date) -> dict:
     return {"ultima_rodada": quando, "medido": True, "motivo": None}
 
 
-def medir(con, hoje: date | None = None, *, so_rotina: bool = False) -> dict:
+def medir(con, hoje: date | None = None, *, so_rotina: bool = False,
+          excluir_chaves: frozenset[str] | set[str] | None = None) -> dict:
     """O semáforo da casa. SÓ LÊ.
 
     Devolve `{"gestor": {...}, "areas": {codigo: {cor, contagens}},
@@ -219,16 +225,25 @@ def medir(con, hoje: date | None = None, *, so_rotina: bool = False) -> dict:
     `so_rotina=True` mede com a MESMA régua só os achados da rotina
     (`idade_do_achado`): a cor que a área teria sem o débito passado. A cor
     oficial — a do painel e do retrato — é a de `so_rotina=False`.
+
+    `excluir_chaves` (T019) mede sem os achados dessas chaves — os retirados
+    da checklist por não caberem à gestão — e devolve também `retirados`,
+    {área: quantos ficaram de fora}. É a cor «sem os retirados»; a oficial é
+    a medição sem `excluir_chaves`.
     """
     hoje = hoje or date.today()
     rodada = _rodada(con, hoje)
     contagens = {codigo: dict.fromkeys(CONTADORES, 0) for codigo, _ in AREAS}
+    retirados: dict[str, int] = {}
     for r in banco(con).ler(
-            """SELECT regra, gravidade, setor, prazo, primeiro_visto_em
+            """SELECT chave, regra, gravidade, setor, prazo, primeiro_visto_em
                  FROM ge_achados WHERE resolvido_em IS NULL ORDER BY id"""):
         if so_rotina and idade_do_achado(r["primeiro_visto_em"], hoje) != ROTINA:
             continue
         area = area_do_achado(r["setor"], r["regra"])
+        if excluir_chaves and str(r["chave"]) in excluir_chaves:
+            retirados[area] = retirados.get(area, 0) + 1
+            continue
         if area not in contagens:
             contagens[area] = dict.fromkeys(CONTADORES, 0)
         gravidade = str(r["gravidade"] or "").upper()
@@ -242,4 +257,7 @@ def medir(con, hoje: date | None = None, *, so_rotina: bool = False) -> dict:
     resumo = dict.fromkeys(CORES, 0)
     for a in areas.values():
         resumo[a["cor"]] += 1
-    return {"hoje": hoje.isoformat(), "gestor": rodada, "areas": areas, "resumo": resumo}
+    medicao = {"hoje": hoje.isoformat(), "gestor": rodada, "areas": areas, "resumo": resumo}
+    if excluir_chaves is not None:
+        medicao["retirados"] = retirados
+    return medicao

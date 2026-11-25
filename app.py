@@ -3856,6 +3856,7 @@ def _montar_app(test_config: dict | None = None) -> Flask:
             getattr(g.user, "login", None) if g.get("user") else None
         )
         or ((current_user() or {}).get("username")),
+        audit=audit,
     )
 
     import produtividade_web

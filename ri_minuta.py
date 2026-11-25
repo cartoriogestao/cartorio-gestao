@@ -82,6 +82,39 @@ def marcador_de_modelo(teor) -> str | None:
     return achado.group(0) if achado else None
 
 
+# O CLARO QUE ALGUÉM DEIXOU PARA DEPOIS — RI018, 25/11/2026. A AV-01 de uma matrícula nova foi
+# lavrada e selada com «[NOVA MATRÍCULA]» no lugar do número, num ato MANUAL: sem `modelo_codigo`,
+# `ri_modelos_atos.por_preencher` não tem régua, e `marcador_de_modelo` só vê `{{ }}`.
+_CLARO_COM_NOME = re.compile(
+    r"\[[^\[\]]{0,40}?\b(?:NOVA\s+MATR|INSERIR|PREENCHER|COMPLETAR|N[ºO°]?\s*D[AO]\s+MATR)"
+    r"[^\[\]]{0,80}\]|\[[^\[\]]{0,80}\bconferir\s*\]", re.I)
+_COLCHETE = re.compile(r"\[([^\[\]]{3,80})\]")
+#: O trecho que a retificação CITA («onde se lê “…[NOVA MATRÍCULA]…”, leia-se …») não é claro:
+#: é o erro sendo corrigido. A AV que retificou aquele caso é assim, e recusá-la impediria a correção.
+_O_QUE_SE_CITA = re.compile(r"onde\s+se\s+l[eê].{0,2000}?leia-se", re.I | re.S)
+
+
+def claro_por_preencher(teor, *, acervo: bool = False) -> str | None:
+    """O primeiro claro entre colchetes deixado para preencher, ou None. Só LÊ.
+
+    Duas réguas. A de NOME vale sempre: «[NOVA MATRÍCULA]», «[INSERIR …]», «[PREENCHER …]»,
+    «[COMPLETAR]», «[… conferir]». A de CAIXA ALTA («[NÚMERO DO PROTOCOLO]», quatro letras ou
+    mais, nenhuma minúscula) só no ato que não é de acervo: o acervo transcrito tem colchete
+    legítimo («[rubrica]», «[ILEGÍVEL]»), e o ato novo não tem razão para ter.
+    """
+    texto = _O_QUE_SE_CITA.sub(" ", str(teor or ""))
+    achado = _CLARO_COM_NOME.search(texto)
+    if achado:
+        return achado.group(0)
+    if acervo:
+        return None
+    for m in _COLCHETE.finditer(texto):
+        miolo = m.group(1)
+        if not any(c.islower() for c in miolo) and sum(c.isalpha() for c in miolo) >= 4:
+            return m.group(0)
+    return None
+
+
 def _recusa_marcador_de_modelo(teor: str) -> None:
     marca = marcador_de_modelo(teor)
     if marca:

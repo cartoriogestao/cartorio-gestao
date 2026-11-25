@@ -61,6 +61,16 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   {% if rascunho_id %}<input type="hidden" name="_rascunho_id_tela" value="{{ rascunho_id }}">{% endif %}{# HOTFIX-2026-10-13-06 #}
     {% if cg_passos %}{{ regua('form-do-ato', cg_passos, 'imovel') }}{% endif %}
+    {# O QUE O INDICADOR REAL EXIGE — RI018, 25/11/2026. A régua é a do arquivo
+       (`onr_ir_json`); matrícula nova não abre sem isto. #}
+    {% if pendencias_ir %}
+    <div class="notice danger span2" id="pendencias-ir" role="alert">
+      <strong>Falta para o Indicador Real</strong> (Circular COGEX 243/2026). A matrícula não foi aberta:
+      <ul>
+        {% for p in pendencias_ir %}<li data-campo="{{ p.campo }}"><strong>{{ p.rotulo }}</strong> — {{ p.mensagem }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
     {# A FOLHA TAMBEM E DO PAPEL, e por isso deixou de ser obrigatoria de fato:
        ficha nova nao ocupa folha de livro encadernado. Fica no formulario para
        quem estiver cadastrando ficha antiga que ainda nao entrou. #}
@@ -69,16 +79,37 @@
              value="{{ form.get('folha','') }}"></label>
     <label data-passo="abertura">Data de abertura<input type="date" name="data_abertura"
              value="{{ form.get('data_abertura','') }}"></label>
-    <label data-passo="imovel">Localização
-      <select name="rural_urbano"><option value="">—</option><option value="U" {% if form.get('rural_urbano') == 'U' %}selected{% endif %}>Urbano</option><option value="R" {% if form.get('rural_urbano') == 'R' %}selected{% endif %}>Rural</option></select>
+    <label data-passo="imovel">Localização <span class="obrigatorio">*</span>
+      <select name="rural_urbano"{% if not e_acervo %} required{% endif %}><option value="">—</option><option value="U" {% if form.get('rural_urbano') == 'U' %}selected{% endif %}>Urbano</option><option value="R" {% if form.get('rural_urbano') == 'R' %}selected{% endif %}>Rural</option></select>
     </label>
     <label data-passo="imovel">CIB <small>(8 dígitos, obrigatório se rural)</small>
       <input name="cib" value="{{ form.get('cib','') }}" inputmode="numeric"></label>
-    <label class="span2" data-passo="imovel">Logradouro / denominação<input name="logradouro" value="{{ form.get('logradouro','') }}"></label>
+    <label data-passo="imovel">Tipo do imóvel <span class="obrigatorio">*</span>
+      <select name="tipo_imovel"{% if not e_acervo %} required{% endif %}><option value="">—</option>
+        {% for t in ir_tipos_imovel or [] %}<option {% if form.get('tipo_imovel') == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+      </select></label>
+    <label data-passo="imovel">Tipo de via <small>(da tabela do manual do ONR)</small>
+      <select name="tipo_via"><option value="">— já escrito no logradouro —</option>
+        {% for t in ir_tipos_via or [] %}<option {% if form.get('tipo_via') == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+      </select></label>
+    <label class="span2" data-passo="imovel">Logradouro / denominação <span class="obrigatorio">*</span>
+      <input name="logradouro" value="{{ form.get('logradouro','') }}"
+             placeholder="Rua Exemplo, Avenida Exemplo, Fazenda Exemplo — começa pelo tipo da via"></label>
     <label data-passo="imovel">Número<input name="numero_predial" value="{{ form.get('numero_predial','') }}"></label>
     <label data-passo="imovel">Bairro<input name="bairro" value="{{ form.get('bairro','') }}"></label>
+    {# O MUNICÍPIO SAI DO CADASTRO E A UF SAI DO MUNICÍPIO (RI018): o código IBGE
+       vem de «ri_cidade» e de «ri_municipios_ibge». Sem configuração, volta o texto. #}
+    {% if ir_municipios %}
+    <label data-passo="imovel">Município <span class="obrigatorio">*</span>
+      <select name="cidade"{% if not e_acervo %} required{% endif %}>
+        {% for c in ir_municipios %}<option {% if (form.get('cidade') or ir_municipios[0]) == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+        {% if form.get('cidade') and form.get('cidade') not in ir_municipios %}<option selected>{{ form.get('cidade') }}</option>{% endif %}
+      </select></label>
+    <label data-passo="imovel">UF <small>(do município)</small><input name="uf" value="{{ ir_uf }}" readonly></label>
+    {% else %}
     <label data-passo="imovel">Cidade<input name="cidade" value="{{ form.get('cidade','') or sv.ri_cidade }}"></label>
     <label data-passo="imovel">UF<input name="uf" value="{{ form.get('uf','') or 'MA' }}" maxlength="2"></label>
+    {% endif %}
     <label data-passo="imovel">CEP<input name="cep" value="{{ form.get('cep','') }}"></label>
     <label data-passo="imovel">Área<input name="area_valor" value="{{ form.get('area_valor','') }}"></label>
     <label data-passo="imovel">Unidade<select name="area_unidade"><option {% if form.get('area_unidade') == 'm2' %}selected{% endif %}>m2</option><option {% if form.get('area_unidade') == 'ha' %}selected{% endif %}>ha</option></select></label>

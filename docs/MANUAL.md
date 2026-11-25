@@ -223,7 +223,9 @@ tela:
 - **Chave da CENPROT**, em quadro próprio, com o botão **Salvar a chave da
   CENPROT**: códigos do IBGE e código CRA do tabelionato. Ao apontar um título
   vindo da CRA, o sistema calcula a chave pela regra do layout da CENPROT, que
-  é igual para toda serventia. Chave já gravada nunca muda. Formato errado não
+  é igual para toda serventia. Chave já gravada nunca muda (a exceção é a
+  troca pela chave que a Central já usa, feita pelo oficial na linha de
+  comando). Formato errado não
   se grava. Sem esses códigos, o título é apontado sem chave, e a tela do XML da
   CENPROT diz onde preencher;
 - listas do balcão (classificações, vias de entrada, setores) e backup (seção 19).

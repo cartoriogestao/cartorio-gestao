@@ -10,6 +10,9 @@ IBGE e o codigo CRA, em Configuracoes.
 **CHAVE JA GRAVADA NUNCA MUDA, E NAO SE RECUSA CHAVE GRAVADA OU RECEBIDA.** O
 layout proibe mudar a chave. O calculo vale so para a chave nova; nada aqui
 recalcula nem confere o verificador de chave que ja existe.
+A unica excecao e a do oficial, titulo a titulo: `trocar_pela_chave_da_central`
+grava a chave que a Central JA usa para o titulo, quando a nossa nunca foi a
+dela (o acervo do E-Oficio, medido em 25/11/2026).
 
 **TODA ORIGEM RECEBE A CHAVE AO SER APONTADA - correcao de 03/11/2026.** Ficou
 escrito aqui que o titulo de origem CENPROT "fica com a chave da Central". A
@@ -822,6 +825,108 @@ def gravar_chaves_que_faltam(con: Any, ids) -> list[dict]:
     if faltou:
         raise CenprotError("Sem chave a gravar: {}.".format(sorted(faltou)))
     return gravados
+
+
+# --------------------------------------- a chave que a Central ja tem (PR006)
+#
+# **A UNICA EXCECAO A "CHAVE GRAVADA NUNCA MUDA", e so pela mao do oficial.**
+# Medido em 25/11/2026, na listagem da Consulta de Titulos do portal: centenas
+# de titulos do acervo do E-Oficio estao na Central, protestados, com OUTRA
+# chave. A que a carga gravou aqui foi composta pelo E-Oficio a partir do
+# contador interno dele e nunca foi a da Central. Quem procura pela nossa nao
+# acha o titulo; mandar o P com ela criaria um segundo titulo la.
+#
+# A regra existe para que os dois lados nao chamem titulos diferentes pelo
+# mesmo nome. Aqui a troca faz o contrario: devolve ao titulo o nome que a
+# Central ja usa. Por isso ela nao calcula nem adivinha nada. Recebe de quem
+# conferiu os pares titulo -> chave antiga -> chave da Central, e so grava se
+# TODOS passarem nas guardas. Se um falha, nenhum se grava.
+
+
+def trocar_pela_chave_da_central(con: Any, pares) -> list[dict]:
+    """Grava a chave da Central no lugar da nossa, NOS PARES DADOS. ESCREVE.
+
+    `pares` sao dicts com `titulo_id`, `chave_atual` (a que esta gravada aqui,
+    vazia se nao ha) e `chave_central` (a que a Central mostra). As guardas:
+
+    - a chave da Central tem a forma, e o IBGE e o cartorio sao desta casa;
+    - nenhum titulo nem chave da Central se repete na lista;
+    - a chave gravada hoje e a `chave_atual` dita (se outro balcao a mudou
+      depois da conferencia, a lista esta velha);
+    - a chave da Central nao e de outro titulo daqui;
+    - nenhum titulo fora da lista tem a chave antiga (o irmao do mesmo
+      protocolo ficaria com o nome velho).
+
+    Tudo e conferido antes da primeira escrita, sob a mesma trava das outras
+    gravacoes de chave. Quem chama confirma ou desfaz a transacao.
+    """
+    pares = [{"titulo_id": int(p["titulo_id"]),
+              "chave_atual": so_digitos(p.get("chave_atual")),
+              "chave_central": so_digitos(p.get("chave_central"))}
+             for p in pares]
+    if not pares:
+        raise CenprotError("Diga quais titulos: a lista de pares esta vazia.")
+    bd = banco(con)
+    bd.travar("pt_titulos.chave_cenprot")
+    casa = identidade_da_casa(_configuracao_da_casa(bd))
+
+    problemas: list[str] = []
+    ids = [p["titulo_id"] for p in pares]
+    novas = [p["chave_central"] for p in pares]
+    for repetido in sorted({i for i in ids if ids.count(i) > 1}):
+        problemas.append(f"o titulo {repetido} aparece mais de uma vez")
+    for repetida in sorted({c for c in novas if novas.count(c) > 1}):
+        problemas.append(f"a chave {repetida} aparece para mais de um titulo")
+
+    for p in pares:
+        tid, antiga, nova = p["titulo_id"], p["chave_atual"], p["chave_central"]
+        partes = decompor_chave(nova)
+        if not partes:
+            problemas.append(f"titulo {tid}: a chave da Central `{nova}` nao tem 23 digitos")
+            continue
+        if partes["ibge"] != casa["comarca"] or partes["cartorio"] != casa["cartorio"]:
+            problemas.append(f"titulo {tid}: a chave `{nova}` e de outra comarca ou cartorio")
+            continue
+        linha = bd.um("SELECT chave_cenprot FROM pt_titulos WHERE id = %s FOR UPDATE",
+                      (tid,))
+        if linha is None:
+            problemas.append(f"titulo {tid}: nao existe")
+            continue
+        gravada = so_digitos(linha["chave_cenprot"])
+        if gravada != antiga:
+            problemas.append(f"titulo {tid}: a chave gravada e `{gravada}`, e nao "
+                             f"`{antiga}` como diz a lista")
+            continue
+        if gravada == nova:
+            problemas.append(f"titulo {tid}: ja tem a chave da Central")
+            continue
+        outro = bd.um("""SELECT id FROM pt_titulos
+                          WHERE chave_cenprot = %s AND NOT (id = ANY(%s))
+                          LIMIT 1""", (nova, ids))
+        if outro:
+            problemas.append(f"titulo {tid}: a chave `{nova}` ja e do titulo {outro['id']}")
+        if antiga:
+            irmao = bd.um("""SELECT id FROM pt_titulos
+                              WHERE chave_cenprot = %s AND NOT (id = ANY(%s))
+                              LIMIT 1""", (antiga, ids))
+            if irmao:
+                problemas.append(f"titulo {tid}: o titulo {irmao['id']} tem a mesma "
+                                 f"chave antiga e nao esta na lista")
+    if problemas:
+        raise CenprotError("Nenhuma chave foi trocada. " + "; ".join(problemas) + ".")
+
+    trocados = []
+    for p in pares:
+        feito = bd.escrever(
+            """UPDATE pt_titulos SET chave_cenprot = %s
+                WHERE id = %s AND trim(coalesce(chave_cenprot, '')) = %s
+            RETURNING id""",
+            (p["chave_central"], p["titulo_id"], p["chave_atual"]))
+        if not feito:
+            raise CenprotError(f"O titulo {p['titulo_id']} mudou durante a troca; "
+                               "nada foi gravado.")
+        trocados.append(dict(p))
+    return trocados
 
 
 # ------------------------------------------------- o arquivo de emolumentos

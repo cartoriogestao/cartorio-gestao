@@ -31,6 +31,7 @@ import json
 import re
 import sqlite3
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -168,8 +169,8 @@ def _prenotacao(casa, numero=11800, com_matricula=True) -> tuple[int | None, int
             """INSERT INTO ri_protocolos (numero, livro, data_prenotacao, natureza_titulo,
                    matricula_id, data_limite, situacao, criado_em)
                VALUES (?, '1A', '2026-10-26', 'Escritura de compra e venda', ?,
-                       '2026-11-24', 'ABERTO', '2026-10-26T09:00')""",
-            (numero, mid)).lastrowid)
+                       ?, 'ABERTO', '2026-10-26T09:00')""",
+            (numero, mid, (date.today() + timedelta(days=30)).isoformat())).lastrowid)
     con.close()
     return mid, pid
 

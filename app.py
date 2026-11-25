@@ -3767,6 +3767,10 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     onr_endereco_web.registrar_rotas(app, db, login_required, roles_required,
                                      audit, fmt_date)
 
+    # A FILA DE CONFERENCIA DAS FICHAS: a maquina sugere, e so uma pessoa grava.
+    import ri_fila_fichas_web
+    ri_fila_fichas_web.registrar_rotas(app, db, login_required, roles_required, audit)
+
     # A CENTRAL DE CERTIDOES DO ON-RCPN — a fila dos sete modulos e a
     # certidao eletronica. Depois de `atribuicoes_web`, que e quem tem a
     # ficha do assento para onde estas telas apontam.

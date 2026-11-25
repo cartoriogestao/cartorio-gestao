@@ -342,6 +342,7 @@
           de fora: esta tela GRAVA na ficha, e ele nao pratica ato.
         #}
         {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('ri_onr_enderecos') }}">ONR — endereços a conferir</a>{% endif %}
+        <a href="{{ url_for('ri_fila_fichas') }}">Fichas — fila de conferência (Livros 4 e 5)</a>
         <a href="{{ url_for('ri_cnib_pendentes') }}">CNIB — o que espera seu okay</a>
         {# A COPIA LOCAL DA CNIB TEM DE TER UM LUGAR ONDE SE OLHA DE QUANDO ELA
            E. Sem esta porta, o atualizador seria mais uma peca pronta que

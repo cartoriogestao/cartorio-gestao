@@ -204,6 +204,31 @@ def _quantas(modulo: str, con: sqlite3.Connection) -> dict:
             "erro": f"o módulo {modulo} não tem por onde contar o que espera"}
 
 
+def _divisao_de(modulo: str) -> Callable[[sqlite3.Connection], dict] | None:
+    """Quem divide o número daquele módulo, ou `None`. Só escolhe.
+
+    **ESCRITO PELO NOME, e não achado por `getattr`**: a chamada por texto não
+    aparece no grafo de `tests/test_funcao_sem_tela.py`, e a função que o painel
+    mostra passava por órfã. Módulo novo que dividir o número entra aqui.
+    """
+    if modulo == "rc_funai":
+        import rc_funai
+        return rc_funai.quantas_por_grupo
+    return None
+
+
+def _partes(modulo: str, con: sqlite3.Connection) -> dict:
+    """A divisão do número, para o módulo que a tem. Não engole erro."""
+    funcao = _divisao_de(modulo)
+    if funcao is None:
+        return {}
+    try:
+        return {"partes": funcao(con)}
+    except Exception as erro:                # noqa: BLE001 — o motivo vai à tela
+        return {"quantas": None,
+                "erro": f"{modulo}.quantas_por_grupo não respondeu: {erro}"}
+
+
 def painel(con: sqlite3.Connection, *, hoje: str = "") -> list[dict]:
     """As seis linhas, do prazo mais curto ao mais longo, com o que espera.
 
@@ -214,6 +239,8 @@ def painel(con: sqlite3.Connection, *, hoje: str = "") -> list[dict]:
     for o in por_aperto():
         linha = dict(o)
         linha.update(_quantas(o["modulo"], con))
+        if not linha.get("erro"):
+            linha.update(_partes(o["modulo"], con))
         if o.get("mede") == "PRAZO" and hoje:
             # O PRAZO VEM POR CIMA DA CONTAGEM, e nao no lugar dela: as duas
             # respondem perguntas diferentes — quantos trimestres estao em

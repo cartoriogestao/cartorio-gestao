@@ -393,11 +393,11 @@ def preparar_crc(con, hoje: date, *, s: dict, ret: dict[int, str]) -> dict:
 
 
 def preparar_funai(con, hoje: date, *, s: dict, ret: dict[int, str]) -> dict:
+    import gestor_conferencia as GC
     import rc_funai
     r = _vazio()
-    for p in rc_funai.pendentes(con, hoje=hoje.isoformat()):
-        if not _depois_do_corte(p.get("data_ato")):
-            continue
+    # A MESMA LISTA QUE O GESTOR COBRA: o acervo não vira ofício na pasta.
+    for p in GC.funai_a_cobrar(con, hoje):
         if int(p["id"]) in ret:
             r["fora"].append({"assento_id": p["id"], "nome": p.get("nome"),
                               "numero": p.get("numero"), "motivo": ret[int(p["id"])]})

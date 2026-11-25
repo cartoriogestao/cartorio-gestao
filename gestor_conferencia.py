@@ -266,14 +266,40 @@ def regra_sirc_cancelamentos(con, hoje: date) -> list[dict]:
     return saida
 
 
-def regra_funai(con, hoje: date) -> list[dict]:
+#: A chave do achado de um assento. `NAO_MEDIU:FUNAI` tem a mesma regra e outra
+#: chave: esse fecha quando a medição volta.
+PREFIXO_ACHADO_FUNAI = "FUNAI:rc_assentos:"
+
+
+def funai_a_cobrar(con, hoje: date) -> list[dict]:
+    """Os nascimentos indígenas que o gestor cobra: só o ato novo sem envio.
+
+    **O ACERVO FICA NA TELA DA FUNAI E FORA DA COBRANÇA.** `rc_funai.pendentes`
+    devolve os dois; achado, tarefa e ofício preparado saem só desta lista.
+    """
     import rc_funai
     enviados = _referencias_enviadas(con, "FUNAI")
+    return [p for p in rc_funai.atos_novos(con, hoje=hoje.isoformat())
+            if f"rc_assentos:{p['id']}" not in enviados]
+
+
+def chaves_funai_devidas(con, hoje: date) -> set[str] | None:
+    """As chaves dos achados que seguem devidos; `None` se não deu para medir.
+
+    `gestor_rotina.gravar_achados` pergunta isto antes de fechar um achado da
+    FUNAI: **sumir da conferência não é ter sido comunicado.**
+    """
+    try:
+        return {f"{PREFIXO_ACHADO_FUNAI}{p['id']}"
+                for p in funai_a_cobrar(con, hoje)}
+    except Exception:                        # noqa: BLE001 — quem chama não fecha
+        return None
+
+
+def regra_funai(con, hoje: date) -> list[dict]:
     saida = []
-    for p in rc_funai.pendentes(con, hoje=hoje.isoformat()):
+    for p in funai_a_cobrar(con, hoje):
         ref = f"rc_assentos:{p['id']}"
-        if ref in enviados or antes_do_corte(p.get("data_ato")):
-            continue
         saida.append(_achado(
             f"FUNAI:{ref}", "FUNAI", "VENCIDO", "RCPN",
             f"FUNAI: nascimento indígena nº {p.get('numero')} "

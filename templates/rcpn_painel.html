@@ -53,6 +53,7 @@
           <span class="muted">—</span>
         {% elif x.quantas %}
           <strong class="danger">{{ x.quantas }}</strong>
+          {% if x.partes %}<br><span class="small muted">{{ x.partes.ato_novo }} ato(s) novo(s), {{ x.partes.acervo }} do acervo</span>{% endif %}
         {% else %}
           <span class="muted">nada</span>
         {% endif %}

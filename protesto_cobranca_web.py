@@ -30,6 +30,7 @@ import protesto_boleto as BOL
 import protesto_devedor as DEV
 import protesto_integracoes as INTEG
 from ri_web import data_por_extenso
+from caixa_schema import reais as _reais
 from serventia import dados as dados_serventia
 
 QUEM_OPERA = ("ADMIN", "MANAGER", "USER")
@@ -393,6 +394,62 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                "provedor": cfg["provedor"],
                "tarifa_centavos": cfg.get("tarifa_centavos")})
         flash(f"{cfg['nome']}: {cfg['rotulo_do_modo']}.", "success")
+        return redirect(url_for("gestor_protesto_integracoes"))
+
+    @app.route("/administrativo/gestor/protesto-integracoes/cobranca-de-teste",
+               methods=["POST"])
+    @roles_required("ADMIN")
+    def gestor_protesto_cobranca_de_teste():
+        """Emite, lê e baixa um boleto no SANDBOX do provedor ligado (PR007).
+
+        O pagador é a própria serventia: nenhum devedor vai ao sandbox, nenhum
+        número de aviso se gasta, e nada se grava em `pt_boletos`.
+        """
+        d = sv()
+        pagador = {"nome": d.get("unit_name"), "documento": d.get("serventia_cnpj"),
+                   "endereco": d.get("serventia_endereco"), "cep": d.get("serventia_cep"),
+                   "cidade": d.get("ri_cidade"), "uf": d.get("ri_uf"), "bairro": ""}
+        try:
+            BAPI.conferir_pedido({"valor_centavos": BOL.VALOR_DO_TESTE,
+                                  "vencimento": hoje(), "pagador": pagador})
+        except BAPI.BoletoError as erro:
+            flash("A cobrança de teste usa a própria serventia como pagadora, e o "
+                  "cadastro dela está incompleto (Administrativo → Configurações → "
+                  f"Serventia): {erro}", "danger")
+            return redirect(url_for("gestor_protesto_integracoes"))
+        try:
+            with db.connect() as con:
+                cfg, transporte = INTEG.transporte_em_uso(con, INTEG.BOLETO)
+            r = BOL.cobranca_de_teste(cfg=cfg, transporte=transporte, pagador=pagador,
+                                      hoje=hoje(), pagar=_campo("pagar") == "1")
+        except RECUSAS_DO_BALCAO as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("gestor_protesto_integracoes"))
+        audit("PROTESTO_BOLETO_TESTE", "pt_boletos", None,
+              {"provedor": r["provedor"], "registrado": r["registrado"],
+               "tem_pix": r["tem_pix"], "pago": r["pago"], "baixado": r["baixado"],
+               "taxa_do_devedor_centavos": r["taxa_do_devedor_centavos"]})
+        partes = [f"Cobrança de teste ({r['provedor']}, R$ 10,00):",
+                  "boleto registrado, com linha digitável" if r["registrado"]
+                  else "SEM linha digitável ainda (o registro não voltou)",
+                  "com Pix" if r["tem_pix"] else "SEM Pix",
+                  ]
+        taxa = r["taxa_do_devedor_centavos"]
+        if taxa is not None:
+            partes.append(f"a linha cobra R$ {_reais(r['valor_da_linha_centavos'])}"
+                          + (f" — taxa de R$ {_reais(taxa)} paga pelo devedor" if taxa > 0
+                             else " — o mesmo valor pedido: a taxa, se houver, sai do "
+                                  "cartório (use a tarifa repassada)"))
+        if r["pago"]:
+            for liq in r.get("liquidacoes") or []:
+                partes.append(f"pago no sandbox: entrou R$ "
+                              f"{_reais(liq['valor_pago_centavos'])} por "
+                              f"{(liq.get('forma') or 'boleto').lower()}")
+        partes.append("baixado no sandbox" if r["baixado"] else
+                      ("pago no sandbox" if r["pago"] else "NÃO baixado"))
+        flash("; ".join(partes) + ".", "success" if r["registrado"] else "warning")
+        for aviso in r["avisos"]:
+            flash(aviso, "warning")
         return redirect(url_for("gestor_protesto_integracoes"))
 
     @app.route("/administrativo/gestor/protesto-integracoes/testar",

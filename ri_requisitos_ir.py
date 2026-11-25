@@ -126,7 +126,7 @@ def completar_pela_casa(valores: dict, settings: Mapping[str, Any], *, tipo_via:
 
     * A UF SAI DO MUNICÍPIO: se o município é da circunscrição, a UF é a da serventia (o código
       IBGE do município começa pelo da UF). Município de fora não ganha UF nenhuma.
-    * O MUNICÍPIO ESCRITO SE TROCA PELA GRAFIA DO CADASTRO («montes altos» → como a casa o grava).
+    * O MUNICÍPIO ESCRITO SE TROCA PELA GRAFIA DO CADASTRO («cidade  EXEMPLO» → como a casa o grava).
     * O TIPO DE VIA escolhido na lista entra na frente do nome, se o nome ainda não começa por um.
     """
     saida = dict(valores)

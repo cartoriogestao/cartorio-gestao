@@ -2,7 +2,11 @@
 {# A CHECKLIST DE GESTÃO DO DIA (19/11/2026, `gestor_checklist`): os achados
    abertos do gestor pela área do semáforo, e as telas que alguém confere
    todo dia. «Conferido hoje» grava quem olhou; não fecha achado.
-   Sem rodada válida do gestor, nada aparece como «em dia». #}
+   Sem rodada válida do gestor, nada aparece como «em dia».
+   SÓ A TI E O ADMINISTRADOR (25/11/2026, G007): a lista traz só as regras de
+   destino TI_ADMIN (`gestor_destino`); o que é do escrevente ou de projeto
+   vai ao quadro «Fora da checklist», contado e com a tarefa que o leva. A cor
+   oficial da área conta todos. #}
 {% block title %}Checklist de gestão do dia{% endblock %}
 {% block heading %}<h1>Checklist de gestão do dia</h1>{% endblock %}
 {% block content %}
@@ -41,6 +45,11 @@
   até {{ ck.rotina_dias_uteis }} dias úteis) vem primeiro; o <strong>débito passado</strong>
   vem depois, recolhido e contado. A cor oficial da área conta os dois; «só a rotina»
   é a cor que ela teria sem o débito.</p>
+  <p>A lista é <strong>só da TI e da administração</strong>: o que se resolve em lote, por
+  mudança no sistema, por IA ou por rotina geral (cargas das centrais, cópia de segurança,
+  conciliação do selo, decisões do oficial). A prática do ato, a digitalização e o que pede
+  livro ou balcão vão para as <strong>tarefas dos escreventes</strong>, e o passivo grande para os
+  <strong>projetos</strong> — veja <a href="#fora">Fora da checklist</a>. A cor oficial da área conta tudo.</p>
   {% if m and m.gestor.ultima_rodada and ck.medido %}<p class="small muted">O gestor rodou em {{ m.gestor.ultima_rodada[8:10] }}/{{ m.gestor.ultima_rodada[5:7] }} às {{ m.gestor.ultima_rodada[11:16] }}.</p>{% endif %}
   <nav class="filtros" aria-label="Áreas">
     <a href="{{ url_for('gestor_checklist') }}" {% if not ck.area %}aria-current="page"{% endif %}>{% if not ck.area %}<strong>Todas as áreas</strong>{% else %}Todas as áreas{% endif %}</a>
@@ -53,11 +62,12 @@
 </section>
 
 <section class="panel" id="achados">
-  <div class="panel-head"><h2>Achados abertos{% if ck.area %} — {{ areas[ck.area] }}{% endif %} ({{ ck.total_achados }})</h2></div>
+  <div class="panel-head"><h2>Achados abertos da TI e da administração{% if ck.area %} — {{ areas[ck.area] }}{% endif %} ({{ ck.total_achados }})</h2>
+    {% if ck.total_fora.ESCREVENTE or ck.total_fora.PROJETO %}<span class="small"><a href="#fora">Fora da checklist: {{ ck.total_fora.ESCREVENTE }} dos escreventes, {{ ck.total_fora.PROJETO }} de projeto</a></span>{% endif %}</div>
   {% if ck.erro_achados %}
   <div class="notice critical">Não deu para ler os achados: {{ ck.erro_achados }}. Isto não quer dizer que não há achado.</div>
   {% elif not ck.achados %}
-    {% if ck.medido %}<p class="muted">Nenhum achado aberto{% if ck.area %} em {{ areas[ck.area] }}{% endif %} na última conferência do gestor.</p>
+    {% if ck.medido %}<p class="muted">Nenhum achado aberto{% if ck.area %} em {{ areas[ck.area] }}{% endif %} para a TI e a administração na última conferência do gestor{% if ck.total_fora.ESCREVENTE or ck.total_fora.PROJETO %} — o que há está <a href="#fora">fora da checklist</a>{% endif %}.</p>
     {% else %}<p class="muted">Sem medição: não dá para dizer se {% if ck.area %}{{ areas[ck.area] }} está{% else %}as áreas estão{% endif %} em dia.</p>{% endif %}
   {% else %}
   {% for area, lista in ck.achados.items() %}{% set a = m.areas.get(area) if m else none %}
@@ -80,6 +90,49 @@
   {% endfor %}
   {% endif %}
   {% if nao_mede %}<p class="small muted">Ainda não entram: {{ nao_mede|join('; ') }}.</p>{% endif %}
+</section>
+
+<section class="panel" id="fora">
+  <div class="panel-head"><h2>Fora da checklist{% if ck.area %} — {{ areas[ck.area] }}{% endif %}</h2></div>
+  <p class="small muted">Saíram da lista porque não são da TI nem da administração. Continuam abertos no
+  gestor e <strong>contam na cor oficial</strong> da área; a tela que os resolve é a da tarefa.</p>
+  {% if ck.erro_achados %}<p class="muted">Sem a lista dos achados, não dá para dizer o que ficou fora.</p>
+  {% else %}
+  <h3>Tarefas dos escreventes <small class="muted">({{ ck.total_fora.ESCREVENTE }} achado(s))</small></h3>
+  {% if ck.erro_tarefas %}<div class="notice critical">Não deu para ler as tarefas: {{ ck.erro_tarefas }}. Isto não quer dizer que a tarefa não existe.</div>{% endif %}
+  {% if ck.fora.ESCREVENTE %}
+  <div class="table-wrap">
+  <table>
+    <tr><th>Regra</th><th>Área</th><th>Achados</th><th>Por que é do escrevente</th><th>Tarefa</th></tr>
+    {% for x in ck.fora.ESCREVENTE %}
+    <tr>
+      <td>{{ x.rotulo }} <code class="small">{{ x.regra }}</code></td>
+      <td>{{ areas[x.area] }}</td>
+      <td>{{ x.n }}{% if x.fazem_a_cor %} <small class="muted">({{ x.fazem_a_cor }} faz(em) a cor)</small>{% endif %}</td>
+      <td class="small">{{ x.motivo }}</td>
+      <td class="small">
+        {% if x.tarefas is none %}<span class="muted">não deu para ler</span>
+        {% elif x.tarefas %}{% for t in x.tarefas %}{% if ck.abre_tarefa %}<a href="{{ url_for('task_detail', task_id=t.id) }}">tarefa {{ t.id }}</a>{% else %}tarefa {{ t.id }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+        {% elif x.sem_tarefa_a_decidir %}<span class="badge alta">sem tarefa</span> o gestor ainda não a abre (falta o «pode» do oficial)
+        {% else %}<span class="muted">a tarefa nasce na próxima rodada do gestor</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% elif ck.medido %}<p class="muted small">Nada dos escreventes{% if ck.area %} em {{ areas[ck.area] }}{% endif %} na última conferência do gestor.</p>
+  {% else %}<p class="muted small">Sem medição: não dá para dizer o que é dos escreventes.</p>{% endif %}
+  <h3>Projetos <small class="muted">({{ ck.total_fora.PROJETO }} achado(s))</small></h3>
+  {% if ck.fora.PROJETO %}
+  <ul>
+    {% for x in ck.fora.PROJETO %}
+    <li>{{ x.rotulo }} <code class="small">{{ x.regra }}</code> — {{ areas[x.area] }}, {{ x.n }} achado(s). <span class="small muted">{{ x.motivo }}.</span></li>
+    {% endfor %}
+  </ul>
+  {% if ck.abre_projetos %}<p class="small"><a href="{{ url_for('dev_projetos_lista') }}">Abrir os projetos</a></p>{% endif %}
+  {% elif ck.medido %}<p class="muted small">Nada de projeto{% if ck.area %} em {{ areas[ck.area] }}{% endif %} na última conferência do gestor.</p>
+  {% else %}<p class="muted small">Sem medição: não dá para dizer o que é de projeto.</p>{% endif %}
+  {% endif %}
 </section>
 
 <section class="panel" id="conferencias">

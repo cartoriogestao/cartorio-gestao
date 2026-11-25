@@ -9,6 +9,9 @@ O QUE ESTES TESTES GUARDAM, E QUE O DE DOMÍNIO NÃO ALCANÇA
       - o pago por liquidação recusa também a INTIMAÇÃO na ficha;
       - O CASO DO 350574/2: o «pago» que veio do NOSSO D não trava — o lote
         lavra o protesto, e é o P dele que corrige a CENPROT;
+      - mas, com o título em aberto, esse protesto sai só pela ficha e com a
+        afirmação DA CENPROT: a afirmação dada para outra trava (a prova da
+        intimação) não basta (oficial, 23/11/2026; item 4 do PR004);
       - o lote recusa o pago por liquidação e manda afirmar na ficha, sem
         derrubar o título de banco da mesma leva.
 
@@ -186,14 +189,12 @@ def test_o_pago_por_liquidacao_recusa_a_intimacao_na_ficha(s, monkeypatch):
     assert atos(s, tid, "INTIMACAO") == antes
 
 
-def test_o_pago_do_nosso_d_sai_do_lote_e_protesta_com_afirmacao_na_ficha(s, monkeypatch):
-    """O 350574/2 de 29/10/2026: «1-Pago» na CENPROT pelo D desta casa, com o
-    pagamento tornado sem efeito aqui. O protesto continua possível (o P dele
-    corrige a Central), com a afirmação de que não há liquidação no portal
-    (oficial, 23/11/2026)."""
+def _pago_do_nosso_d(s, monkeypatch, numero: str) -> int:
+    """O título intimado que a CENPROT dá por «1-Pago», com o pagamento daqui
+    tornado sem efeito e o D desta casa no histórico (o caso de 29/10/2026)."""
     import protesto_selo_previo as PSELO
     monkeypatch.setattr(PSELO, "conferir_antes_de_lavrar", lambda *a, **k: None)
-    tid = da_cenprot(s, intimado(s), pedido_=9900002)
+    tid = da_cenprot(s, intimado(s), pedido_=int(numero))
     con = _con(s)
     with con:
         xml = con.execute(
@@ -207,12 +208,39 @@ def test_o_pago_do_nosso_d_sai_do_lote_e_protesta_com_afirmacao_na_ficha(s, monk
                VALUES (?,'PAGAMENTO','2026-08-11','{}','MANUAL','2026-08-11T10:00:00',
                        1,'TORNADO SEM EFEITO (teste)',?)""", (tid, xml))
     con.close()
-    central(monkeypatch, {"9900002": pedido("9900002", codigo="1",
-                                            ocorrencia="Pago")})
+    central(monkeypatch, {numero: pedido(numero, codigo="1", ocorrencia="Pago")})
+    return tid
+
+
+def test_o_pago_do_nosso_d_sai_do_lote_e_protesta_com_afirmacao_na_ficha(s, monkeypatch):
+    """O 350574/2 de 29/10/2026: «1-Pago» na CENPROT pelo D desta casa, com o
+    pagamento tornado sem efeito aqui. O protesto continua possível (o P dele
+    corrige a Central), com a afirmação de que não há liquidação no portal
+    (oficial, 23/11/2026)."""
+    tid = _pago_do_nosso_d(s, monkeypatch, "9900002")
     assert "abra a ficha" in lavrar(s, [tid]).get_data(as_text=True)
     assert atos(s, tid) == 0
     _lancar(s, tid, ato="PROTESTO", motivo_atraso=MOTIVO, afirmo="1",
             afirmacao=TEXTO)
+    assert atos(s, tid) == 1
+    [rastro] = _auditoria(s, tid)
+    assert json.loads(rastro["details"])["regra"] == C.REGRA_DIVERGENTE
+
+
+def test_a_afirmacao_de_outra_trava_nao_vence_o_pago_da_cenprot(s, monkeypatch):
+    """Item 4 do PR004 (auditoria PR003, P2): o protesto passou com a CENPROT
+    dizendo PAGO e com afirmação expressa, mas sobre OUTRA trava (a prova da
+    intimação). A afirmação de uma trava não vence a do pago: só o campo da
+    CENPROT (`afirmo_cenprot`) deixa protestar."""
+    tid = _pago_do_nosso_d(s, monkeypatch, "9900003")
+    html = _lancar(s, tid, ato="PROTESTO", motivo_atraso=MOTIVO, afirmo_prova="1",
+                   afirmacao_prova="Afirmo expressamente que a intimação foi "
+                                   "entregue ao devedor, conforme o aviso devolvido")
+    assert "comprovante de liquidação" in html
+    assert atos(s, tid) == 0
+    assert _auditoria(s, tid) == []
+    _lancar(s, tid, ato="PROTESTO", motivo_atraso=MOTIVO, afirmo_cenprot="1",
+            afirmacao_cenprot=TEXTO)
     assert atos(s, tid) == 1
     [rastro] = _auditoria(s, tid)
     assert json.loads(rastro["details"])["regra"] == C.REGRA_DIVERGENTE

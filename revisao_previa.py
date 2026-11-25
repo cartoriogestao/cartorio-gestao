@@ -43,6 +43,7 @@ from datetime import datetime
 from pathlib import Path
 
 import banco_pg
+import papeis as PAP
 from bd_nativo import Banco, banco
 from ia_contexto_ri import ato_no_contexto, juntar_contexto
 
@@ -776,7 +777,7 @@ def exigir_para_lavrar(con: sqlite3.Connection, pasta_dados: Path, atribuicao: s
         ant, semelhanca = _revisao_anterior(bd, atribuicao, alvo_id, texto_atual, tipo)
         r = {"id": ant["id"], "situacao": ant["situacao"], "graves": None,
              "pedido_em": ant["pedido_em"]}
-        liberacao = {"tipo": "REVISAO_ANTERIOR", "por": usuario, "papel": papel,
+        liberacao = {"tipo": "REVISAO_ANTERIOR", "por": usuario, "papel": PAP.para_o_registro(papel),
                      "em": _agora(), "justificativa": texto_j,
                      "semelhanca": round(semelhanca, 3), "hash_lavrado": hash_texto}
     situacao = _situacao_viva(r["situacao"], r["pedido_em"])
@@ -950,7 +951,7 @@ def suprir(con: sqlite3.Connection, revisao_id: int, itens, *, usuario: str = ""
                                       "(mínimo de dez letras).")
         if isinstance(a.get("suprido"), dict) and not a["suprido"].get("herdado"):
             continue
-        a["suprido"] = {"por": usuario, "papel": papel, "em": agora, "obs": obs}
+        a["suprido"] = {"por": usuario, "papel": PAP.para_o_registro(papel), "em": agora, "obs": obs}
         feitos.append({"indice": indice, "gravidade": a.get("gravidade"),
                        "o_que": a.get("o_que"), "obs": obs})
     if feitos:
@@ -1073,7 +1074,7 @@ def _exigir_consultivo(con, atribuicao, alvo_id, hash_texto, *, justificativa, u
         if graves_pendentes(bd, ant["id"]):
             return None
         _anotar_liberacao(bd, ant["id"], {"tipo": "REVISAO_ANTERIOR_AUTOMATICA",
-                                          "por": usuario, "papel": papel, "em": _agora(),
+                                          "por": usuario, "papel": PAP.para_o_registro(papel), "em": _agora(),
                                           "semelhanca": round(semelhanca, 3),
                                           "hash_lavrado": hash_texto})
         return f"anterior:{ant['id']}:{semelhanca:.3f}"

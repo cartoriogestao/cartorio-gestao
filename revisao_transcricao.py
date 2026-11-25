@@ -73,6 +73,7 @@ from html import unescape
 from pathlib import Path
 
 import banco_pg
+import papeis as PAP
 import revisao_previa as RP
 import tetos_de_entrada as TETO
 from bd_nativo import Banco, banco
@@ -890,7 +891,7 @@ def conferir_divergencias(con, revisao_id: int, itens, *, usuario: str = "",
                                    "como ela foi conferida no livro (mínimo de dez letras).")
         if x.get("conferida"):
             continue
-        x["conferida"] = {"por": usuario, "papel": papel, "em": agora, "obs": obs}
+        x["conferida"] = {"por": usuario, "papel": PAP.para_o_registro(papel), "em": agora, "obs": obs}
         feitos.append({"indice": indice, "gravidade": x.get("gravidade")})
     if feitos:
         d["divergencias"] = divergencias

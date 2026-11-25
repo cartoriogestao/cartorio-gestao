@@ -15,6 +15,7 @@ from flask import abort, jsonify, request
 
 from bd_nativo import banco
 import revisao_previa as RV
+import papeis as PAP
 from seguranca_web import numero_digitado  # LD13: o número que a tela mandou
 
 #: As telas em que o painel aparece (as que lavram ato do RI e das Notas).
@@ -175,7 +176,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             return jsonify({"erro": str(erro)}), 400
         for f in feitos:
             audit("REVISAO_PREVIA_SUPRIDO", "rv_revisoes", revisao_id,
-                  {"atribuicao": alvo["atribuicao"], "alvo": alvo["alvo_id"], "papel": papel, **f})
+                  {"atribuicao": alvo["atribuicao"], "alvo": alvo["alvo_id"], "papel": PAP.para_o_registro(papel), **f})
         with db.connect() as con:
             r = RV.mostrar(con, revisao_id)
             r = RV.anotar_supridos(con, r) if r else r

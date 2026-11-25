@@ -878,12 +878,120 @@ PREENCHE_A_LAVRATURA = frozenset({"livro", "folha", "data", "dataTestamento"})
 SEM_ONDE_CORRIGIR_ANTES = frozenset({"referentes", "referentes.cns",
                                      "naturezaAtaNotarialDeUsucapiao"})
 
-# A CESDI e o RCTO NÃO TRAVAM, e não por esquecimento: os campos que elas
-# exigem (data do casamento, regime, responsável pelos menores, qualidade da
-# CESDI, tipo de testamento) não têm onde ser preenchidos na tela do ato —
-# medido em 09/10/2026. Trava sem saída pararia todo divórcio e todo
-# testamento; o aviso continua na tela da remessa, que é onde ele já aparece.
+# A CEP trava pela conferência inteira (menos o que a lavratura preenche).
+# A CESDI, desde 23/11/2026 (pedido t683u / travas extras), trava só o que a
+# ficha já tem onde corrigir — quadro «Partes» e «Para a CESDI». O RCTO
+# continua só na remessa (tipo de testamento / campos do testador sem a mesma
+# saída antes de lavrar). Cartório/matrícula do casamento: o layout que o
+# sistema manda à CESDI não leva esses campos — a trava cobre data e regime.
 CENTRAIS_QUE_TRAVAM = ("CEP",)
+
+# Inventário, sobrepartilha, nomeação, partilha e inventário com menor —
+# a carga pede Advogado (e o tipo 8 também, embora o mínimo do layout cite
+# só Inventariante + Falecido).
+TIPOS_CESDI_QUE_EXIGEM_ADVOGADO = frozenset({5, 6, 8, 9, 10})
+
+# Separação, conversão e divórcio direto — data do casamento e regime na ficha.
+TIPOS_CESDI_DIVORCIO_SEPARACAO = frozenset({1, 3, 4})
+
+# Campos da conferência CESDI que a lavratura já consegue corrigir na tela.
+CAMPOS_CESDI_NA_LAVRATURA = frozenset({
+    "dataCasamento", "regimeBens", "responsavel",
+    "partes", "partes.documento",
+    "partes.dataNascimento", "partes.sexo", "partes.localResidenciaMunicipio",
+})
+
+# Qualificação digitada sem de-para → rótulo que a CESDI aceita (quadro Partes).
+_SUGESTAO_QUALIFICACAO_CESDI = (
+    ("PROCURADOR", "INTERVENIENTE"),
+    ("PROCURADORA", "INTERVENIENTE"),
+    ("REPRESENTANTE", "INTERVENIENTE"),
+    ("COMPRADOR", "CESSIONÁRIO(A)"),
+    ("VENDEDOR", "CEDENTE"),
+    ("DONATARI", "CESSIONÁRIO(A)"),
+    ("DOADOR", "CEDENTE"),
+    ("OUTORGADO", "CESSIONÁRIO(A)"),
+    ("OUTORGANTE", "CEDENTE"),
+)
+
+_ROTULO_DA_QUALIDADE_CESDI = {
+    "Advogado": "ADVOGADO(A)",
+    "Falecido": "AUTOR DA HERANÇA",
+    "Herdeiro": "HERDEIRO(A)",
+    "Inventariante": "INVENTARIANTE",
+    "Viuvo": "VIÚVO(A) MEEIRO(A)",
+    "Divorciando": "DIVORCIANDO(A)",
+    "Separando": "SEPARANDO(A)",
+    "Reconciliando": "RECONCILIANDO(A)",
+    "Cedente": "CEDENTE",
+    "CessionarioAdjudicatarios": "CESSIONÁRIO(A)",
+    "Interveniente": "INTERVENIENTE",
+    "Anuente": "ANUENTE",
+}
+
+# Tipos da CESDI em que o autor da herança é obrigatório antes de lavrar
+# (pedido do oficial 23/11/2026). Inclui Sobrepartilha e Partilha (6 e 9),
+# mesmo quando o layout da remessa só exige Advogado: lavrar sem falecido
+# é o que a quinzena recusou no inventário 786.
+TIPOS_CESDI_QUE_EXIGEM_FALECIDO = frozenset({5, 6, 8, 9, 10})
+
+# Sem tipo_cesdi: natureza ou modelo ainda apontam inventário / partilha
+# causa mortis / arrolamento (ex.: NT-ESC-INVENTARIO-PARTILHA).
+_PISTA_SUCESSAO = (
+    "INVENTARI", "SOBREPARTILHA", "ARROLAMENTO", "NOMEACAO DE INVENTARIANTE",
+    "CAUSA MORTIS",
+)
+
+
+def ato_exige_autor_da_heranca(ato: dict) -> bool:
+    """Inventário, sobrepartilha, partilha causa mortis e afins.
+
+    Pelo `tipo_cesdi` quando há; senão pela natureza ou pelo modelo. Só calcula.
+    """
+    tipo = _tipo_cesdi(ato)
+    if tipo in TIPOS_CESDI_QUE_EXIGEM_FALECIDO:
+        return True
+    if tipo is not None:
+        return False
+    texto = _norm(" ".join(
+        str(ato.get(c) or "") for c in ("natureza", "modelo_codigo", "titulo")))
+    if any(p in texto for p in _PISTA_SUCESSAO):
+        return True
+    # «PARTILHA» sozinha (tipo 9); evita pegar texto sem essa palavra.
+    return "PARTILHA" in texto
+
+
+def impedimentos_do_autor_da_heranca(ato: dict, partes: list[dict]) -> list[Impedimento]:
+    """Sem autor da herança com nome e CPF válido, o inventário não lavra.
+
+    A data do óbito não tem campo na parte — a trava cobre nome e CPF.
+    """
+    if not ato_exige_autor_da_heranca(ato):
+        return []
+    falecidos = []
+    for parte in partes:
+        q = (parte.get("qualidade_cesdi")
+             or qualidade_cesdi_da_qualificacao(parte.get("qualificacao")))
+        if q == "Falecido":
+            falecidos.append(parte)
+    if not falecidos:
+        return [Impedimento(
+            "partes.qualidade",
+            "inventário exige o autor da herança (qualificação AUTOR DA HERANÇA "
+            "ou FALECIDO) no quadro «Partes»")]
+    saida: list[Impedimento] = []
+    for f in falecidos:
+        if not _texto(f.get("nome")):
+            saida.append(Impedimento("partes.nome", "o autor da herança está sem nome"))
+        doc = so_digitos(f.get("documento"))
+        if len(doc) != 11 or documento_valido(doc) is False:
+            nome = f.get("nome") or "sem nome"
+            saida.append(Impedimento(
+                "partes.numeroDocumento",
+                f"o autor da herança ({nome}) precisa de CPF válido "
+                "(dígito verificador)"))
+    return saida
+
 
 
 def central_do_ato(ato: dict) -> str | None:
@@ -898,17 +1006,145 @@ def central_do_ato(ato: dict) -> str | None:
     return None
 
 
+def _tipo_cesdi(ato: dict) -> int | None:
+    try:
+        return int(ato["tipo_cesdi"]) if ato.get("tipo_cesdi") is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _partes_com_qualidade_cesdi(partes: list[dict]) -> list[dict]:
+    """Cópia com `qualidade_cesdi` preenchida pela qualificação, se faltar."""
+    saida: list[dict] = []
+    for parte in partes:
+        linha = dict(parte)
+        if not linha.get("qualidade_cesdi"):
+            linha["qualidade_cesdi"] = qualidade_cesdi_da_qualificacao(
+                linha.get("qualificacao"))
+        saida.append(linha)
+    return saida
+
+
+def sugerir_qualificacao_cesdi(qualificacao: Any, tipo: int) -> str | None:
+    """Rótulo do quadro Partes que a CESDI aceitaria no lugar do digitado."""
+    aceitas = QUALIDADE_CESDI_POR_ATO.get(tipo, QUALIDADE_CESDI)
+    rotulo = _norm(qualificacao)
+    for raiz, sugestao in _SUGESTAO_QUALIFICACAO_CESDI:
+        if rotulo.startswith(raiz):
+            q = qualidade_cesdi_da_qualificacao(sugestao)
+            if q in aceitas:
+                return sugestao
+    # Sem pista pelo texto: o primeiro papel típico do ato (não o Advogado).
+    for preferida in ("Falecido", "Divorciando", "Separando", "Herdeiro",
+                      "Inventariante", "CessionarioAdjudicatarios", "Cedente",
+                      "Interveniente"):
+        if preferida in aceitas:
+            return _ROTULO_DA_QUALIDADE_CESDI.get(preferida)
+    return None
+
+
+def impedimentos_qualidade_cesdi_invalida(
+        ato: dict, partes: list[dict]) -> list[Impedimento]:
+    """Parte com qualidade que a CESDI não aceita (None, COMPRADOR, PROCURADORA…)."""
+    tipo = _tipo_cesdi(ato)
+    if tipo is None:
+        return []
+    aceitas = QUALIDADE_CESDI_POR_ATO.get(tipo, QUALIDADE_CESDI)
+    saida: list[Impedimento] = []
+    for parte in partes:
+        q = parte.get("qualidade_cesdi")
+        if q in aceitas:
+            continue
+        rotulo = (parte.get("qualificacao") or "").strip() or q
+        sugestao = sugerir_qualificacao_cesdi(parte.get("qualificacao"), tipo)
+        if not rotulo or str(rotulo).lower() == "none":
+            motivo = "parte sem qualidade que a CESDI entenda"
+        else:
+            motivo = f"qualidade {rotulo!r} não mapeia para a CESDI"
+        if sugestao:
+            motivo += f" — sugestão: {sugestao}"
+        saida.append(Impedimento("partes.qualidade", motivo))
+    return saida
+
+
+def impedimentos_do_advogado_cesdi(
+        ato: dict, partes: list[dict]) -> list[Impedimento]:
+    """Inventário e afins: ao menos um ADVOGADO(A) com nome e OAB (nº + UF)."""
+    tipo = _tipo_cesdi(ato)
+    if tipo not in TIPOS_CESDI_QUE_EXIGEM_ADVOGADO:
+        return []
+    nome_tipo = TIPO_ATO_CESDI.get(tipo, "ato")
+    advogados = [p for p in partes if p.get("qualidade_cesdi") == "Advogado"]
+    if not advogados:
+        return [Impedimento(
+            "partes.qualidade",
+            f"{nome_tipo} exige ao menos uma parte ADVOGADO(A) com nome e OAB "
+            "no quadro «Partes»")]
+    saida: list[Impedimento] = []
+    for adv in advogados:
+        if not _texto(adv.get("nome")):
+            saida.append(Impedimento("partes.nome", "o advogado está sem nome"))
+        if not _texto(adv.get("oab_numero")) or not _texto(adv.get("oab_uf")):
+            nome = adv.get("nome") or "sem nome"
+            saida.append(Impedimento(
+                "partes.oab",
+                f"o advogado ({nome}) precisa de OAB (número e UF) no quadro "
+                "«Partes»"))
+    return saida
+
+
+def impedimentos_cesdi_corrigiveis(
+        ato: dict, partes: list[dict]) -> list[Impedimento]:
+    """O que a CESDI recusaria e a ficha já tem onde corrigir antes de lavrar.
+
+    Não puxa livro/folha/data (a lavratura preenche). Qualidade inválida vem
+    com sugestão; Advogado dos tipos 5–6/8–10 exige nome e OAB.
+    """
+    if _tipo_cesdi(ato) is None:
+        return []
+    prep = _partes_com_qualidade_cesdi(partes)
+    saida: list[Impedimento] = []
+    for p in conferir_ato_cesdi(ato, prep):
+        if p.campo in CAMPOS_CESDI_NA_LAVRATURA:
+            saida.append(p)
+            continue
+        # «exige uma parte Advogado» — coberto por impedimentos_do_advogado_cesdi
+        # (com OAB); «não vale» — coberto pela sugestão.
+        if p.campo == "partes.qualidade" and "exige" in (p.motivo or ""):
+            if "Advogado" in (p.motivo or ""):
+                continue
+            saida.append(p)
+    saida.extend(impedimentos_qualidade_cesdi_invalida(ato, prep))
+    saida.extend(impedimentos_do_advogado_cesdi(ato, prep))
+    return saida
+
+
 def impedimentos_para_lavrar(con: Any, ato: dict) -> list[Impedimento]:
     """O que impediria este ato de ir à CENSEC, dito ANTES de lavrar.
 
-    Lista vazia: pode lavrar. Não grava nada.
+    Lista vazia: pode lavrar. Não grava nada. CEP pela conferência; CESDI
+    só nos campos corrigíveis na ficha (travas extras de 23/11/2026); e o
+    autor da herança nos inventários, com ou sem tipo da CESDI.
     """
     central = central_do_ato(ato)
-    if central not in CENTRAIS_QUE_TRAVAM:
-        return []
-    problemas = CONFERENCIA[central](ato, _partes_do_ato(con, ato["id"]))
-    return [p for p in problemas
-            if p.campo not in PREENCHE_A_LAVRATURA | SEM_ONDE_CORRIGIR_ANTES]
+    partes: list[dict] | None = None
+    saida: list[Impedimento] = []
+    if central in CENTRAIS_QUE_TRAVAM:
+        partes = _partes_do_ato(con, ato["id"])
+        problemas = CONFERENCIA[central](ato, partes)
+        saida.extend(p for p in problemas
+                     if p.campo not in PREENCHE_A_LAVRATURA | SEM_ONDE_CORRIGIR_ANTES)
+    sucessao = ato_exige_autor_da_heranca(ato)
+    if central == "CESDI" or sucessao:
+        if partes is None:
+            partes = _partes_do_ato(con, ato["id"])
+        if sucessao:
+            saida.extend(impedimentos_do_autor_da_heranca(ato, partes))
+        if central == "CESDI":
+            # «exige uma parte Falecido» já sai, mais claro, pelo autor da herança.
+            saida.extend(p for p in impedimentos_cesdi_corrigiveis(ato, partes)
+                         if not (sucessao and (p.motivo or "").endswith("exige uma parte Falecido")))
+    return saida
 
 
 def _partes_do_ato(con: Any, ato_id: int) -> list[dict]:

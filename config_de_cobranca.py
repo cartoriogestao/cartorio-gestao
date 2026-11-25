@@ -62,6 +62,7 @@ transação de quem chama. O resto lê.
 """
 from __future__ import annotations
 
+import papeis as PAP
 import json
 import re
 from dataclasses import dataclass
@@ -407,7 +408,7 @@ def conferir_quem(quem: Any, chave: Any) -> None:
         raise Recusa(MOTIVO_SEM_LOGIN, MENSAGEM_DO_PAPEL)
     if SR.usuario_e_robo(quem):
         raise Recusa(MOTIVO_ROBO, MENSAGEM_DO_ROBO)
-    if str(quem.get("role") or "").upper() != PAPEL_QUE_ALTERA:
+    if not PAP.equivale_a(quem, PAPEL_QUE_ALTERA):  # o TI segue o ADMIN (T015)
         raise Recusa(MOTIVO_PAPEL, MENSAGEM_DO_PAPEL)
     texto = str(chave or "")
     if (texto.startswith(PREFIXO_DO_TURNO)
@@ -742,7 +743,7 @@ BEGIN
   IF quem IS NOT NULL AND agente IS NULL
      AND (aprovada ->> 'para') IS NOT DISTINCT FROM novo THEN
     EXECUTE format($q$SELECT EXISTS (SELECT 1 FROM %I.users u
-                       WHERE u.id = $1 AND u.role = 'ADMIN' AND u.active = 1
+                       WHERE u.id = $1 AND u.role IN ('ADMIN', 'TI') AND u.active = 1
                          AND coalesce(to_jsonb(u) ->> 'eh_robo', '0') = '0')$q$,
                    TG_TABLE_SCHEMA)
        INTO pessoa USING quem;

@@ -6,6 +6,7 @@ matrícula, diz qual ato está fora da imagem. Só LÊ.
 """
 from __future__ import annotations
 
+import papeis as PAP
 import sqlite3
 
 from flask import request, session
@@ -30,7 +31,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             with db.connect() as con:
                 papel = banco(con).um("SELECT role FROM users WHERE id = %s",
                                       (session.get("user_id"),))
-                e_admin = bool(papel and papel["role"] == "ADMIN")
+                e_admin = bool(papel and PAP.equivale_a(papel, "ADMIN"))  # o TI segue o ADMIN (T015)
                 if not (onde.startswith("ri_") or e_admin):
                     return vazio
                 todas = DP.pendentes(con)

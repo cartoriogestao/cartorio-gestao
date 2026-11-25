@@ -1,4 +1,4 @@
-"""Rotas web — Projetos de desenvolvimento (ADMIN)."""
+"""Rotas web — Projetos de desenvolvimento (ADMIN e MANAGER)."""
 from __future__ import annotations
 
 from typing import Callable
@@ -23,7 +23,7 @@ def register_dev_projetos_routes(
 ) -> None:
     @app.route("/desenvolvimento/projetos")
     @login_required
-    @roles_required("ADMIN")
+    @roles_required("ADMIN", "MANAGER")
     def dev_projetos_lista():
         with get_db() as con:
             if is_sandbox(con):
@@ -39,7 +39,7 @@ def register_dev_projetos_routes(
 
     @app.route("/desenvolvimento/projetos/<int:projeto_id>")
     @login_required
-    @roles_required("ADMIN")
+    @roles_required("ADMIN", "MANAGER")
     def dev_projetos_detalhe(projeto_id: int):
         with get_db() as con:
             if is_sandbox(con):
@@ -60,7 +60,7 @@ def register_dev_projetos_routes(
 
     @app.route("/desenvolvimento/projetos/<int:projeto_id>/status", methods=["POST"])
     @login_required
-    @roles_required("ADMIN")
+    @roles_required("ADMIN", "MANAGER")
     def dev_projetos_alterar_status(projeto_id: int):
         status = (request.form.get("status_geral") or "").strip()
         with get_db() as con:
@@ -77,7 +77,7 @@ def register_dev_projetos_routes(
         methods=["POST"],
     )
     @login_required
-    @roles_required("ADMIN")
+    @roles_required("ADMIN", "MANAGER")
     def dev_projetos_alterar_proximo_passo(projeto_id: int):
         texto = request.form.get("proximo_passo")
         with get_db() as con:
@@ -91,7 +91,7 @@ def register_dev_projetos_routes(
 
     @app.route("/desenvolvimento/projetos/<int:projeto_id>/andamento", methods=["POST"])
     @login_required
-    @roles_required("ADMIN")
+    @roles_required("ADMIN", "MANAGER")
     def dev_projetos_novo_andamento(projeto_id: int):
         texto = request.form.get("texto") or ""
         autor = current_user_login()

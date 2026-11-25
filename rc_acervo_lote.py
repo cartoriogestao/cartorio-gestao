@@ -1,6 +1,7 @@
 """Inclusão e complementação do acervo transcrito, pela sessão do sistema."""
 from __future__ import annotations
 
+import papeis as PAP
 from collections import Counter, defaultdict
 from hashlib import sha256
 from pathlib import Path, PureWindowsPath
@@ -135,7 +136,7 @@ def nome_de_quem_inclui(conta: dict, informado: str, mandante: str) -> str:
 
 def _conta_que_inclui(bd, usuario_id, usuario):
     u = bd.um('SELECT * FROM users WHERE id=%s', (int(usuario_id),))
-    if not u or not u['active'] or u['role'] not in ('ADMIN', 'MANAGER', 'USER'):
+    if not u or not u['active'] or not PAP.equivale_a(u, 'ADMIN', 'MANAGER', 'USER'):  # o TI segue o ADMIN (T015)
         raise LoteError('Usuário sem permissão para importar acervo.')
     mandante = usuario
     if u.get('eh_robo'):

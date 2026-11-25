@@ -11,8 +11,16 @@
 
   Em azul quando ele está trabalhando num pedido (`superusuario_trabalhando`,
   lido do estado que a ponte publica — um arquivo, sem banco).
+
+  EM CIMA DO WHATSAPP E TAMBÉM PARA O TITULAR (24/11/2026, S005). Pedido do
+  titular: «coloca um botão superusuário pra aparecer para mim na coluna da
+  direita, em cima de onde ficam as notificações do WhatsApp». Enquanto a conta
+  `superusuario` não existe, `superusuario_no_menu` é falso para todos; por isso
+  o titular (`e_o_titular`, de `navegacao_web`, que a casca já calcula em toda
+  tela — nenhuma consulta a mais) vê o botão mesmo assim, e a tela mostra o
+  aviso «sem conta». Quem decide o acesso continua sendo a rota.
 #}
-{% if superusuario_no_menu and request.endpoint != 'superusuario_console' %}
+{% if (superusuario_no_menu or e_o_titular) and request.endpoint != 'superusuario_console' %}
 <a class="su-atalho{% if superusuario_trabalhando %} trabalhando{% endif %}"
    href="{{ url_for('superusuario_console') }}"
    title="{{ 'O superusuário está trabalhando num pedido' if superusuario_trabalhando else 'Pedir ao superusuário, a partir desta tela' }}">

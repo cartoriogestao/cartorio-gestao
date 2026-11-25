@@ -116,6 +116,7 @@ def test_o_relatorio_de_erros_nao_mostra_as_regras_retiradas():
 
 import gestor_rotina as GR                                       # noqa: E402
 from datetime import date as _date                               # noqa: E402
+from datetime import timedelta as _timedelta                     # noqa: E402
 
 
 def test_so_vira_tarefa_o_que_pode_gerar_responsabilidade_civil(cg_casa):
@@ -209,9 +210,107 @@ def test_ordem_cancelada_nao_aponta(cg_casa):
     assert GC.regra_registro_sem_cnib(con, _date(2026, 10, 6)) == []
 
 
-def test_a_base_parada_e_medida_pela_ultima_leitura_e_nao_pelo_pedido(cg_casa):
+def _ordem_do_dia(con, protocolo, dia):
+    con.execute("INSERT INTO ri_cnib_ordens (protocolo_cnib, data_pedido, ativa, origem) "
+                "VALUES (?, ?, 1, 'CNIB')", (protocolo, dia))
+
+
+def _leitura(con, dia, situacao, de=None, ate=None):
+    momento = f"{dia}T00:00:09"
+    con.execute("""INSERT INTO ri_cnib_leituras (de, ate, pedida_em, terminada_em, situacao,
+                       automatica) VALUES (?, ?, ?, ?, ?, 1)""",
+                (de or dia, ate or dia, momento, momento, situacao))
+
+
+def _dias_seguidos(inicio, quantos):
+    return [(inicio + _timedelta(days=n)).isoformat() for n in range(quantos)]
+
+
+def test_base_de_agosto_com_dezenas_de_vazias_fica_com_achado_aberto(cg_casa):
+    """O caso real: ordem mais nova em 12/08 e leitura vazia todo dia desde 25/09."""
     con = _con(cg_casa)
-    con.execute("""INSERT INTO ri_cnib_leituras (de, ate, pedida_em, terminada_em, situacao)
-                   VALUES ('2026-09-28', '2026-10-06', '2026-10-06T07:46', '2026-10-06T07:46', 'VAZIA')""")
-    assert GC.regra_cnib_parado(con, _date(2026, 10, 6)) == []
-    assert GC.regra_cnib_parado(con, _date(2026, 10, 20))[0]["regra"] == "CNIB_PARADO"
+    _ordem_do_dia(con, "CASO-REAL-1", "2026-08-12")
+    _leitura(con, "2026-09-24", "OK")
+    for dia in _dias_seguidos(_date(2026, 9, 25), 60):
+        _leitura(con, dia, "VAZIA")
+    achado = GC.regra_cnib_parado(con, _date(2026, 11, 23))[0]
+    assert (achado["chave"], achado["gravidade"]) == ("CNIB:copia_parada", "CRITICO")
+    assert "12/08/2026" in achado["titulo"]
+    assert "103 dia(s) atrás" in achado["detalhe"]
+    assert "60 leituras vazias seguidas, desde 25/09/2026" in achado["detalhe"]
+    assert "direto na Central" in achado["detalhe"]
+
+
+def test_leitura_vazia_de_hoje_nao_fecha_o_achado_da_base_velha(cg_casa):
+    con = _con(cg_casa)
+    _ordem_do_dia(con, "VELHA-1", "2026-08-12")
+    _leitura(con, "2026-10-06", "VAZIA")
+    assert GC.regra_cnib_parado(con, _date(2026, 10, 6))[0]["regra"] == "CNIB_PARADO"
+
+
+def test_leitura_ok_que_so_traz_ordem_antiga_nao_fecha_o_achado(cg_casa):
+    """Cancelamento de hoje traz ordem de anos atrás: a leitura é OK e a base segue velha."""
+    con = _con(cg_casa)
+    _ordem_do_dia(con, "ANTIGA-1", "2012-03-01")
+    _ordem_do_dia(con, "VELHA-2", "2026-08-12")
+    _leitura(con, "2026-11-23", "OK")
+    assert "12/08/2026" in GC.regra_cnib_parado(con, _date(2026, 11, 23))[0]["titulo"]
+
+
+def test_base_recente_nao_tem_achado(cg_casa):
+    con = _con(cg_casa)
+    _ordem_do_dia(con, "NOVA-1", "2026-11-22")
+    _leitura(con, "2026-11-23", "OK")
+    assert GC.regra_cnib_parado(con, _date(2026, 11, 23)) == []
+
+
+def test_um_fim_de_semana_sem_ordem_nao_e_alarme(cg_casa):
+    """Base de sexta, duas leituras vazias e a conferência de segunda: sem achado."""
+    con = _con(cg_casa)
+    _ordem_do_dia(con, "SEXTA-1", "2026-11-20")
+    _leitura(con, "2026-11-20", "OK")
+    _leitura(con, "2026-11-21", "VAZIA")
+    _leitura(con, "2026-11-22", "VAZIA")
+    assert GC.regra_cnib_parado(con, _date(2026, 11, 23)) == []
+
+
+def test_tres_dias_de_vazia_acusam_mesmo_com_base_recente(cg_casa):
+    con = _con(cg_casa)
+    _ordem_do_dia(con, "RECENTE-1", "2026-11-21")
+    _leitura(con, "2026-11-20", "OK")
+    for dia in ("2026-11-21", "2026-11-22", "2026-11-23"):
+        _leitura(con, dia, "VAZIA")
+    achado = GC.regra_cnib_parado(con, _date(2026, 11, 23))[0]
+    assert achado["titulo"] == "Leitura do CNIB voltando vazia desde 21/11/2026"
+
+
+def test_tres_cliques_no_mesmo_dia_contam_como_um_dia(cg_casa):
+    con = _con(cg_casa)
+    _ordem_do_dia(con, "RECENTE-2", "2026-11-22")
+    for _ in range(3):
+        _leitura(con, "2026-11-23", "VAZIA")
+    assert GC.regra_cnib_parado(con, _date(2026, 11, 23)) == []
+
+
+def test_posta_em_dia_de_mes_antigo_nao_interrompe_a_sequencia_de_vazias(cg_casa):
+    con = _con(cg_casa)
+    _ordem_do_dia(con, "VELHA-3", "2026-08-12")
+    _leitura(con, "2026-10-01", "VAZIA")
+    _leitura(con, "2026-10-02", "OK", de="2023-03-01", ate="2023-03-31")
+    _leitura(con, "2026-10-03", "VAZIA")
+    detalhe = GC.regra_cnib_parado(con, _date(2026, 10, 3))[0]["detalhe"]
+    assert "2 leituras vazias seguidas, desde 01/10/2026" in detalhe
+
+
+def test_data_de_pedido_no_futuro_nao_faz_a_base_parecer_em_dia(cg_casa):
+    con = _con(cg_casa)
+    _ordem_do_dia(con, "VELHA-4", "2026-08-12")
+    _ordem_do_dia(con, "DIGITADA-ERRADA", "2062-08-12")
+    assert "12/08/2026" in GC.regra_cnib_parado(con, _date(2026, 11, 23))[0]["titulo"]
+
+
+def test_base_sem_ordem_nenhuma_diz_que_nunca_foi_atualizada(cg_casa):
+    con = _con(cg_casa)
+    _leitura(con, "2026-11-23", "VAZIA")
+    achado = GC.regra_cnib_parado(con, _date(2026, 11, 23))[0]
+    assert achado["titulo"] == "Base local do CNIB nunca foi atualizada"

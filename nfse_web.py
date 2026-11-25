@@ -81,6 +81,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             "nfse_fila.html", cfg=cfg, grupos=grupos, data=data,
             hoje=date.today().isoformat(), ligada=NFSE.ligada(cfg),
             faltas=NFSE.pendencias_da_configuracao(cfg),
+            faltas_do_iss=NFSE.pendencias_do_iss(cfg),
             ambiente=NFSE.AMBIENTES.get(cfg["nfse_ambiente"], cfg["nfse_ambiente"]),
             situacoes=NFSE.SITUACOES, reais=NFSE.reais, papel=usuario_papel(),
             quem_opera=QUEM_OPERA, quem_cancela=QUEM_CANCELA)
@@ -307,6 +308,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             certificado=NFSE.resumo_do_certificado(),
             faltas=NFSE.pendencias_da_configuracao(cfg), ambientes=NFSE.AMBIENTES,
             avisos=NFSE.avisos_da_configuracao(cfg), convenios=NFSE.CONVENIO,
+            faltas_do_iss=NFSE.pendencias_do_iss(cfg),
             parametros=parametros,
             parametros_texto=(json.dumps(parametros, ensure_ascii=False, indent=2)
                               if parametros else ""),

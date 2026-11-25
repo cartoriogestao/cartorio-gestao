@@ -29,6 +29,7 @@ from flask import (abort, flash, make_response, redirect, render_template,
                    request, session, url_for)
 
 import dois_fatores as DF
+import papeis as PAP
 import dois_fatores_dispositivos as DD
 import modo_reserva as MRES
 from security import new_csrf_token
@@ -36,7 +37,7 @@ from seguranca_web import destino_interno
 
 # OS PAPÉIS DA CASA — os mesmos de `app.ROLES` e de `database.create_user`. Não
 # se importa de `app` porque `app` importa este módulo; há teste que compara.
-PAPEIS = ("ADMIN", "MANAGER", "USER", "AUDITOR")
+PAPEIS = ("ADMIN", "MANAGER", "USER", "AUDITOR", "TI")
 
 _CHAVES_DA_MEIA_SESSAO = ("df_uid", "df_desde", "df_next", "df_cadastro")
 
@@ -337,7 +338,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             segredo = DF.segredo_pendente(con, uid, pasta) if sit["estado"] == DF.PENDENTE else None
         contexto = _contexto_da_chave(user, segredo) if segredo else {}
         return _sem_cache(render_template(
-            "dois_fatores.html", sit=sit, exigido=DF.exigido(db.get_setting, user["role"]),
+            "dois_fatores.html", sit=sit, exigido=DF.exigido(db.get_setting, PAP.papel_de(user)),
             pendente=bool(segredo), **contexto))
 
     @app.route("/conta/dois-fatores/iniciar", methods=["POST"])

@@ -36,6 +36,7 @@ A CARGA MOSTRA O QUE FEZ, E O QUE NAO FEZ
 """
 from __future__ import annotations
 
+import papeis as PAP
 import io
 import json
 import re
@@ -462,7 +463,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         if not uid:
             return ""
         u = db.get_user(int(uid))
-        return (u["role"] if u else "") or ""
+        return PAP.papel_efetivo(u) if u else ""  # o TI segue o ADMIN (T015)
 
     def _campo(nome: str) -> str:
         return (request.form.get(nome) or "").strip()
@@ -1596,8 +1597,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                     dj = json.loads(ass["dados_json"] or "{}")
                                 except (TypeError, ValueError):
                                     dj = {}
-                                if not folha_ato and str(dj.get("folha") or "").strip():
-                                    folha_ato = str(dj["folha"]).strip()
+                                # «137v» (o verso do livro) vira «137»; a
+                                # folha que não vira número cai na matrícula.
+                                if not folha_ato and AS.folha_do_selo(dj.get("folha")):
+                                    folha_ato = AS.folha_do_selo(dj["folha"])
                                 if not livro:
                                     lt = str(dj.get("livro_tipo") or "").strip()
                                     ln = str(dj.get("livro_numero") or "").strip()
@@ -2325,6 +2328,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 # Demais atos do civil: um selo por unidade, como sempre.
                 itens = _itens_para_selar_expandido(con)
                 _qtd_por_codigo = {}
+                # RETIFICAÇÃO E ANOTAÇÃO SELAM SÓ O ITEM DELAS (P006,
+                # 24/11/2026): sem item marcado, o protocolo inteiro virava
+                # selo pelo caminho do ato — a certidão e a averbação do
+                # mesmo pacote inclusive. O resto fica para o ato dele.
+                if tabela == "rc_atos":
+                    itens = AS.itens_selo_do_lancamento_rcpn(tipo, itens)
             folha = None
             folha_invalida = None
             if precisa_folha:
@@ -5803,6 +5812,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         if motivo_selo:
             with db.transaction() as con:
                 banco(con).escrever("DELETE FROM rc_atos WHERE id=%s", (r["ato_id"],))
+                # O ATO DESFEITO NÃO FICA «AGUARDANDO COBERTURA» (P006): a
+                # marca sobrava na tabela e lia-se como ato pendente.
+                AS.tirar_do_aguardando(con, tabela="rc_atos", ato_id=r["ato_id"])
             audit("RCPN_ATO_NAO_LAVRADO_SELO_FALHOU", "rc_atos",
                   r["ato_id"], {"tipo": tipo, "assento_id": assento_id,
                                 "motivo": motivo_selo})
@@ -5981,6 +5993,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             with db.transaction() as con:
                 bd = banco(con)
                 bd.escrever("DELETE FROM rc_atos WHERE id=%s", (r["ato_id"],))
+                AS.tirar_do_aguardando(con, tabela="rc_atos", ato_id=r["ato_id"])
                 if papel:
                     bd.escrever(
                         """UPDATE rc_pessoas
@@ -8847,9 +8860,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """Os nascimentos de indigena que a FUNAI ainda nao recebeu. SÓ LÊ."""
         with db.connect() as con:
             hoje = db.now()[:10]
-            esperando = FUNAI.pendentes(con, hoje=hoje)
+            todos = FUNAI.pendentes(con, hoje=hoje, limite=None)
             historico = FUNAI.historico(con)
-        return render_template("rcpn_funai.html", esperando=esperando,
+        return render_template("rcpn_funai.html",
+                               esperando=[x for x in todos if x["ato_novo"]],
+                               acervo=[x for x in todos if not x["ato_novo"]],
                                historico=historico, norma=FUNAI, hoje=hoje)
 
     @app.route("/rcpn/funai/<int:assento_id>", methods=["GET", "POST"])

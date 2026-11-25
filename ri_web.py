@@ -8,6 +8,7 @@ from __future__ import annotations
 from certidao_texto import sem_linha_de_assinatura_a_mao
 
 import hashlib
+import papeis as PAP
 import base64
 import json
 import math
@@ -82,6 +83,8 @@ from ri_odt import (MIOLO_DA_CERTIDAO,
                     html_com_destaque_rotulo_ato,
                     ato_sem_espaco_antes_do_fecho, anexar_fecho_ao_ato)
 import ri_cnib as CNIB
+import ri_georref as GEO  # a conferencia do georreferenciamento no ato (RI011, art. 343-F, II)
+import nome_humano as NOMEHUM
 # O VOCABULARIO DAS LEITURAS MORA NO ATUALIZADOR, e se le de la em vez de
 # repetir os textos aqui: situacao que existe em dois lugares vira duas
 # situacoes no dia em que uma das duas mudar.
@@ -1703,6 +1706,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     "ORDER BY ordem NULLS FIRST, id", (matricula_id,))
         with db.connect() as _c_cnib:
             cnib_dos_atos = CNIB.consultas_da_matricula(_c_cnib, matricula_id)
+            georref = GEO.da_matricula(_c_cnib, matricula_id)
 
         # O CARIMBO DA TELA É O MESMO DO PAPEL — ordem do oficial em
         # 15/09/2026: «preze por esse modelo tanto no html como no odt e pdf,
@@ -2288,6 +2292,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             cnib_idade=cnib_idade(base_data),
             cnib_dias_para_avisar=CNIB_DIAS_PARA_AVISAR,
             cnib_dos_atos=cnib_dos_atos,
+            georref=georref, GEO=GEO,
             cnib_exige_protocolo=(
                 db.get_setting(CNIB.CHAVE_EXIGIR_PROTOCOLO, "0") == "1"),
             protocolos=protocolos,
@@ -4420,6 +4425,67 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             "UPDATE ri_partes SET proprietario_ativo=0 WHERE matricula_id=%s",
             (int(matricula_id),))
 
+    # ---------------------------------------- o georreferenciamento no ato (RI011)
+
+    def _gravar_georref_do_ato(con, *, matricula_id, ato_id, ato_rotulo, natureza, modelo):
+        """Grava a conferencia do mosaico (art. 343-F, II) na transacao do ato. Avisa, nao bloqueia.
+
+        So grava quando o ato e dos que pedem o passo (`GEO.exige_conferencia`) ou quando a pessoa
+        respondeu o campo — conferir um ato fora da lista tambem vale. Devolve a linha, ou `None`.
+        """
+        situacao = (request.form.get("georref_situacao") or "").strip()
+        if not situacao and not GEO.exige_conferencia(natureza, modelo):
+            return None
+        nome = app.extensions["usuario_nome"]()
+        return GEO.registrar(
+            con, matricula_id=matricula_id, ocasiao=GEO.OCASIAO_ATO,
+            situacao=situacao, observacao=request.form.get("georref_obs"),
+            ato_id=ato_id, ato_rotulo=ato_rotulo,
+            natureza_titulo=(natureza or "").strip() or None,
+            quem=nome, quem_id=app.extensions["usuario_id"](),
+            robo=(nome == NOMEHUM.MARCA_PENDENTE), agora=db.now())
+
+    @app.route("/registro-imoveis/<int:matricula_id>/georreferenciamento", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def ri_georref_conferir(matricula_id):
+        """A conferencia feita DEPOIS, pela ficha: resolve uma pendente ou registra uma avulsa."""
+        m = q1("SELECT id, numero FROM ri_matriculas WHERE id=%s", (matricula_id,))
+        if not m:
+            abort(404)
+        refere = numero_digitado(request.form.get("refere_id"))
+        nome = app.extensions["usuario_nome"]()
+        try:
+            with db.transaction() as con:
+                linha = GEO.registrar(
+                    con, matricula_id=matricula_id, ocasiao=GEO.OCASIAO_AVULSA,
+                    situacao=request.form.get("georref_situacao"),
+                    observacao=request.form.get("georref_obs"),
+                    refere_id=refere, quem=nome,
+                    quem_id=app.extensions["usuario_id"](),
+                    robo=(nome == NOMEHUM.MARCA_PENDENTE), agora=db.now())
+        except GEO.GeorrefError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("ri_ficha", matricula_id=matricula_id))
+        audit("RI_GEORREF_CONFERENCIA", "RI_MATRICULA", matricula_id,
+              {"matricula": m["numero"], "situacao": linha["situacao"],
+               "ocasiao": linha["ocasiao"], "refere_id": refere})
+        for aviso in linha["avisos"]:
+            flash(aviso, "warning")
+        if linha["pendente"]:
+            flash("Conferência registrada como PENDENTE: ninguém declarou ter conferido o mosaico.", "warning")
+        else:
+            flash("Conferência do georreferenciamento registrada: "
+                  + GEO.ROTULOS[linha["situacao"]] + ".", "success")
+        return redirect(url_for("ri_ficha", matricula_id=matricula_id))
+
+    @app.route("/registro-imoveis/georreferenciamento")
+    @roles_required("ADMIN", "MANAGER", "USER", "AUDITOR")
+    def ri_georref_pendentes():
+        """O que espera conferencia do mosaico (art. 343-F, II), da que espera ha mais tempo."""
+        with db.connect() as con:
+            pendentes = GEO.pendentes(con)
+        return render_template("ri_georref.html", pendentes=pendentes, GEO=GEO)
+
     @app.route("/registro-imoveis/<int:matricula_id>/atos", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def ri_lavrar_ato(matricula_id):
@@ -5063,6 +5129,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 protocolo_consulta=cnib_protocolo,
                 quem=(app.extensions["usuario_nome"]() or "").strip() or None,
                 agora=db.now())
+            # O PASSO DO GEORREFERENCIAMENTO (RI011, art. 343-F, II do CNN): quem lavrou diz se conferiu o
+            # mosaico no SIG-RI, e fica gravado quem, quando e o que declarou. AVISA, NAO BLOQUEIA: em branco,
+            # «depois» ou robo, a linha nasce PENDENTE e o ato sai do mesmo jeito. Na transacao do ato.
+            conferencia_georref = _gravar_georref_do_ato(
+                con, matricula_id=matricula_id, ato_id=ato_id,
+                ato_rotulo=f"{tipo}-{numero}",
+                natureza=request.form.get("natureza_titulo"),
+                modelo=request.form.get("modelo_codigo"))
             # A MINUTA NAO SE APAGA AO VIRAR ATO: ela e a prova de que aquele
             # texto existia antes, e de onde ele veio. Na MESMA transacao do
             # ato — se o ato nao entrar, a minuta continua na fila.
@@ -5160,6 +5234,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             try:
                 with db.transaction() as con:
                     CNIB.soltar_do_ato(con, ato_id)
+                    GEO.soltar_do_ato(con, ato_id)
                     # O ATO QUE ESTE CANCELAVA volta a valer antes de o cancelamento virar minuta («a1»).
                     _desmarcar_cancelado_pela_averbacao(banco(con), ato_id)
                     voltou = RIMIN.voltar_do_ato(
@@ -5357,6 +5432,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                    "protocolo": request.form.get("protocolo"),
                    "anteriores": [p["numero"] for p in anteriores],
                    "motivo": motivo_prioridade})
+        if conferencia_georref is not None:
+            audit("RI_GEORREF_CONFERENCIA", "RI_ATO", ato_id,
+                  {"matricula": m["numero"], "ato": f"{tipo}-{numero}",
+                   "situacao": conferencia_georref["situacao"],
+                   "ocasiao": conferencia_georref["ocasiao"]})
+            for _frase_geo in conferencia_georref["avisos"]:
+                flash(_frase_geo, "warning")
+            _aviso_georref = GEO.aviso_do_ato(request.form.get("natureza_titulo"),
+                                              conferencia_georref)
+            if _aviso_georref:
+                flash(_aviso_georref, "warning")
         flash(f"{tipo}-{numero} lavrado. O ato entrou na cadeia de integridade e "
               f"não pode mais ser editado — correções se fazem por averbação."
               f"{' A minuta que estava para revisão saiu da fila.' if minuta else ''}"
@@ -5852,7 +5938,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             if _js:
                 _uid = session.get("user_id")
                 _u = db.get_user(int(_uid)) if _uid else None
-                _papel = ((_u["role"] if _u else "") or "").upper()
+                _papel = PAP.papel_efetivo(_u) if _u else ""  # o TI segue o ADMIN (T015)
                 if _papel not in ("ADMIN", "MANAGER") or request.form.get("confirmar_ressele") != "1":
                     flash(f"O ato {rotulo} já consta como selado ({_js[1]}). Selar de "
                           f"novo é selo em duplicidade. Só administrador ou gerente, "
@@ -7318,6 +7404,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     selo_cancelado=request.form.get("selo_cancelado"),
                     usuario=_usuario_atual())
                 CNIB.soltar_do_ato(con, ato_id)
+                GEO.soltar_do_ato(con, ato_id)
         except EXP.ExpurgoError as erro:
             flash(str(erro), "danger")
             return redirect(url_for("ri_expurgar_ato", ato_id=ato_id))
@@ -7846,12 +7933,33 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # Avanca a serie inteira: todos os volumes passam a apontar para o
             # numero seguinte, senao o proximo volume repetiria este numero.
             RC.sincronizar_numeracao(con, livro, db.now())
+            # O PASSO DO GEORREFERENCIAMENTO NA ABERTURA (RI011, art. 343-F, II). A abertura de
+            # matricula sempre pede o passo; ficha de acervo (historica) nao: o que se abre ali ja existia.
+            conferencia_georref = None
+            if not e_acervo or (request.form.get("georref_situacao") or "").strip():
+                _nome_geo = app.extensions["usuario_nome"]()
+                conferencia_georref = GEO.registrar(
+                    con, matricula_id=novo_id, ocasiao=GEO.OCASIAO_ABERTURA,
+                    situacao=request.form.get("georref_situacao"),
+                    observacao=request.form.get("georref_obs"),
+                    ato_rotulo="abertura", quem=_nome_geo,
+                    quem_id=app.extensions["usuario_id"](),
+                    robo=(_nome_geo == NOMEHUM.MARCA_PENDENTE), agora=db.now())
 
         audit("RI_MATRICULA_ABERTA", "RI_MATRICULA", novo_id,
               {"numero": numero, "livro": livro,
                "tipo_ficha": "ACERVO" if e_acervo else "ESTRUTURADA"})
         flash(f"Matrícula {numero} aberta no livro {livro}. "
               f"O próximo número do livro passou a ser {numero + 1}.", "success")
+        if conferencia_georref is not None:
+            audit("RI_GEORREF_CONFERENCIA", "RI_MATRICULA", novo_id,
+                  {"matricula": numero, "situacao": conferencia_georref["situacao"],
+                   "ocasiao": conferencia_georref["ocasiao"]})
+            for _aviso_geo in conferencia_georref["avisos"]:
+                flash(_aviso_geo, "warning")
+            _aviso_geo = GEO.aviso_do_ato(None, conferencia_georref)
+            if _aviso_geo:
+                flash(_aviso_geo, "warning")
         # O ÔNUS DA ORIGEM (decisão do oficial, 03/11/2026, «e2»): o aviso sai já na abertura.
         with db.connect() as _c_onus:
             _nova = banco(_c_onus).um("SELECT * FROM ri_matriculas WHERE id=%s", (novo_id,))
@@ -8951,7 +9059,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         audit("RI_REINGRESSO", "RI_NOTA", nota_id,
               {"protocolo": p["numero"], "data": quando, "no_prazo": dentro_do_prazo,
-               "registrado_em": hoje, "retroativo": quando < hoje, "papel": papel,
+               "registrado_em": hoje, "retroativo": quando < hoje, "papel": PAP.para_o_registro(papel),
                "anexos": anexos})
         if dentro_do_prazo:
             flash(f"Reingresso registrado no protocolo {p['numero']}, dentro da vigência "
@@ -11840,7 +11948,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if substituir:
             uid = session.get("user_id")
             u = db.get_user(int(uid)) if uid else None
-            papel = (u["role"] if u else "") or ""
+            papel = PAP.papel_efetivo(u) if u else ""  # o TI segue o ADMIN (T015)
             if papel not in ("ADMIN", "MANAGER"):
                 flash("Substituir a carga anterior continua restrito ao "
                       "administrador ou gerente. Para importar matrícula sem "

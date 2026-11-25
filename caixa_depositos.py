@@ -920,13 +920,165 @@ def debitar(con, deposito_id: int, valor_centavos: int, *, agora: str,
             "valor_centavos": valor, "saldo_centavos": novo}
 
 
+# ------------------------------- o item pago em mais de uma forma (F005)
+#
+# «No balcão, um cliente quer pagar o registro em duas partes: uma em espécie
+#  ou Pix e outra no cartão parcelado, pelo link da Parcela Express» — F005,
+#  24/11/2026. Decisão do oficial: OPÇÃO B — vários depósitos do MESMO
+#  protocolo somam para quitar um item, com um `cx_deposito_usos` por depósito.
+#
+# A PARTE PAGA SE LÊ DOS USOS, E NÃO DE UMA COLUNA NOVA. Cada débito que paga
+# o item já fica em `cx_deposito_usos` com o `item_id`, e o estorno é a linha
+# de valor negativo: a soma dos usos do item é o que os depósitos pagaram
+# dele. Uma coluna «pago» no item seria uma segunda conta do mesmo dinheiro, e
+# as duas divergiriam no primeiro estorno.
+#
+# O ITEM SÓ FICA QUITADO QUANDO A SOMA FECHA AO CENTAVO. Enquanto não fecha,
+# nada se debita: quem paga um item com depósitos (o selo, o «usar», a
+# cobrança) ou cobre o que falta inteiro, ou deixa tudo como estava — e o
+# selo continua travado. A parte paga de um item aberto só existe depois do
+# estorno de outra parte (`estornar_parte`): o item reabre, e o que sobrou
+# pago continua contado.
+
+#: Nome da forma do lançamento de depósito que não está em
+#: `caixa_schema.FORMAS_PAGAMENTO` — a cobrança grava «CARTAO».
+_FORMAS_DA_COBRANCA = {"CARTAO": "Cartão"}
+
+
+def pago_dos_itens(con, item_ids) -> dict[int, int]:
+    """Quanto os depósitos já pagaram de cada item, em centavos. Só LÊ."""
+    ids = sorted({int(i) for i in item_ids or () if i is not None})
+    bd = banco(con)
+    if not ids or not bd.tem_tabela("cx_deposito_usos"):
+        return {}
+    return {int(r["item_id"]): int(r["pago"] or 0) for r in bd.ler(
+        """SELECT item_id, coalesce(sum(valor_centavos), 0) AS pago
+             FROM cx_deposito_usos WHERE item_id = ANY(%s)
+            GROUP BY item_id""", (ids,))}
+
+
+def pago_do_item(con, item_id) -> int:
+    """Quanto os depósitos já pagaram deste item, em centavos. Só LÊ."""
+    return pago_dos_itens(con, [item_id]).get(int(item_id), 0)
+
+
+def falta_do_item(con, item) -> int:
+    """Quanto falta pagar do item que ainda não está quitado. Só LÊ."""
+    from caixa_schema import centavos
+    import caixa_protocolo as CXP
+    if CXP._sim(item.get("quitado")):
+        return 0
+    return max(0, centavos(item.get("valor_total"))
+               - pago_do_item(con, item["id"]))
+
+
+def rotulo_da_forma(forma: Any, banco_da_cobranca: Any = None) -> str:
+    """«Dinheiro», «Cartão (Parcela Express)»… — a forma como o recibo a diz."""
+    from caixa_schema import FORMAS_PAGAMENTO
+    codigo = str(forma or "").strip().upper()
+    rotulo = (FORMAS_PAGAMENTO.get(codigo) or _FORMAS_DA_COBRANCA.get(codigo)
+              or (codigo.capitalize() if codigo else "Depósito prévio"))
+    if banco_da_cobranca:
+        import cobranca as CB
+        nome = str(CB.BANCOS.get(banco_da_cobranca) or banco_da_cobranca)
+        rotulo = f"{rotulo} ({nome.split(' (')[0]})"
+    return rotulo
+
+
+def partes_do_item(con, item_id) -> list[dict]:
+    """Cada depósito que pagou o item, com o valor líquido e a forma. Só LÊ.
+
+    A forma é a do lançamento do depósito no caixa (a gaveta ou o caixa
+    bancário); o depósito que veio de uma cobrança diz também o banco.
+    Na ordem em que o dinheiro entrou (a data do depósito).
+    """
+    bd = banco(con)
+    if not bd.tem_tabela("cx_deposito_usos"):
+        return []
+    partes = bd.ler(
+        """SELECT u.deposito_id, coalesce(sum(u.valor_centavos), 0) AS valor,
+                  min(u.id) AS primeiro, d.numero, d.depositante,
+                  d.depositante_documento, l.forma_pagamento
+             FROM cx_deposito_usos u
+             JOIN cx_depositos d ON d.id = u.deposito_id
+             LEFT JOIN cx_lancamentos l ON l.id = d.lancamento_id
+            WHERE u.item_id = %s
+            GROUP BY u.deposito_id, d.numero, d.depositante,
+                     d.depositante_documento, l.forma_pagamento
+           HAVING coalesce(sum(u.valor_centavos), 0) <> 0
+            ORDER BY min(d.data), u.deposito_id""", (int(item_id),))
+    bancos = {}
+    if partes and bd.tem_tabela("cb_cobrancas"):
+        bancos = {int(r["deposito_id"]): r["banco"] for r in bd.ler(
+            "SELECT deposito_id, banco FROM cb_cobrancas WHERE deposito_id = ANY(%s)",
+            ([int(p["deposito_id"]) for p in partes],))}
+    for p in partes:
+        p["valor"] = int(p["valor"] or 0)
+        p["banco"] = bancos.get(int(p["deposito_id"]))
+        p["rotulo"] = rotulo_da_forma(p["forma_pagamento"], p["banco"])
+    return partes
+
+
+def _depositos_presos(bd, protocolo_id, *, tabela=None, ato_id=None,
+                      fora: tuple = ()) -> list[dict]:
+    """Os depósitos com saldo do protocolo, PRESOS, na ordem de sempre."""
+    from caixa_schema import centavos
+    presos = []
+    for d in do_protocolo(bd, protocolo_id, tabela=tabela, ato_id=ato_id):
+        if int(d["id"]) in fora:
+            continue
+        linha = bd.um("SELECT * FROM cx_depositos WHERE id = %s FOR UPDATE",
+                      (int(d["id"]),))
+        if linha and not int(linha["encerrado"] or 0) and centavos(linha["saldo"]) > 0:
+            presos.append(linha)
+    return presos
+
+
+def _plano(depositos: list[dict], falta: int) -> list[tuple[dict, int]] | None:
+    """Quanto tirar de cada depósito para cobrir `falta` — ou None. Só calcula.
+
+    O DEPÓSITO QUE COBRE SOZINHO VEM PRIMEIRO, como era antes: um item pago
+    por um depósito só continua com um débito só. Só quando nenhum cobre
+    sozinho os depósitos se somam, na ordem do protocolo.
+    """
+    from caixa_schema import centavos
+    if falta <= 0 or sum(centavos(d["saldo"]) for d in depositos) < falta:
+        return None
+    for d in depositos:
+        if centavos(d["saldo"]) >= falta:
+            return [(d, falta)]
+    plano, resta = [], falta
+    for d in depositos:
+        if resta <= 0:
+            break
+        parte = min(centavos(d["saldo"]), resta)
+        plano.append((d, parte))
+        resta -= parte
+    return plano
+
+
+def _juntar(feitos: list[dict]) -> dict:
+    """Os débitos de um item numa resposta só, no formato de `debitar`."""
+    if len(feitos) == 1:
+        return feitos[0]
+    return {"deposito_id": feitos[0]["deposito_id"],
+            "numero": " + ".join(str(f["numero"] or f["deposito_id"]) for f in feitos),
+            "valor_centavos": sum(int(f["valor_centavos"]) for f in feitos),
+            "saldo_centavos": sum(int(f["saldo_centavos"]) for f in feitos),
+            "partes": feitos}
+
+
 def pagar_item(con, item_id: int, *, agora: str, quem: str | None = None,
-               tabela: str | None = None, ato_id: int | None = None) -> dict | None:
+               tabela: str | None = None, ato_id: int | None = None,
+               motivo: str = "Quitação do item pelo depósito prévio (selo)"
+               ) -> dict | None:
     """Quita o item do protocolo com o depósito prévio, se houver saldo. ESCREVE.
 
     Devolve o débito feito, `{"ja_quitado": True}` se outro selo pagou o item
-    enquanto este esperava a trava, ou None quando nenhum depósito cobre o
-    valor (ou o item não tem valor — e sem valor não há o que debitar).
+    enquanto este esperava a trava, ou None quando os depósitos do protocolo,
+    somados, não cobrem o que falta do item (ou o item não tem valor — e sem
+    valor não há o que debitar). Quando mais de um depósito paga o item
+    (F005), a resposta traz `partes`, um débito por depósito.
     """
     import caixa_protocolo as CXP
     from caixa_schema import centavos
@@ -941,21 +1093,30 @@ def pagar_item(con, item_id: int, *, agora: str, quem: str | None = None,
     valor = centavos(linha["valor_total"])
     if valor <= 0:
         return None
-    for d in do_protocolo(bd, linha["protocolo_id"], tabela=tabela, ato_id=ato_id):
-        if centavos(d["saldo"]) < valor:
-            continue
-        try:
-            feito = debitar(bd, d["id"], valor, agora=agora, quem=quem,
-                            protocolo_id=linha["protocolo_id"], item_id=int(item_id),
-                            tabela=tabela, ato_id=ato_id,
-                            motivo="Quitação do item pelo depósito prévio (selo)")
-        except DepositoSemSaldo:
-            # Outro balcão gastou o saldo entre a lista e a trava: tenta o
-            # próximo depósito, e não estoura.
-            continue
-        quitar_o_item(bd, linha, feito, agora=agora)
-        return feito
-    return None
+    falta = valor - pago_do_item(bd, item_id)
+    if falta <= 0:
+        # As partes já somam o item e a marca ficou para trás: marca, sem
+        # debitar de novo — debitar seria o cliente pagando duas vezes.
+        partes = partes_do_item(bd, item_id)
+        quitar_o_item(bd, linha, {"numero": " + ".join(
+            str(p["numero"] or p["deposito_id"]) for p in partes) or None,
+            "deposito_id": (partes[-1]["deposito_id"] if partes else "")},
+            agora=agora)
+        return {"ja_quitado": True}
+    # OS DEPÓSITOS SE PRENDEM DEPOIS DO ITEM, na ordem de sempre (item →
+    # depósito → protocolo): presos antes de calcular, o saldo do plano é o
+    # saldo do débito, e nenhum outro balcão o gasta no meio.
+    plano = _plano(_depositos_presos(bd, linha["protocolo_id"], tabela=tabela,
+                                     ato_id=ato_id), falta)
+    if not plano:
+        return None
+    feitos = [debitar(bd, d["id"], parte, agora=agora, quem=quem,
+                      protocolo_id=linha["protocolo_id"], item_id=int(item_id),
+                      tabela=tabela, ato_id=ato_id, motivo=motivo)
+              for d, parte in plano]
+    feito = _juntar(feitos)
+    quitar_o_item(bd, linha, feito, agora=agora)
+    return feito
 
 
 def quitar_o_item(con, item: dict, feito: dict, *, agora: str) -> None:
@@ -965,7 +1126,8 @@ def quitar_o_item(con, item: dict, feito: dict, *, agora: str) -> None:
     (`pagar_item`) e o «usar» da tela do caixa (LD06). `quitado_por` começa
     por «DEPÓSITO PRÉVIO»: é por ela que o estorno da reserva do selo sabe
     que a quitação é do depósito, e que o caixa recusa cobrar o item de novo
-    ou reabri-lo sem devolver o dinheiro.
+    ou reabri-lo sem devolver o dinheiro. Pago por mais de um depósito, a
+    marca leva os números juntos («DEPÓSITO PRÉVIO DP2026.11.1 + DP2026.11.2»).
     """
     import caixa_protocolo as CXP
     bd = banco(con)
@@ -976,6 +1138,119 @@ def quitar_o_item(con, item: dict, feito: dict, *, agora: str) -> None:
         (agora, f"DEPÓSITO PRÉVIO {feito['numero'] or feito['deposito_id']}",
          int(item["id"])))
     CXP.atualizar_situacao(bd, item["protocolo_id"])
+
+
+def reabrir_o_item(con, item: dict) -> bool:
+    """Desfaz a quitação QUE O DEPÓSITO FEZ, e só ela. ESCREVE.
+
+    A do caixa não é do depósito: sai por estorno do lançamento. O recibo
+    que o item já teve fica no livro de recibos como foi emitido; a marca
+    sai do item para a quitação nova poder ter o seu (F005).
+    """
+    import caixa_protocolo as CXP
+    bd = banco(con)
+    if not str(item.get("quitado_por") or "").startswith("DEPÓSITO PRÉVIO"):
+        return False
+    bd.escrever(
+        """UPDATE cx_protocolo_atos
+              SET quitado = 0, quitado_em = NULL, quitado_por = NULL
+            WHERE id = %s""", (int(item["id"]),))
+    if bd.tem_coluna("cx_protocolo_atos", "recibo_id"):
+        bd.escrever("UPDATE cx_protocolo_atos SET recibo_id = NULL WHERE id = %s",
+                    (int(item["id"]),))
+    CXP.atualizar_situacao(bd, item["protocolo_id"])
+    return True
+
+
+def devolver_parte(con, deposito_id: int, valor_centavos: int, *, agora: str,
+                   motivo: str, quem: str | None = None,
+                   protocolo_id: Any = None, item_id: Any = None,
+                   tabela: Any = None, ato_id: Any = None) -> int | None:
+    """O que o depósito pagou volta ao saldo dele, com o rastro. ESCREVE.
+
+    O espelho de `debitar`: a linha do depósito presa, o saldo de volta e a
+    linha NEGATIVA em `cx_deposito_usos` — o débito continua lá, e quem soma
+    os usos chega ao saldo certo. Devolve o saldo novo (None se o depósito
+    não existe mais).
+    """
+    from caixa_schema import centavos
+    valor = int(valor_centavos or 0)
+    if valor <= 0:
+        return None
+    bd = banco(con)
+    bd._escrita()
+    d = bd.um("SELECT * FROM cx_depositos WHERE id = %s FOR UPDATE",
+              (int(deposito_id),))
+    if not d:
+        return None
+    novo = centavos(d["saldo"]) + valor
+    bd.escrever(
+        """UPDATE cx_depositos SET saldo = %s, encerrado = 0, atualizado_em = %s
+            WHERE id = %s""", (reais(novo), agora, int(d["id"])))
+    if bd.tem_tabela("cx_deposito_usos"):
+        bd.escrever(
+            """INSERT INTO cx_deposito_usos
+                   (deposito_id, valor_centavos, saldo_depois_centavos,
+                    protocolo_id, item_id, tabela, ato_id, motivo,
+                    criado_em, criado_por)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (int(d["id"]), -valor, novo, protocolo_id, item_id, tabela,
+             ato_id, motivo, agora, quem))
+    return novo
+
+
+def partes_da_cobertura(con, item_id, *, tabela: Any, ato_id: Any) -> list[dict]:
+    """Os débitos líquidos de cada depósito no item PARA ESTE ATO. Só LÊ.
+
+    É o que a reserva do selo debitou (`pagar_item` com a tabela e o ato), e
+    o que o estorno dela devolve — um depósito ou vários (F005).
+    """
+    bd = banco(con)
+    if item_id is None or not bd.tem_tabela("cx_deposito_usos"):
+        return []
+    return bd.ler(
+        """SELECT deposito_id, sum(valor_centavos) AS valor
+             FROM cx_deposito_usos
+            WHERE item_id = %s AND tabela IS NOT DISTINCT FROM %s
+              AND ato_id IS NOT DISTINCT FROM %s
+            GROUP BY deposito_id
+           HAVING sum(valor_centavos) > 0
+            ORDER BY min(id)""", (int(item_id), tabela, ato_id))
+
+
+def estornar_parte(con, item_id: int, deposito_id: int, *, agora: str,
+                   motivo: str, quem: str | None = None) -> dict:
+    """Uma das formas que pagaram o item volta atrás: o item reabre. ESCREVE.
+
+    O que o depósito pagou do item volta ao saldo dele (linha negativa em
+    `cx_deposito_usos`), e a quitação do depósito sai: o item fica a pagar,
+    e o selo volta a travar. A parte das OUTRAS formas continua paga e
+    contada — o que falta é só a parte estornada (F005).
+    """
+    from caixa_schema import centavos
+    motivo = str(motivo or "").strip()
+    if len(motivo) < 10:
+        raise ValueError("Escreva o motivo do estorno, com pelo menos dez letras.")
+    bd = banco(con)
+    bd._escrita()
+    item = bd.um("SELECT * FROM cx_protocolo_atos WHERE id = %s FOR UPDATE",
+                 (int(item_id),))
+    if not item:
+        raise ValueError("Não achei este item do protocolo.")
+    parte = next((p for p in partes_do_item(bd, item_id)
+                  if int(p["deposito_id"]) == int(deposito_id)), None)
+    if not parte or int(parte["valor"]) <= 0:
+        raise ValueError("Este depósito não pagou nada deste item.")
+    devolver_parte(bd, deposito_id, int(parte["valor"]), agora=agora,
+                   motivo=f"Estorno da parte do item: {motivo}", quem=quem,
+                   protocolo_id=item["protocolo_id"], item_id=int(item_id))
+    reaberto = reabrir_o_item(bd, item)
+    item = bd.um("SELECT * FROM cx_protocolo_atos WHERE id = %s", (int(item_id),))
+    return {"item_id": int(item_id), "deposito_id": int(deposito_id),
+            "valor_centavos": int(parte["valor"]), "reaberto": reaberto,
+            "falta_centavos": falta_do_item(bd, item),
+            "pago_centavos": max(0, centavos(item["valor_total"])
+                                 - falta_do_item(bd, item))}
 
 
 # ------------------------------- o «usar» da tela do caixa quita o item (LD06)
@@ -1014,33 +1289,63 @@ def prender_itens_a_pagar(con, protocolo_id: int) -> list[dict]:
 
 def quitar_itens_com_o_deposito(con, deposito_id: int, itens: list[dict],
                                 valor_centavos: int, *, agora: str,
-                                quem: str | None = None) -> list[dict]:
+                                quem: str | None = None,
+                                motivo: str = "Quitação do item pelo uso do "
+                                              "depósito prévio (tela do caixa)"
+                                ) -> list[dict]:
     """Quita, com o valor usado do depósito, os itens que ele cobre. ESCREVE.
 
     `itens` são os de `prender_itens_a_pagar` — já presos. Cada item, na ordem
-    do protocolo, é quitado INTEIRO se o que resta do valor cobre o preço
+    do protocolo, é quitado INTEIRO se o que resta do valor cobre o que falta
     dele; o que não cabe fica a pagar e o seguinte é tentado — meio item pago
     não existe no caixa, e parar no primeiro que não cabe deixaria a pagar um
     item que o dinheiro já usado cobria (e o cliente o pagaria de novo).
 
+    DEPOIS, OS DEPÓSITOS SE SOMAM (F005, opção b do oficial): o item que o
+    resto do valor não cobre sozinho é quitado se o resto, junto com o saldo
+    dos OUTROS depósitos do mesmo protocolo, fecha o que falta dele ao
+    centavo — um débito por depósito. A primeira volta é a de antes: o item
+    que este depósito pagava sozinho continua pago só por ele.
+
     O saldo de quem chama já foi conferido com a linha do depósito presa; o
     débito de cada item passa por `debitar`, que confere de novo. Devolve os
-    débitos feitos, um por item, com o item dentro.
+    débitos feitos, um por item, com o item dentro; `valor_centavos` é o que
+    saiu DESTE depósito, e `outras_partes` o que saiu dos outros.
     """
     from caixa_schema import centavos
     bd = banco(con)
     resta = int(valor_centavos or 0)
-    feitos = []
+    feitos, sem_caber = [], []
+    pagos = pago_dos_itens(bd, [i["id"] for i in itens])
     for item in itens:
         preco = centavos(item.get("valor_total"))
-        if preco <= 0 or preco > resta:
+        falta = preco - pagos.get(int(item["id"]), 0)
+        if preco <= 0 or falta <= 0:
             continue
-        feito = debitar(bd, deposito_id, preco, agora=agora, quem=quem,
+        if falta > resta:
+            sem_caber.append((item, falta))
+            continue
+        feito = debitar(bd, deposito_id, falta, agora=agora, quem=quem,
                         protocolo_id=int(item["protocolo_id"]),
-                        item_id=int(item["id"]),
-                        motivo="Quitação do item pelo uso do depósito prévio "
-                               "(tela do caixa)")
+                        item_id=int(item["id"]), motivo=motivo)
         quitar_o_item(bd, item, feito, agora=agora)
         feitos.append(feito | {"item": item})
-        resta -= preco
+        resta -= falta
+    for item, falta in sem_caber:
+        if resta <= 0:
+            break
+        plano = _plano(_depositos_presos(bd, item["protocolo_id"],
+                                         fora=(int(deposito_id),)), falta - resta)
+        if not plano:
+            continue
+        deste = debitar(bd, deposito_id, resta, agora=agora, quem=quem,
+                        protocolo_id=int(item["protocolo_id"]),
+                        item_id=int(item["id"]), motivo=motivo)
+        outras = [debitar(bd, d["id"], parte, agora=agora, quem=quem,
+                          protocolo_id=int(item["protocolo_id"]),
+                          item_id=int(item["id"]), motivo=motivo)
+                  for d, parte in plano]
+        quitar_o_item(bd, item, _juntar([deste] + outras), agora=agora)
+        feitos.append(deste | {"item": item, "outras_partes": outras})
+        resta = 0
     return feitos

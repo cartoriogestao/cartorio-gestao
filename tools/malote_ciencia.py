@@ -3,7 +3,8 @@ em 20/10/2026: «coloque de toda forma esses expedientes no sistema para cadastr
 não cria tarefa pq já estou ciente deles».
 
 A triagem diária (`gestor_expedientes.candidatos`) pega todo expediente em RECEBIDO
-sem tarefa aberta ligada. Por isso, com --confirmar:
+que ainda não teve tarefa (ou que recebeu documento novo depois que a tarefa dele
+fechou — 24/11/2026). Por isso, com --confirmar:
   --arquivar ID[,ID]   etapa ARQUIVADO, com completed_at/by e a nota de ciência;
   --ligar EXP:TAREFA   liga a tarefa que ele mandou criar ao expediente dela.
 Sem --confirmar só mede. Cópia do banco antes (pasta_das_copias) e auditoria.

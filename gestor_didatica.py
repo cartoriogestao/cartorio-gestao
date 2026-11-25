@@ -47,6 +47,10 @@ TELA = {
     # na fila de remessas de Notas; até 19/11/2026 o achado da CENSEC saía
     # «sem tela» na checklist e a tarefa mandava abrir um menu que não existe.
     "CENSEC": ("Notas → Remessa às centrais", "/notas/remessas"),
+    # O painel de conformidade do ONR (RI010): as três regras levam à mesma tela.
+    "ONR_PAINEL_DIVERGENCIA": ("Registro de Imóveis → ONR: painel de conformidade", "/ri/onr/conformidade"),
+    "ONR_PAINEL_OBRIGACAO": ("Registro de Imóveis → ONR: painel de conformidade", "/ri/onr/conformidade"),
+    "ONR_PAINEL_PENDENCIA": ("Registro de Imóveis → ONR: painel de conformidade", "/ri/onr/conformidade"),
 }
 
 FECHA_SOZINHA = ("Cada item sai desta lista sozinho na conferência seguinte (07:30, "
@@ -266,9 +270,13 @@ GUIA: dict[str, tuple[str, list[str]]] = {
         "O backup completo está atrasado.",
         ["Rode FERRAMENTAS/BACKUP_AGORA.cmd no servidor (ele também espelha fora)."]),
     "CNIB_PARADO": (
-        "A base local do CNIB não é atualizada há dias: a conferência de ordem nos "
-        "registros responde sobre base velha.",
-        ["Rode a atualização do CNIB (TI) e, até lá, consulte direto na Central."]),
+        "A base local do CNIB não recebe ordem nova há dias, ou a leitura da Central "
+        "vem voltando vazia: a conferência de ordem nos registros responde sobre "
+        "base velha.",
+        ["Antes de lavrar, consulte a indisponibilidade direto na Central, pelo CPF "
+         "ou CNPJ das partes.",
+         "Chame o TI. Se a leitura está voltando vazia, rodar a atualização de novo "
+         "não resolve."]),
 }
 
 

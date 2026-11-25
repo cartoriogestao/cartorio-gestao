@@ -181,6 +181,23 @@ def test_a_tela_vazia_diz_de_onde_vem_a_lista(casa):
     assert "em branco em 178 dos 193" in html
 
 
+def test_a_tela_separa_o_ato_novo_do_acervo(casa):
+    _nascimento(casa, nome="ATO NOVO", numero=1, data_ato="2026-10-20")
+    _nascimento(casa, nome="ANTERIOR", numero=2, data_ato="2019-03-04")
+    html = _abrir(casa, "/rcpn/funai")
+    assert "Esperando comunicação (1)" in html
+    assert "Do acervo e anteriores ao corte (1)" in html
+    assert html.index("ATO NOVO") < html.index("Do acervo e anteriores")
+    assert html.index("Do acervo e anteriores") < html.index("ANTERIOR")
+
+
+def test_o_painel_divide_o_numero_da_funai(casa):
+    _nascimento(casa, nome="ATO NOVO", numero=1, data_ato="2026-10-20")
+    _nascimento(casa, nome="ANTERIOR", numero=2, data_ato="2019-03-04")
+    html = _abrir(casa, "/rcpn/comunicacoes-painel")
+    assert "1 ato(s) novo(s), 1 do acervo" in html
+
+
 # ------------------------------------------------ o ofício
 
 

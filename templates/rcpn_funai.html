@@ -18,15 +18,13 @@
   </p>
 </div>
 
-<h2>Esperando comunicação ({{ esperando|length }})</h2>
-
-{% if esperando %}
+{% macro tabela(linhas) %}
 <table>
   <thead>
     <tr><th>Nome</th><th>Nº</th><th>Assento</th><th>Espera há</th><th></th></tr>
   </thead>
   <tbody>
-  {% for x in esperando %}
+  {% for x in linhas %}
     <tr>
       <td>{{ x.nome }}</td>
       <td class="small">{{ x.numero or '' }}</td>
@@ -47,11 +45,14 @@
   {% endfor %}
   </tbody>
 </table>
-<p class="small muted">
-  A partir de {{ norma.DIAS_PARA_CHAMAR_ATENCAO }} dias a linha fica em vermelho.
-  <strong>Esse número é da casa, e não da norma</strong> — a norma diz
-  «imediatamente» e não dá número nenhum.
-</p>
+{% endmacro %}
+
+<h2>Esperando comunicação ({{ esperando|length }})</h2>
+
+{% if esperando %}
+{{ tabela(esperando) }}
+{% elif acervo %}
+<p>Nenhum ato novo esperando comunicação.</p>
 {% else %}
 <p>Nenhum nascimento esperando comunicação.</p>
 <p class="small muted">
@@ -59,6 +60,26 @@
   <strong>em branco em 178 dos 193</strong> nascimentos — de modo que esta lista
   é do que o sistema <em>sabe</em>, e não necessariamente de tudo o que
   aconteceu.
+</p>
+{% endif %}
+
+{% if acervo %}
+<details>
+  <summary><strong>Do acervo e anteriores ao corte ({{ acervo|length }})</strong></summary>
+  <p class="small muted">
+    Sem registro de comunicação neste sistema, o que não prova que não foi
+    feita. Estes assentos ficam fora da cobrança do gestor, e o ofício continua
+    disponível em cada linha.
+  </p>
+  {{ tabela(acervo) }}
+</details>
+{% endif %}
+
+{% if esperando or acervo %}
+<p class="small muted">
+  A partir de {{ norma.DIAS_PARA_CHAMAR_ATENCAO }} dias a linha fica em vermelho.
+  <strong>Esse número é da casa, e não da norma</strong> — a norma diz
+  «imediatamente» e não dá número nenhum.
 </p>
 {% endif %}
 

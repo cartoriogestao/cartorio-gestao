@@ -345,10 +345,15 @@ def a_pagar_do_protocolo(con, protocolo_id: int) -> dict:
     if not p:
         raise CobrancaError(f"Protocolo {protocolo_id} não encontrado.")
     itens = bd.ler(
-        """SELECT valor_total FROM cx_protocolo_atos
+        """SELECT id, valor_total FROM cx_protocolo_atos
             WHERE protocolo_id = %s AND coalesce(quitado, 0) = 0
               AND coalesce(gratuito, 0) = 0""", (int(protocolo_id),))
-    devido = sum(centavos(i["valor_total"] or "0") for i in itens)
+    # O ITEM COM PARTE JÁ PAGA (F005): o que um depósito já pagou dele — e o
+    # estorno da outra parte deixou contado — não se cobra de novo.
+    import caixa_depositos as DEP
+    pagos = DEP.pago_dos_itens(bd, [i["id"] for i in itens])
+    devido = sum(max(0, centavos(i["valor_total"] or "0") - pagos.get(int(i["id"]), 0))
+                 for i in itens)
     saldo = 0
     if bd.tem_tabela("cx_depositos"):
         saldo = sum(centavos(r["saldo"] or "0") for r in bd.ler(
@@ -743,16 +748,71 @@ def entrar_no_caixa_geral(con, cobranca_id: int, *, por: str, agora: datetime) -
         with bd.ponto_de_retorno("cobranca_entrada_bancaria"):
             caixa = caixa_bancario(bd, agora=agora)
             feito = _depositar_cobranca(bd, c, caixa_id=int(caixa["id"]), por=por, agora=agora)
-            if itens and all(centavos(i.get("valor_total")) > 0 for i in itens) and sum(
-                    centavos(i.get("valor_total")) for i in itens) == valor:
-                DEP.quitar_itens_com_o_deposito(
-                    bd, int(feito["id"]), itens, valor, agora=_carimbo(agora), quem=por)
-                _evento(bd, int(c["id"]), "APLICAR_NO_PROTOCOLO", "OK",
-                        "Saldo do recebimento aplicado aos itens, sem nova entrada.", por, _carimbo(agora))
+            _aplicar_no_protocolo(bd, c, feito, itens, valor, por=por, agora=agora)
             return feito
     except CobrancaError as erro:
         _evento(bd, int(c["id"]), "LANCAR_NO_CAIXA", "PENDENTE", str(erro), por, _carimbo(agora))
         return None
+
+
+def _aplicar_no_protocolo(bd, c: Mapping[str, Any], feito: Mapping[str, Any],
+                          itens: list[dict], valor: int, *, por: str,
+                          agora: datetime) -> None:
+    """O recebimento quita os itens do protocolo quando a conta fecha. ESCREVE.
+
+    DUAS CONTAS FECHAM, E SÓ ELAS. A de sempre: o recebido é exatamente o
+    que falta dos itens. E a do pagamento dividido (F005, opção b do
+    oficial): o recebido MAIS o saldo dos outros depósitos do protocolo — a
+    parte que o cliente deixou em dinheiro ou Pix — é exatamente o que falta.
+    Aí os depósitos se somam no item, um uso por depósito. Fora delas o valor
+    fica como saldo do depósito; e, quando falta, o rastro e a ficha dizem
+    quanto («parcial: falta R$ X»), em vez de deixar só saldo a conferir.
+    """
+    import caixa_depositos as DEP
+    from caixa_schema import centavos
+    if not itens or not all(centavos(i.get("valor_total")) > 0 for i in itens):
+        return
+    pagos = DEP.pago_dos_itens(bd, [i["id"] for i in itens])
+    devido = sum(max(0, centavos(i.get("valor_total")) - pagos.get(int(i["id"]), 0))
+                 for i in itens)
+    outros = sum(centavos(d["saldo"]) for d in DEP.do_protocolo(bd, c["protocolo_id"])
+                 if int(d["id"]) != int(feito["id"]))
+    if devido == valor:
+        DEP.quitar_itens_com_o_deposito(
+            bd, int(feito["id"]), itens, valor, agora=_carimbo(agora), quem=por)
+        _evento(bd, int(c["id"]), "APLICAR_NO_PROTOCOLO", "OK",
+                "Saldo do recebimento aplicado aos itens, sem nova entrada.", por, _carimbo(agora))
+    elif outros and devido == valor + outros:
+        motivo = "Quitação do item pela cobrança somada ao depósito do protocolo"
+        DEP.quitar_itens_com_o_deposito(
+            bd, int(feito["id"]), itens, valor, agora=_carimbo(agora), quem=por,
+            motivo=motivo)
+        # O que a passada com este depósito não fechou, os outros depósitos do
+        # protocolo fecham: a soma de todos é exatamente o que faltava.
+        for item in DEP.prender_itens_a_pagar(bd, c["protocolo_id"]):
+            DEP.pagar_item(bd, int(item["id"]), agora=_carimbo(agora), quem=por,
+                           motivo=motivo)
+        _evento(bd, int(c["id"]), "APLICAR_NO_PROTOCOLO", "OK",
+                f"Recebimento somado a R$ {reais(outros)} de depósito prévio do "
+                f"protocolo: itens quitados, sem nova entrada.", por, _carimbo(agora))
+    elif devido > valor + outros:
+        _evento(bd, int(c["id"]), "APLICAR_NO_PROTOCOLO", "PARCIAL",
+                f"parcial: falta R$ {reais(devido - valor - outros)} para quitar os "
+                f"itens do protocolo. O valor fica no depósito até a soma fechar.",
+                por, _carimbo(agora))
+
+
+def falta_do_protocolo(con, c: Mapping[str, Any]) -> int | None:
+    """Quanto falta, em centavos, do protocolo da cobrança já lançada. Só LÊ.
+
+    É o «parcial: falta R$ X» da ficha da cobrança (F005). None quando não
+    há o que dizer: cobrança sem protocolo, ainda não lançada no caixa, ou
+    protocolo sem nada a pagar.
+    """
+    if not c.get("protocolo_id") or not c.get("deposito_id"):
+        return None
+    conta = a_pagar_do_protocolo(con, int(c["protocolo_id"]))
+    return int(conta["sugerido"]) if conta["itens"] and conta["sugerido"] else None
 
 
 def recolher_no_caixa_geral(con, *, por: str, agora: datetime) -> list[dict]:

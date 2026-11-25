@@ -74,6 +74,7 @@ import atribuicoes as ATR
 import custas as CU
 from bd_nativo import banco
 import identidade_do_robo as IDR
+import papeis as PAP
 
 # `selador` E O CONTRATO, e entra aqui para CONFERIR o caminho composto do
 # civil em vez de confiar nele. No topo porque `caminho_do_civil` e
@@ -471,6 +472,64 @@ def itens_selo_averbacao_rcpn(
     return itens
 
 
+# Retificação e anotação RCPN: o selo é o do PRÓPRIO ato (14.10 / 14.7), e não
+# o quadro inteiro do protocolo. Medido em 19/11/2026: a retificação sem item
+# marcado reservou 14.5.1, 14.4.1, 14.10 e 14.12×5 — oito selos pelo caminho
+# `/retificacao`, a certidão e a averbação inclusive. Em 23/11 a anotação
+# reservou 14.10 e 13.30×3, sem nenhum 14.7. O que não é do ato fica no
+# protocolo para o ato a que pertence (a certidão, a averbação).
+CODIGO_DO_LANCAMENTO_RCPN = {"RETIFICACAO": "14.10", "ANOTACAO": "14.7"}
+
+
+def itens_selo_do_lancamento_rcpn(tipo: Any, itens: list | None) -> list:
+    """Os itens do protocolo que a retificação/anotação RCPN sela. Só calcula.
+
+    Fica o código do ato e os subitens dele (`14.10.1`, a retificação sem
+    cobrança). Tipo que não é retificação nem anotação passa sem mudança.
+    Lista vazia quer dizer «o protocolo não tem o item deste ato» — quem
+    chama pede pelo item da lei, e a trava do selo pago diz o que falta.
+    """
+    codigo = CODIGO_DO_LANCAMENTO_RCPN.get(str(tipo or "").strip().upper())
+    if not codigo:
+        return list(itens or [])
+    return [c for c in (itens or [])
+            if c and (str(c).strip() == codigo
+                      or str(c).strip().startswith(codigo + "."))]
+
+
+# A FOLHA DO SELO TEM DE 1 A 3 ALGARISMOS — medido no Tribunal: «O tamanho do
+# campo "dadosSelo.folha" deve estar entre 1 e 3» (averbações de CPF recusadas
+# de 12/11 a 23/11/2026). O acervo importado guarda a folha como no livro
+# físico, com o verso («137v», «082v», «82v e 83»), e ela ia crua. O número da
+# folha é o que a matrícula também traz (`rc_matricula.partes`, sem o verso).
+_FOLHA_NO_COMECO = re.compile(r"\s*(\d+)")
+
+
+def folha_do_selo(folha: Any) -> str:
+    """A folha como o selador aceita: só o número, sem zeros à esquerda e sem
+    o verso. Só calcula. Devolve "" quando não há número de 1 a 999."""
+    achado = _FOLHA_NO_COMECO.match(str(folha if folha is not None else ""))
+    if not achado:
+        return ""
+    numero = int(achado.group(1))
+    return str(numero) if 1 <= numero <= 999 else ""
+
+
+def _folha_para_o_envelope(folha: Any) -> str:
+    """`folha_do_selo` para os envelopes do civil. Recusa com frase de balcão a
+    folha escrita que não vira número — antes de ela ir ao Tribunal."""
+    escrita = str(folha if folha is not None else "").strip()
+    if not escrita:
+        return ""
+    numero = folha_do_selo(escrita)
+    if not numero:
+        raise AtoError(
+            f"A folha «{escrita}» do assento não cabe no selo: o Tribunal "
+            f"aceita só o número da folha, de 1 a 3 algarismos. Corrija a "
+            f"folha na ficha do assento e peça o selo de novo.")
+    return numero
+
+
 MOTIVO_DA_ISENCAO: dict[str, str] = {
     "14.a": "REGISTRO DE NASCIMENTO",
     "14.c": "REGISTRO DE ÓBITO",
@@ -571,6 +630,7 @@ def envelope_do_civil(*, especie: Any, tipo: Any, escrevente: Any, livro: Any,
             f"O ato fica sem selo até alguém medir qual é.")
     codigo, _procedencia = achado
 
+    folha = _folha_para_o_envelope(folha)
     faltando = [nome for nome, valor in
                 (("o escrevente", escrevente), ("o livro", livro),
                  ("a folha", folha), ("o termo", termo),
@@ -586,7 +646,7 @@ def envelope_do_civil(*, especie: Any, tipo: Any, escrevente: Any, livro: Any,
     dados_selo: dict[str, Any] = {
         "escrevente": str(escrevente).strip(),
         "livro": str(livro).strip(),
-        "folha": str(folha).strip(),
+        "folha": folha,
         "termo": str(termo).strip(),
         "versaoTabelaDeCustas": str(versao_tabela).strip(),
     }
@@ -763,6 +823,7 @@ def envelope_da_averbacao_civil(*, escrevente: Any, livro: Any, folha: Any,
             "A averbação do Registro Civil não tem item da tabela de custas "
             "conhecido (14.4.1). O ato fica sem selo.")
 
+    folha = _folha_para_o_envelope(folha)
     faltando = [nome for nome, valor in
                 (("o escrevente", escrevente), ("o livro", livro),
                  ("a folha", folha), ("o termo", termo),
@@ -794,7 +855,7 @@ def envelope_da_averbacao_civil(*, escrevente: Any, livro: Any, folha: Any,
     dados_selo: dict[str, Any] = {
         "escrevente": str(escrevente).strip(),
         "livro": str(livro).strip(),
-        "folha": str(folha).strip(),
+        "folha": folha,
         "termo": str(termo).strip(),
         "versaoTabelaDeCustas": str(versao_tabela).strip(),
     }
@@ -865,6 +926,7 @@ def envelope_da_anotacao_civil(*, escrevente: Any, livro: Any, folha: Any,
             "A anotação do Registro Civil não tem item da tabela de custas "
             "conhecido (14.7). O ato fica sem selo.")
 
+    folha = _folha_para_o_envelope(folha)
     faltando = [nome for nome, valor in
                 (("o escrevente", escrevente), ("o livro", livro),
                  ("a folha", folha), ("o termo", termo),
@@ -879,7 +941,7 @@ def envelope_da_anotacao_civil(*, escrevente: Any, livro: Any, folha: Any,
     dados_selo: dict[str, Any] = {
         "escrevente": str(escrevente).strip(),
         "livro": str(livro).strip(),
-        "folha": str(folha).strip(),
+        "folha": folha,
         "termo": str(termo).strip(),
         "versaoTabelaDeCustas": str(versao_tabela).strip(),
     }
@@ -927,6 +989,7 @@ def envelope_da_retificacao_civil(*, escrevente: Any, livro: Any, folha: Any,
             "A retificação do Registro Civil não tem item da tabela de custas "
             "conhecido (14.10). O ato fica sem selo.")
 
+    folha = _folha_para_o_envelope(folha)
     faltando = [nome for nome, valor in
                 (("o escrevente", escrevente), ("o livro", livro),
                  ("a folha", folha), ("o termo", termo),
@@ -941,7 +1004,7 @@ def envelope_da_retificacao_civil(*, escrevente: Any, livro: Any, folha: Any,
     dados_selo: dict[str, Any] = {
         "escrevente": str(escrevente).strip(),
         "livro": str(livro).strip(),
-        "folha": str(folha).strip(),
+        "folha": folha,
         "termo": str(termo).strip(),
         "versaoTabelaDeCustas": str(versao_tabela).strip(),
     }
@@ -2550,6 +2613,32 @@ class AtoError(ValueError):
     """Impedimento de regra, com mensagem pronta para o balcao."""
 
 
+class SeloVedadoAoTI(AtoError, PAP.TINaoSela):
+    """O papel TI não sela atos (T015, decisão do titular de 24/11/2026).
+
+    É `AtoError` para a tela que já apanha a recusa do selo mostrar a frase, e
+    `papeis.TINaoSela` para a que não apanha responder 403 (o `errorhandler`
+    do app), e não 500.
+    """
+
+    def __init__(self, mensagem: str = PAP.MSG_NAO_SELA):
+        AtoError.__init__(self, mensagem)
+
+
+def barrar_quem_nao_sela(papel: Any = None) -> None:
+    """O PONTO MAIS BAIXO DO SELO PERGUNTA AQUI (T015). Recusa ou volta calada.
+
+    Duas perguntas, porque as rotas passam o papel EFETIVO (`usuario_papel`,
+    que para o TI é o do ADMIN) e o selo recebe o NOME do escrevente, e não a
+    conta: o `papel` que veio, se veio, e o papel VERDADEIRO da sessão
+    (`papeis.papel_da_sessao`). Fora de requisição (rotina, teste de unidade)
+    a régua não decide — robô já não sela (`selo_robo`), e nenhuma rotina
+    entra como TI. Não há configuração que desligue: ver `papeis.py`.
+    """
+    if not PAP.pode_selar(papel) or not PAP.sessao_pode_selar():
+        raise SeloVedadoAoTI()
+
+
 # ------------------------------------------------------------- as custas
 
 
@@ -2941,6 +3030,8 @@ def registrar_selo_obtido_a_mao(con: sqlite3.Connection, numero: Any, *,
     `selo_isento` le enquanto o TJ nao responde. O texto, quando vem, decide
     sozinho.
 
+    O TI NAO DIGITA SELO (T015): o selo a mao tambem e selar o ato.
+
     E o caminho normal do Protesto e do RCPN nesta casa — ver o cabecalho.
     Escreve em `sd_selos` JA VINCULADO ao ato, porque aqui o ato existe antes
     do selo, ao contrario do selo automatico.
@@ -2966,6 +3057,7 @@ def registrar_selo_obtido_a_mao(con: sqlite3.Connection, numero: Any, *,
     UNIQUE em HTTP 500, em vez de ouvir onde o selo ja estava. O
     `ON CONFLICT (numero)` decide sob a trava da propria chave.
     """
+    barrar_quem_nao_sela()
     if tabela not in TABELAS_DE_ATO:
         raise AtoError(
             f"{tabela!r} não é tabela de ato. As que são: "
@@ -3139,6 +3231,9 @@ def obter_selo(db, pasta_de_dados: Any, *, caminho: str, dados: dict,
     19/11/2026: as regras de um selo valem para os dois); o selo adicional
     das Notas continua sem ela.
     """
+    # O TI NÃO SELA (T015): antes de reservar cobertura e de falar com o
+    # aparelho — nada fica preso nem sai do saldo por um pedido recusado.
+    barrar_quem_nao_sela()
     import selador_cliente as CL  # importado aqui: so quem sela paga
     # SEGUNDA TRANCA: mesmo que `usuario_nome` falhe, o escrevente do envelope
     # e o `obtido_por` NAO podem ser robo. Achado 21/09/2026 (REGNAS...KM25).
@@ -3405,7 +3500,10 @@ def vincular_ao_ato(con: sqlite3.Connection, numero: Any, *, tabela: str,
 
     UM RELOGIO SO. `agora` vem de quem chama, que e quem ja carimbou o ato —
     ler a hora aqui faria o selo e o ato discordarem por um segundo.
+
+    O TI NAO CONSOME SELO (T015): amarrar o selo ao ato e gasta-lo.
     """
+    barrar_quem_nao_sela()
     if tabela not in TABELAS_DE_ATO:
         raise AtoError(f"{tabela!r} não é tabela de ato.")
     import selador_cliente as CL
@@ -4639,7 +4737,9 @@ def _auditar(bd, *, acao: str, usuario: Any, usuario_id: Any, entidade: str,
 
 
 def _so_admin(papel: Any, o_que: str) -> None:
-    if str(papel or "").upper() != PAPEL_QUE_LIBERA:
+    # O TI passa onde o ADMIN passa (T015) — a recusa do selo vem logo depois,
+    # em `barrar_quem_nao_sela`, só para o que libera selo.
+    if not PAP.equivale_a(papel, PAPEL_QUE_LIBERA):
         raise AtoError(f"Só o oficial (ADMIN) pode {o_que}. Peça a ele.")
 
 
@@ -4660,6 +4760,10 @@ def ligar_trava(con, *, ligada: bool, papel: Any, usuario: Any,
     barra vermelha aparece para todos (`barra_da_trava`).
     """
     _so_admin(papel, "ligar ou desligar a trava do selo")
+    # O TI NÃO DESLIGA A TRAVA DO SELO PAGO (T015): desligada, o selo sai sem
+    # cobertura — é liberar selo para a casa inteira. Religar é com ele também.
+    if not ligada:
+        barrar_quem_nao_sela(papel)
     motivo = _justificativa(justificativa) if not ligada else " ".join(
         str(justificativa or "").split())
     bd = banco(con)
@@ -4688,6 +4792,10 @@ def ligar_selo_pago_no_onr(con, *, ligado: bool, papel: Any, usuario: Any,
     medição do primeiro pedido pago de verdade, nas palavras de quem mediu.
     Desligar é sempre permitido ao ADMIN, sem frase mínima."""
     _so_admin(papel, "ligar ou desligar o selo pago no ONR")
+    # LIGAR é que abre a porta (o selo sai sem o caixa ver o dinheiro): o TI
+    # não liga (T015). Desligar fecha, e fica com ele.
+    if ligado:
+        barrar_quem_nao_sela(papel)
     motivo = _justificativa(justificativa) if ligado else " ".join(
         str(justificativa or "").split())
     bd = banco(con)
@@ -4722,6 +4830,8 @@ def liberar_selo(con, *, tabela: str, ato_id: int, justificativa: Any,
     obteve o selo, até o caixa registrar o pagamento.
     """
     _so_admin(papel, "liberar um selo sem cobertura")
+    # A LIBERAÇÃO É DO OFICIAL, E O TI NÃO LIBERA (T015).
+    barrar_quem_nao_sela(papel)
     if tabela not in TABELAS_DE_ATO:
         raise AtoError(f"{tabela!r} não é tabela de ato.")
     motivo = _justificativa(justificativa)
@@ -5397,9 +5507,13 @@ def _devolver_ao_deposito(bd, linha: dict, *, agora: str, motivo: str) -> None:
     que cobre outro ato do mesmo protocolo (item → depósito) se esperavam um
     ao outro, e o PostgreSQL derrubava um dos dois por deadlock — a trava
     única da ponte só escondia isso.
+
+    O ITEM PAGO POR MAIS DE UM DEPÓSITO (F005) devolve a cada um o que saiu
+    dele: a reserva guarda o primeiro depósito e o total, e as partes se
+    leem dos usos do item para este ato. Quando elas não somam o total da
+    reserva (rastro de antes), volta tudo ao depósito da reserva, como era.
     """
-    import caixa_protocolo as CXP
-    from caixa_schema import centavos, reais
+    import caixa_depositos as DEP
     valor = int(linha.get("valor_centavos") or 0)
     if valor <= 0:
         return
@@ -5407,31 +5521,21 @@ def _devolver_ao_deposito(bd, linha: dict, *, agora: str, motivo: str) -> None:
     item = (bd.um("SELECT * FROM cx_protocolo_atos WHERE id = %s FOR UPDATE",
                   (int(linha["item_id"]),))
             if linha.get("item_id") else None)
-    d = bd.um("SELECT * FROM cx_depositos WHERE id = %s FOR UPDATE",
-              (int(linha["deposito_id"]),))
-    if d:
-        novo = centavos(d["saldo"]) + valor
-        bd.escrever(
-            """UPDATE cx_depositos SET saldo = %s, encerrado = 0, atualizado_em = %s
-                WHERE id = %s""", (reais(novo), agora, int(d["id"])))
-        if bd.tem_tabela("cx_deposito_usos"):
-            bd.escrever(
-                """INSERT INTO cx_deposito_usos
-                       (deposito_id, valor_centavos, saldo_depois_centavos,
-                        protocolo_id, item_id, tabela, ato_id, motivo,
-                        criado_em, criado_por)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (int(d["id"]), -valor, novo, linha.get("protocolo_id"),
-                 linha.get("item_id"), linha.get("tabela"), linha.get("ato_id"),
-                 f"Estorno da reserva do selo {linha['referencia']}: {motivo}",
-                 agora, linha.get("usuario")))
+    partes = [(int(p["deposito_id"]), int(p["valor"]))
+              for p in DEP.partes_da_cobertura(bd, linha.get("item_id"),
+                                               tabela=linha.get("tabela"),
+                                               ato_id=linha.get("ato_id"))]
+    if sum(v for _, v in partes) != valor:
+        partes = [(int(linha["deposito_id"]), valor)]
+    for deposito_id, parte in partes:
+        DEP.devolver_parte(
+            bd, deposito_id, parte, agora=agora, quem=linha.get("usuario"),
+            motivo=f"Estorno da reserva do selo {linha['referencia']}: {motivo}",
+            protocolo_id=linha.get("protocolo_id"), item_id=linha.get("item_id"),
+            tabela=linha.get("tabela"), ato_id=linha.get("ato_id"))
     # Só desfaz a quitação que o depósito fez: a do caixa não é desta reserva.
-    if item and str(item.get("quitado_por") or "").startswith("DEPÓSITO PRÉVIO"):
-        bd.escrever(
-            """UPDATE cx_protocolo_atos
-                  SET quitado = 0, quitado_em = NULL, quitado_por = NULL
-                WHERE id = %s""", (int(item["id"]),))
-        CXP.atualizar_situacao(bd, item["protocolo_id"])
+    if item:
+        DEP.reabrir_o_item(bd, item)
 
 
 def _devolver_a_unidade(bd, linha: dict) -> None:
@@ -5782,6 +5886,15 @@ def _tirar_aguardando(con, *, tabela: Any, ato_id: Any) -> None:
     banco(con).escrever(
         "DELETE FROM cx_selo_aguardando WHERE tabela = %s AND ato_id = %s",
         (tabela, int(ato_id)))
+
+
+def tirar_do_aguardando(con, *, tabela: Any, ato_id: Any) -> None:
+    """O ato que a tela desfez sai da fila «aguardando cobertura». ESCREVE.
+
+    Sem isto a marca sobrava na tabela de um ato que não existe — a lista da
+    tela já o pulava, mas quem lê a tabela o contava como pendente (P006).
+    """
+    _tirar_aguardando(con, tabela=tabela, ato_id=ato_id)
 
 
 def aguardando_cobertura(con, limite: int = 200) -> list[dict]:

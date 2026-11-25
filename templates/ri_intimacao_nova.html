@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{# AUTUAR: a prenotação é a do Livro 1, feita no balcão de sempre; ela dá número, data e selo. #}
+{% block heading %}<h1>Autuar requerimento de intimação fiduciária</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('ri_intimacoes') }}">&larr; Procedimentos</a>
+  <a class="button" href="{{ url_for('ri_protocolo') }}">+ Prenotar o requerimento antes</a>
+</div>
+{% if not prenotacoes %}
+<div class="notice">Não há prenotação aberta sem procedimento. Prenote o requerimento do credor no <strong>Livro 1</strong> primeiro.</div>
+{% else %}
+<div class="notice">{{ 'O demonstrativo do débito e a projeção são de responsabilidade do credor (TJMA 722, § 2º), e a carência também (§ 3º): a serventia guarda e mostra, e não confere.' }}</div>
+<form method="post" class="form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <fieldset><legend>A prenotação e a matrícula</legend>
+    <label>Prenotação do requerimento
+      <select name="protocolo_id" required><option value=""></option>
+        {% for p in prenotacoes %}<option value="{{ p.id }}"{% if escolhido == p.id|string %} selected{% endif %}>N. {{ p.numero }}, de {{ fmt_date(p.data_prenotacao) }}: {{ p.apresentante or 'sem apresentante' }} — {{ p.natureza_titulo or p.objeto or 'sem natureza' }}{% if p.matricula_numero %} (matrícula {{ p.matricula_numero }}){% endif %}</option>{% endfor %}
+      </select></label>
+    <label>Número da matrícula <span class="muted">— em branco, vale a matrícula ligada à prenotação</span><input name="matricula_numero"></label>
+    <label>Origem <select name="origem">{% for c, r in ORIGENS.items() %}<option value="{{ c }}">{{ r }}</option>{% endfor %}</select></label>
+    <label>Protocolo na Central <span class="muted">— se veio por ela</span><input name="protocolo_central"></label>
+    <label>Data da remessa pela Central<input type="date" name="data_remessa"></label>
+  </fieldset>
+  <fieldset><legend>Credor fiduciário</legend>
+    <label>Nome<input name="credor_nome" required></label>
+    <label>CPF ou CNPJ<input name="credor_documento"></label>
+    <label>E-mail ou telefone<input name="credor_contato"></label>
+    <label>Quem assina o requerimento <span class="muted">— a prova da representação é dispensada pela Central (TJMA 722, § 4º)</span><input name="representante_nome"></label>
+    <label>Solicitante, se diverso do credor<input name="solicitante_nome"></label>
+    <label>CPF ou CNPJ do solicitante<input name="solicitante_documento"></label>
+  </fieldset>
+  <fieldset><legend>O contrato e o débito</legend>
+    <label>Contrato<input name="contrato"></label>
+    <label><input type="checkbox" name="habitacional" value="1"> Financiamento habitacional (TJMA 726, § 1º; Lei 9.514, art. 26-A)</label>
+    <label><input type="checkbox" name="avalistas_a_pedido" value="1"> O credor pede expressamente a intimação de avalistas ou fiadores (TJMA 722, § 5º)</label>
+    <label>Débito no demonstrativo<input name="demonstrativo_valor" placeholder="0,00"></label>
+    <label>Data-base do demonstrativo<input type="date" name="demonstrativo_data"></label>
+    <label>Prestações vencidas <span class="muted">— uma por linha: data; valor</span><textarea name="prestacoes" rows="3" placeholder="10/09/2026; 1.234,56"></textarea></label>
+    <label>Projeção para a purga <span class="muted">— uma por linha: pagando até a data; valor</span><textarea name="projecao" rows="3" placeholder="15/12/2026; 3.900,00"></textarea></label>
+  </fieldset>
+  <div class="actions"><button class="button primary" type="submit">Autuar e suspender o prazo da prenotação</button></div>
+</form>
+<details class="panel"><summary>Autuar a partir do pedido da Central, colado em JSON</summary>
+  <form method="post" class="form" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p class="small">Os campos são os do <code>GetDetalhesIN_V3</code> do WSOficio (protocolo, contrato, credor, devedores, endereços, prestações vencidas e purgas). Nada é lido da Central por esta tela: a leitura automática é a etapa I2.</p>
+    <label>Prenotação do requerimento
+      <select name="protocolo_id" required><option value=""></option>
+        {% for p in prenotacoes %}<option value="{{ p.id }}"{% if escolhido == p.id|string %} selected{% endif %}>N. {{ p.numero }}, de {{ fmt_date(p.data_prenotacao) }}{% if p.matricula_numero %} (matrícula {{ p.matricula_numero }}){% endif %}</option>{% endfor %}
+      </select></label>
+    <label>Pedido <textarea name="pedido_central" rows="6" required></textarea></label>
+    <button class="button">Autuar o pedido da Central</button>
+  </form>
+</details>
+{% endif %}
+{% endblock %}

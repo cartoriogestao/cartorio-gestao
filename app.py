@@ -3597,6 +3597,10 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     # A CONSOLIDAÇÃO FIDUCIÁRIA, O SOBRESTAMENTO E A DOI DO RTD (01/11/2026).
     import rg_fiduciaria_web
     rg_fiduciaria_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+    # A INTIMAÇÃO DO DEVEDOR FIDUCIANTE NO RI (RI013-I1, 24/11/2026): Lei 9.514, art. 26;
+    # TJMA 721 a 726. A ficha da prenotação aponta para ela pelo global do Jinja.
+    import ri_intimacao_fiduciaria_web
+    ri_intimacao_fiduciaria_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
     # OS ATOS DO LG04 (19/10/2026): a notificação extrajudicial e a autenticação
     # de livros do RCPJ/RTD voltam para `rcpj_rtd_registro`, que nasce acima;
     # a pública forma e a comunicação ao DETRAN são do balcão das Notas.

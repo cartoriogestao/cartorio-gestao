@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+{# O PAINEL DA INTIMAÇÃO FIDUCIÁRIA (RI013-I1): o prazo vencido primeiro, sem rolar. #}
+{% block heading %}<h1>Intimação fiduciária — devedor fiduciante</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  {% if user.role in ['ADMIN','MANAGER','USER'] %}<a class="button primary" href="{{ url_for('ri_intimacao_nova') }}">+ Autuar requerimento</a>{% endif %}
+  <a class="button" href="{{ url_for('ri_protocolo') }}">Protocolo (Livro 1)</a>
+</div>
+<div class="notice">
+  Lei 9.514/1997, art. 26, e Código de Normas do TJMA, arts. 721 a 726. O requerimento se prenota no Livro 1
+  pelo caminho de sempre; aqui corre o procedimento. <strong>Nada é enviado à Central de Intimações do ONR nem
+  aos Correios por esta tela</strong>, e as peças saem sem selo enquanto o selo não estiver ligado.
+</div>
+
+<section class="panel">
+  <div class="panel-head"><span>Em andamento</span><small>{{ abertos|length }} procedimento(s)</small></div>
+  {% if abertos %}
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Procedimento</th><th>Prenotação</th><th>Matrícula</th><th>Situação</th><th>Intimados</th><th>Prazo</th><th>Credor</th></tr></thead>
+    <tbody>{% for i in abertos %}
+      <tr>
+        <td><a href="{{ url_for('ri_intimacao', intimacao_id=i.id) }}">{{ i.rotulo }}</a>{% if i.origem == 'CENTRAL_ONR' %}<br><small>Central ONR</small>{% endif %}</td>
+        <td>{{ i.protocolo_numero }}</td>
+        <td>{{ i.matricula_numero }}</td>
+        <td>{{ i.situacao_rotulo }}</td>
+        <td>{{ i.intimados_n }} de {{ i.intimandos_n }}</td>
+        <td>{% if i.prazo_ate %}{% if i.vencido %}<strong>Venceu em {{ fmt_date(i.prazo_ate) }}</strong>{% else %}até {{ fmt_date(i.prazo_ate) }}{% endif %}<br><small>{{ i.prazo_rotulo or '' }}</small>{% else %}—{% endif %}</td>
+        <td>{{ i.credor_nome }}</td>
+      </tr>{% endfor %}</tbody>
+  </table></div>
+  {% else %}<p style="padding:14px">Nenhum procedimento em andamento.</p>{% endif %}
+</section>
+
+{% if repasses %}
+<section class="panel">
+  <div class="panel-head"><span>Purga recebida, sem repasse lançado</span><small>TJMA 725: avisar o credor em até 3 dias úteis</small></div>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Procedimento</th><th>Recebido</th><th>Avisar o credor até</th><th>Credor avisado</th></tr></thead>
+    <tbody>{% for i in repasses %}
+      <tr><td><a href="{{ url_for('ri_intimacao', intimacao_id=i.id) }}">{{ i.rotulo }}</a></td>
+        <td>{{ reais(i.purga_centavos) }} em {{ fmt_date(i.purga_dia) }}</td>
+        <td>{% if i.atrasado %}<strong>{{ fmt_date(i.credor_avisar_ate) }} — passou</strong>{% else %}{{ fmt_date(i.credor_avisar_ate) }}{% endif %}</td>
+        <td>{{ fmt_date(i.credor_avisado_em) if i.credor_avisado_em else 'não' }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+
+{% if consolidacao %}
+<section class="panel">
+  <div class="panel-head"><span>Não purgação: a consolidação é do credor</span><small>TJMA 726</small></div>
+  <p style="padding:10px 14px 0">A consolidação entra como título novo. Depois de 120 dias corridos da certidão, ela depende de novo procedimento (§ 2º); no habitacional, só se averba 30 dias úteis depois do fim do prazo da purga (§ 1º).</p>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Procedimento</th><th>Certidão</th><th>Pedir até</th><th>Averbar a partir de</th></tr></thead>
+    <tbody>{% for i in consolidacao %}
+      <tr><td><a href="{{ url_for('ri_intimacao', intimacao_id=i.id) }}">{{ i.rotulo }}</a></td><td>{{ fmt_date(i.certidao_dia) }}</td>
+        <td>{{ fmt_date(i.pedir_ate) }}</td><td>{{ fmt_date(i.averbar_desde) if i.averbar_desde else '—' }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+
+{% if encerrados %}
+<details class="panel"><summary>Encerrados ({{ encerrados|length }})</summary>
+  <div class="table-wrap"><table class="table">
+    <tbody>{% for i in encerrados %}
+      <tr><td><a href="{{ url_for('ri_intimacao', intimacao_id=i.id) }}">{{ i.rotulo }}</a></td><td>{{ i.situacao_rotulo }}</td><td>{{ i.matricula_numero }}</td><td>{{ i.credor_nome }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</details>
+{% endif %}
+
+<details class="panel"><summary>Selo e emolumentos: o que leva selo e o que falta decidir</summary>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Ato</th><th>Item da tabela</th><th>Valor vigente</th><th>Selo</th><th>Pendência</th></tr></thead>
+    <tbody>{% for a in atos %}
+      <tr><td>{{ a.ato }}</td><td>{{ a.codigo_tj or '—' }}</td><td>{{ a.total or '—' }}</td><td>{{ a.selo }}</td><td>{{ a.pendencia or '—' }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+</details>
+
+<details class="panel"><summary>Configuração: as decisões do titular</summary>
+  <div style="padding:14px">
+    <p>Meio padrão: <strong>{{ MEIOS[config.ri_intimacao_meio_padrao] }}</strong>.
+       Contagem da purga: <strong>{{ CONTAGENS[config.ri_intimacao_purga_contagem] }}</strong>.
+       Repasse: <strong>{{ FORMAS_DO_REPASSE.get(config.ri_intimacao_repasse, 'não decidido') }}</strong>.
+       Conta da purga: <strong>{{ config.ri_intimacao_conta_purga or 'não configurada' }}</strong>.</p>
+    {% if user.role == 'ADMIN' %}
+    <form method="post" action="{{ url_for('ri_intimacoes_configuracao') }}" class="form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Meio padrão da intimação <select name="ri_intimacao_meio_padrao">{% for c, r in MEIOS.items() %}<option value="{{ c }}"{% if c == config.ri_intimacao_meio_padrao %} selected{% endif %}>{{ r }}</option>{% endfor %}</select></label>
+      <label>Contagem dos 15 dias da purga <select name="ri_intimacao_purga_contagem">{% for c, r in CONTAGENS.items() %}<option value="{{ c }}"{% if c == config.ri_intimacao_purga_contagem %} selected{% endif %}>{{ r }}</option>{% endfor %}</select></label>
+      <label>Como o valor chega ao credor <select name="ri_intimacao_repasse"><option value="">Ainda não decidido</option>{% for c, r in FORMAS_DO_REPASSE.items() %}<option value="{{ c }}"{% if c == config.ri_intimacao_repasse %} selected{% endif %}>{{ r }}</option>{% endfor %}</select></label>
+      <label>Conta em que o devedor paga a purga (banco, agência, conta, titular ou chave Pix) <textarea name="ri_intimacao_conta_purga" rows="2">{{ config.ri_intimacao_conta_purga }}</textarea></label>
+      <button class="button primary">Gravar</button>
+    </form>
+    {% endif %}
+  </div>
+</details>
+{% endblock %}

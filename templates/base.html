@@ -299,6 +299,7 @@
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Processos que levam meses</div>
         <a href="{{ url_for('usucapiao_processos') }}">Usucapião extrajudicial</a>
         <a href="{{ url_for('ri_retificacoes') }}">Retificação de área</a>
+        <a href="{{ url_for('ri_intimacoes') }}">Intimação fiduciária</a>
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Livro 3 — Registro Auxiliar</div>
         <a href="{{ url_for('livro3_registros') }}">Registros do Livro 3</a>
         {# MINUTA ESQUECIDA NUM REGISTRO QUE NINGUEM ABRE nao aparece em lugar

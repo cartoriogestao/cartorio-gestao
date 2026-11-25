@@ -151,6 +151,7 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
          ("Processos longos", (
              _i("Usucapião extrajudicial", "usucapiao_processos"),
              _i("Retificação de área", "ri_retificacoes"),
+             _i("Intimação fiduciária", "ri_intimacoes", termos="alienacao fiduciaria purga mora devedor fiduciante consolidacao"),
              _i("O que o Código de Normas exige", "usucapiao_codigo_de_normas", antigo="Usucapião — o que o Código de Normas exige"),)),
          ("Livro 3", (
              _i("Registros", "livro3_registros", antigo="Registros do Livro 3", termos="registro auxiliar"),
@@ -547,6 +548,8 @@ PAI: dict[str, tuple[str, str]] = {
     "onr_eprotocolo_ficha": ("RI", "Protocolo"),
     "onr_certidoes_certificado": ("RI", "Certidões"),
     "ri_retificacao": ("RI", "Processos longos"),
+    "ri_intimacao": ("RI", "Processos longos"),
+    "ri_intimacao_nova": ("RI", "Processos longos"),
     "ri_retificacao_nova": ("RI", "Processos longos"),
     "ri_retificacao_normas": ("RI", "Processos longos"),
     "ri_onr_edital": ("RI", "Processos longos"),

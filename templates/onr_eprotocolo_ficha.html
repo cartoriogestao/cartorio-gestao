@@ -14,6 +14,46 @@
 {% endif %}
 
 <section class="panel">
+  <h2>Prenotação</h2>
+  {% if p.prenotacao_id %}
+  <p>Prenotado aqui em {{ (p.prenotado_em or '')[:16]|replace('T', ' ') }}{% if p.prenotado_por_nome %}, por {{ p.prenotado_por_nome }}{% endif %}:
+    <a href="{{ url_for('ri_protocolo_ver', protocolo_id=p.prenotacao_id) }}">abrir a prenotação{% if para_o_onr %} nº {{ para_o_onr.NumeroPrenotacao }}{% endif %}</a>.</p>
+  {% if para_o_onr %}
+  <p class="small muted">O que a próxima etapa vai avisar ao ONR (<code>SetPrenotacaoAC</code>).
+    <strong>Ainda não é enviado</strong>: falta a homologação com o ONR e a confirmação do selo da prenotação eletrônica.</p>
+  <dl class="detail">
+    <dt>IDContrato</dt><dd>{{ para_o_onr.IDContrato }}</dd>
+    <dt>Número da prenotação</dt><dd>{{ para_o_onr.NumeroPrenotacao }} (Livro {{ para_o_onr.livro }})</dd>
+    <dt>Data da prenotação</dt><dd>{{ para_o_onr.DataPrenotacao }}{% if para_o_onr.hora %} às {{ para_o_onr.hora }}{% endif %}</dd>
+    <dt>Vencimento</dt><dd>{{ para_o_onr.DataVencimento or '—' }}</dd>
+    <dt>Senha</dt><dd>{{ para_o_onr.Senha or '— (a casa não tem senha de consulta; decide-se na próxima etapa)' }}</dd>
+    <dt>Situação do aviso</dt><dd><span class="badge media">não enviado</span></dd>
+  </dl>
+  {% endif %}
+  {% elif p.situacao == 'A_PRENOTAR' %}
+    {% if not p.ficha_lida %}<p class="warning">A ficha ainda não veio do ONR: espere a próxima leitura para prenotar.</p>
+    {% elif not a_frente %}
+      {% if user.role in ['ADMIN', 'MANAGER', 'USER'] %}<p><a class="button primary" href="{{ url_for('ri_protocolo', onr_ep=p.id) }}">Prenotar este título</a>
+        <span class="small muted">abre a prenotação de balcão já preenchida; o número, o prazo e o selo são os de sempre.</span></p>{% endif %}
+    {% else %}
+      <p class="warning">Há {{ a_frente|length }} título(s) do e-Protocolo remetido(s) antes deste:
+        {% for x in a_frente %}<a href="{{ url_for('onr_eprotocolo_ficha', pedido_id=x.id) }}">{{ x.protocolo or x.id_contrato }}</a>{% if not loop.last %}, {% endif %}{% endfor %}.
+        Entre os eletrônicos, prenota-se na ordem da remessa (CNN 326).</p>
+      {% if user.role in ['ADMIN', 'MANAGER', 'USER'] %}
+      <form method="post" action="{{ url_for('onr_eprotocolo_pular', pedido_id=p.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Motivo para prenotar este fora da ordem (vai para a auditoria)
+          <textarea name="motivo" rows="2" required minlength="{{ motivo_minimo }}"></textarea></label>
+        <button class="button" type="submit">Pular a ordem e prenotar este</button>
+      </form>
+      {% endif %}
+    {% endif %}
+  {% else %}
+  <p class="small muted">Este título não espera prenotação aqui ({{ p.situacao|replace('_', ' ')|lower }}).</p>
+  {% endif %}
+</section>
+
+<section class="panel">
   <h2>O título</h2>
   <dl class="detail">
     <dt>Contrato no ONR</dt><dd>{{ p.id_contrato }}</dd>

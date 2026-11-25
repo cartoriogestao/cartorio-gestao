@@ -7,9 +7,16 @@
 <section class="panel">
   <p>Os títulos que o apresentante remeteu a esta serventia pelo e-Protocolo do ONR
     (Ofício Eletrônico, <code>eprotocolo.asmx</code>), <strong>na ordem da remessa</strong>
-    (CNN 326). Esta tela <strong>só lê</strong>: a prenotação continua sendo feita em
-    <a href="{{ url_for('ri_protocolo') }}">Prenotação RI - Livro 1</a>, e nada daqui é
-    enviado ao ONR.</p>
+    (CNN 326). «Prenotar este título» abre a mesma tela da
+    <a href="{{ url_for('ri_protocolo') }}">Prenotação RI - Livro 1</a>, já preenchida com a ficha
+    do ONR; só o mais antigo da fila fica liberado, e pular a ordem pede motivo escrito. Nada daqui
+    é enviado ao ONR: o aviso da prenotação ao ONR vem na próxima etapa.</p>
+  {% if resumo.a_prenotar %}
+  <p class="notice warning"><strong>{{ resumo.a_prenotar }} título(s) esperando prenotação</strong>;
+    o mais antigo chegou aqui em {{ resumo.espera_desde[:16]|replace('T', ' ') }}
+    ({{ resumo.espera_texto }}). Vale a <strong>hora da prenotação</strong>: enquanto o título
+    eletrônico espera, um título de balcão sobre a mesma matrícula pode passar à frente.</p>
+  {% endif %}
   <p class="small muted">Ambiente: <strong>{{ ambiente|lower }}</strong> ({{ endereco }}).
     Processo da central: <strong>{{ processo.codigo }}</strong> —
     {% if resumo.processo_ligado %}ligado{% else %}desligado (quem liga é o oficial, na
@@ -44,7 +51,7 @@
 <div class="table-wrap">
 <table>
   <thead><tr><th>Ordem</th><th>Remessa</th><th>Protocolo ONR</th><th>Serviço</th><th>Apresentante</th>
-    <th>Matrícula</th><th>Status no ONR</th><th>Avisos</th></tr></thead>
+    <th>Matrícula</th><th>Status no ONR</th><th>Avisos</th><th>Prenotação</th></tr></thead>
   <tbody>
   {% for p in lista %}
     <tr {% if p.alertas|selectattr('nivel', 'equalto', 'perigo')|list %}class="danger"{% endif %}>
@@ -58,9 +65,24 @@
       <td>{{ rotulo_do_status(p.id_status) or '—' }}</td>
       <td>{% for a in p.alertas %}<span class="badge {{ nivel_badge[a.nivel] }}" title="{{ a.texto }}">{{ a.tipo|replace('_', ' ')|lower }}</span> {% else %}—{% endfor %}
         {% if p.erro_ficha %}<br><span class="small danger">ficha: {{ p.erro_ficha }}</span>{% endif %}</td>
+      <td>{% if p.prenotacao_id %}<a href="{{ url_for('ri_protocolo_ver', protocolo_id=p.prenotacao_id) }}">prenotado aqui</a>
+            <br><span class="small muted">{{ (p.prenotado_em or '')[:16]|replace('T', ' ') }}</span>
+        {% elif p.situacao == 'A_PRENOTAR' and user.role in ['ADMIN', 'MANAGER', 'USER'] %}
+          {% if not p.ficha_lida %}<span class="small muted">ficha ainda não lida</span>
+          {% elif p.id == primeiro_id %}<a class="button primary" href="{{ url_for('ri_protocolo', onr_ep=p.id) }}">Prenotar este título</a>
+          {% else %}<button class="button" type="button" disabled title="Entre os eletrônicos, prenota-se na ordem da remessa (CNN 326)">Prenotar este título</button>
+            <details><summary class="small">Pular a ordem…</summary>
+              <form method="post" action="{{ url_for('onr_eprotocolo_pular', pedido_id=p.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <label class="small">Motivo (vai para a auditoria)
+                  <textarea name="motivo" rows="2" required minlength="{{ motivo_minimo }}"></textarea></label>
+                <button class="button" type="submit">Pular e prenotar este</button>
+              </form></details>
+          {% endif %}
+        {% else %}—{% endif %}</td>
     </tr>
   {% else %}
-    <tr><td colspan="8">Nenhum título {{ 'registrado' if todos else 'em aberto' }}.
+    <tr><td colspan="9">Nenhum título {{ 'registrado' if todos else 'em aberto' }}.
       {% if not resumo.ultima_boa %}O e-Protocolo ainda não foi lido.{% endif %}</td></tr>
   {% endfor %}
   </tbody>

@@ -51,7 +51,7 @@
     Só aparece quando algum serviço já entrou no caixa: recibo é prova de
     pagamento, e não de orçamento.
   #}
-  {% if atos | selectattr('lancamento_id') | list %}
+  {% if atos | selectattr('lancamento_id') | list or terceiros_sem_recibo %}
   <form method="post" action="{{ url_for('caixa_recibo_do_protocolo', protocolo_id=p.id) }}"
         style="display:inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -688,6 +688,31 @@
   {% endif %}
   </div>
 </section>
+
+{# O VALOR DE TERCEIRO DA MATERIALIZAÇÃO (F010, 25/11/2026): o que o cliente
+   pagou para o outro cartório. Não é item do protocolo nem emolumento desta
+   casa — entra no recibo em bloco próprio e sai pelo repasse. #}
+{% if terceiros_do_protocolo %}
+<section class="panel" id="terceiros" data-fase="movimento">
+  <div class="panel-head"><span>Valores de terceiros (repasse a outro cartório)</span>
+    <a class="small" href="{{ url_for('rcpn_materializacao_repasses') }}">repasses</a></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Pedido CRC</th><th>Cartório de origem</th><th>Situação</th>
+      <th>Repasse até</th><th style="text-align:right">Valor</th></tr></thead>
+    <tbody>{% for t in terceiros_do_protocolo %}
+      <tr {% if not t.lancamento_vivo %}class="pendente"{% endif %}>
+        <td class="small">{{ t.pedido_crc }}</td>
+        <td class="small">{{ t.cartorio_nome }} ({{ t.cartorio_cidade }}/{{ t.cartorio_uf }})</td>
+        <td class="small">{{ t.situacao_rotulo }}{% if not t.lancamento_vivo %}
+          <span class="badge alta">lançamento desfeito</span>{% endif %}</td>
+        <td class="small">{{ fmt_date(t.prazo) }}</td>
+        <td style="text-align:right">{{ t.valor }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  <p class="small muted" style="padding:0 14px 10px">Não são emolumentos nem fundos desta
+    serventia: ficam fora da receita, do ISS e do Livro Diário.</p>
+</section>
+{% endif %}
 
 {% if lancamentos %}
 <section class="panel" id="movimento" data-fase="movimento">

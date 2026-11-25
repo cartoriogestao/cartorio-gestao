@@ -89,8 +89,13 @@ def conferir(dados: dict) -> dict:
     a frase em português, e não na rede, com a frase do fornecedor."""
     limpo = {k: str(dados.get(k) or "").strip() for k in (
         "nome_parte", "requerente", "cartorio_nome", "cartorio_cidade",
-        "cartorio_uf", "funcionario_expedidor", "especie", "matricula")}
+        "cartorio_uf", "funcionario_expedidor", "especie", "matricula",
+        "pedido_crc")}
     limpo["cartorio_uf"] = limpo["cartorio_uf"].upper()
+    # O PEDIDO DA CRC (F010, 25/11/2026) é opcional e NÃO VAI NO SELO: serve
+    # para ligar a materialização ao valor do outro cartório recebido no caixa
+    # (`rc_materializacao_repasse`).
+    limpo["pedido_crc"] = " ".join(limpo["pedido_crc"].split()).upper()
     faltando = [rotulo for chave, rotulo in (
         ("nome_parte", "o nome de quem é o registro"),
         ("cartorio_nome", "o nome do cartório que expediu"),
@@ -117,12 +122,13 @@ def registrar(con, dados: dict, *, agora: str, usuario: Any) -> int:
         """INSERT INTO rc_materializacoes(nome_parte, requerente, cartorio_nome,
                cartorio_cidade, cartorio_uf, funcionario_expedidor,
                valor_emolumentos_centavos, especie, matricula, emitida_em,
-               emitida_por)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+               emitida_por, pedido_crc)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
         (d["nome_parte"], d["requerente"] or None, d["cartorio_nome"],
          d["cartorio_cidade"], d["cartorio_uf"], d["funcionario_expedidor"],
          d["valor_emolumentos_centavos"], d["especie"] or None,
-         d["matricula"] or None, agora, str(usuario or "") or None))
+         d["matricula"] or None, agora, str(usuario or "") or None,
+         d["pedido_crc"] or None))
     return int(novo[0]["id"])
 
 
@@ -137,7 +143,18 @@ def cancelar(con, materializacao_id: int, *, motivo: str, agora: str,
 
 
 def listar(con, limite: int = 50) -> list[dict]:
-    return [dict(x) for x in banco(con).ler(
+    """As materializações, com a situação do valor de terceiro ligado. Só LÊ."""
+    bd = banco(con)
+    if bd.tem_tabela("rc_materializacao_repasses"):
+        return [dict(x) for x in bd.ler(
+            """SELECT m.*, r.situacao AS repasse_situacao,
+                      r.valor_centavos AS repasse_valor_centavos
+                 FROM rc_materializacoes m
+                 LEFT JOIN rc_materializacao_repasses r
+                        ON r.materializacao_id = m.id
+                       AND r.situacao IN ('RECEBIDO', 'REPASSADO', 'CONCILIADO')
+                ORDER BY m.id DESC LIMIT %s""", (int(limite),))]
+    return [dict(x) for x in bd.ler(
         "SELECT * FROM rc_materializacoes ORDER BY id DESC LIMIT %s",
         (int(limite),))]
 

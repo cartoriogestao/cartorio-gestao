@@ -1,0 +1,153 @@
+{% extends 'base.html' %}
+{% block heading %}<h1>Repasses aos cartórios de origem</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+<div class="actions">
+  <a class="button" href="{{ url_for('rcpn_materializacoes') }}">&larr; Materializações</a>
+</div>
+
+{# F010, 25/11/2026 (solução B da CR004). O que o cliente pagou pela certidão
+   que outro cartório emite, e que esta casa materializa. É dinheiro de
+   terceiro: entrou no caixa fora da receita, e sai pelo repasse, com
+   comprovante. A pendência nasce do lançamento do caixa — recebido, vivo e
+   sem repasse É a pendência. #}
+<p class="small muted">Valor de terceiro não é emolumento desta serventia: fica fora da
+  receita do titular (carnê-leão), da base do ISS e da NFS-e e da receita do Livro
+  Diário. O repasse sai por uma despesa da categoria «Repasse a outra serventia — CRC»
+  (fora do Livro Diário e do SIAFERJ) ou pelos créditos da casa na CRC. O prazo da casa
+  para o aviso é de {{ prazo_dias }} dia(s) útil(eis) depois do recebimento.</p>
+
+<section class="panel">
+  <div class="panel-head"><span>A repassar
+    {% if pend.a_repassar %}— {{ pend.a_repassar | length }} pedido(s),
+    R$ {{ reais(pend.total_a_repassar_centavos) }}{% if pend.vencidos %},
+    <strong>{{ pend.vencidos }} fora do prazo</strong>{% endif %}{% endif %}</span></div>
+  {% if pend.a_repassar %}
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Pedido CRC</th><th>Cartório de origem</th><th>Protocolo</th>
+      <th>Recebido</th><th>Repasse até</th><th style="text-align:right">Valor</th><th></th></tr></thead>
+    <tbody>{% for x in pend.a_repassar %}
+      <tr {% if x.vencido %}class="pendente"{% endif %}>
+        <td>{{ x.pedido_crc }}</td>
+        <td>{{ x.cartorio_nome }}<br><small>{{ x.cartorio_cidade }}/{{ x.cartorio_uf }}</small></td>
+        <td><small>{{ x.protocolo_numero }}<br>lanç. {{ x.lancamento_numero }}/{{ x.lancamento_ano }}</small></td>
+        <td><small>{{ fmt_date(x.recebido_em) }}</small></td>
+        <td><small>{{ fmt_date(x.prazo) }}{% if x.vencido %}<br><span class="badge alta">{{ x.dias_de_atraso }} dia(s) de atraso</span>{% endif %}</small></td>
+        <td style="text-align:right">{{ x.valor }}</td>
+        <td>
+          {% if user.role in ['ADMIN','MANAGER'] %}
+          <details><summary class="small">registrar repasse</summary>
+            <form method="post" class="form-grid" style="margin-top:8px;min-width:320px"
+                  action="{{ url_for('rcpn_materializacao_repassar', repasse_id=x.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <label>Por onde saiu
+                <select name="forma" required>
+                  {% for cod, f in FORMAS_DE_REPASSE_TERCEIRO.items() %}<option value="{{ cod }}">{{ f.rotulo }}</option>{% endfor %}
+                </select></label>
+              <label>Nº da despesa <small>(se saiu pela conta)</small>
+                <input name="despesa_id" inputmode="numeric"></label>
+              <label>Comprovante <small>(autenticação, transação ou débito na CRC)</small>
+                <input name="comprovante" required></label>
+              <label>Dia do repasse <input type="date" name="repassado_em" value="{{ hoje }}" required></label>
+              <label class="span2">Favorecido <small>(vazio: o cartório de origem)</small>
+                <input name="favorecido"></label>
+              <div class="span2"><button class="small">registrar repasse</button></div>
+            </form>
+          </details>
+          <details><summary class="small">não vai ser repassado</summary>
+            <form method="post" class="form-grid" style="margin-top:8px;min-width:320px"
+                  action="{{ url_for('rcpn_materializacao_encerrar', repasse_id=x.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <label class="span2">Motivo <input name="motivo" required></label>
+              <label class="span2">Devolução ao cliente lançada no caixa (nº/ano)
+                <input name="devolucao" placeholder="12/2026"></label>
+              <div class="span2"><button class="small">encerrar</button>
+                <span class="small muted">Lance antes a devolução no caixa, neste protocolo.</span></div>
+            </form>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}
+  <p style="padding:14px"><small>Nada recebido esperando repasse.</small></p>
+  {% endif %}
+</section>
+
+{% if pend.a_conciliar %}
+<section class="panel">
+  <div class="panel-head"><span>Repassados, a conciliar — {{ pend.a_conciliar | length }}</span></div>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Pedido CRC</th><th>Cartório de origem</th><th>Repassado</th>
+      <th>Comprovante</th><th style="text-align:right">Valor</th><th></th></tr></thead>
+    <tbody>{% for x in pend.a_conciliar %}
+      <tr>
+        <td>{{ x.pedido_crc }}</td>
+        <td>{{ x.cartorio_nome }}<br><small>{{ x.cartorio_cidade }}/{{ x.cartorio_uf }}</small></td>
+        <td><small>{{ fmt_date(x.repassado_em) }}{% if x.despesa_id %}<br>despesa {{ x.despesa_id }}{% endif %}</small></td>
+        <td><small>{{ x.comprovante }}</small></td>
+        <td style="text-align:right">{{ x.valor }}</td>
+        <td>{% if user.role in ['ADMIN','MANAGER'] %}
+          <form method="post" class="form-grid" style="min-width:260px"
+                action="{{ url_for('rcpn_materializacao_conciliar', repasse_id=x.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label>Valor confirmado <input name="valor_confirmado" inputmode="decimal" required></label>
+            <label>Onde está a confirmação <input name="referencia" required></label>
+            <div class="span2"><button class="small">conciliar</button></div>
+          </form>{% endif %}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+
+{% if pend.desfeitos %}
+<section class="panel">
+  <div class="panel-head"><span>Lançamento desfeito no caixa — {{ pend.desfeitos | length }}</span></div>
+  <p class="small" style="padding:0 14px">O lançamento deste valor foi estornado ou excluído,
+    e o registro continua aberto. Se ainda não foi repassado, encerre-o; se já foi, confira
+    com o oficial.</p>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Pedido CRC</th><th>Cartório de origem</th><th>Situação</th>
+      <th style="text-align:right">Valor</th><th></th></tr></thead>
+    <tbody>{% for x in pend.desfeitos %}
+      <tr class="pendente">
+        <td>{{ x.pedido_crc }}</td>
+        <td>{{ x.cartorio_nome }}</td>
+        <td><small>{{ x.situacao_rotulo }}</small></td>
+        <td style="text-align:right">{{ x.valor }}</td>
+        <td>{% if user.role in ['ADMIN','MANAGER'] and x.situacao == 'RECEBIDO' %}
+          <form method="post" action="{{ url_for('rcpn_materializacao_encerrar', repasse_id=x.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input name="motivo" placeholder="motivo" required>
+            <button class="small">encerrar</button>
+          </form>{% endif %}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><span>Todos os registros</span></div>
+  {% if todos %}
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Pedido CRC</th><th>Cartório de origem</th><th>Protocolo</th>
+      <th>Situação</th><th>Materialização</th><th style="text-align:right">Valor</th></tr></thead>
+    <tbody>{% for x in todos %}
+      <tr>
+        <td>{{ x.pedido_crc }}</td>
+        <td>{{ x.cartorio_nome }}<br><small>{{ x.cartorio_cidade }}/{{ x.cartorio_uf }}</small></td>
+        <td><small>{{ x.protocolo_numero }}</small></td>
+        <td><small>{{ x.situacao_rotulo }}</small></td>
+        <td><small>{{ x.materializacao_selo or ('ligada' if x.materializacao_id else '—') }}</small></td>
+        <td style="text-align:right">{{ x.valor }}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}
+  <p style="padding:14px"><small>Nenhum valor de outro cartório recebido ainda.</small></p>
+  {% endif %}
+</section>
+{% endblock %}

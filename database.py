@@ -1007,6 +1007,11 @@ class Database:
         # diferimento entra em `cx_protocolo_atos`.
         import ato_selado
         ato_selado.init_trava_do_selo_schema(con)
+        # O VALOR DE TERCEIRO DA MATERIALIZAÇÃO (F010, 25/11/2026): aponta para
+        # `cx_protocolos`, `cx_lancamentos` e `rc_materializacoes`, e por isso
+        # vem depois do caixa.
+        import rc_materializacao_repasse
+        rc_materializacao_repasse.init_rc_materializacao_repasse_schema(con)
         # A NFS-e DOS EMOLUMENTOS (LG01, 19/10/2026) — `nfse_*` e as duas
         # colunas do recibo que guardam o número e a chave da nota. Logo depois
         # do caixa, porque as notas apontam para `cx_recibos`.

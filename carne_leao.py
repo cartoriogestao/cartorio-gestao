@@ -884,6 +884,11 @@ def _recebido_no_caixa(bd, comp: str, forma: str, bp: int, criterio: str = SELO
         if valor <= 0:
             continue                      # gratuidade: valor zero
         descricao = str(lan["descricao"] or "")
+        if lan["natureza"] == "VALOR_DE_TERCEIRO":
+            # O dinheiro do outro cartório na materialização (F010, 25/11/2026):
+            # passa pelo caixa e sai inteiro para lá. Não é renda do titular, e
+            # não se estima fundo nenhum dele — ele não é desta casa.
+            continue
         if lan["natureza"] == "OUTRA_ENTRADA":
             item = {"id": int(lan["id"]), "dia": pago_em,
                     "descricao": descricao, "valor": valor}

@@ -9981,10 +9981,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def rcpn_materializacoes():
         """O formulário e as materializações já seladas. Só LÊ."""
         import rc_materializacao as RCM
+        import rc_materializacao_repasse as RMR
         with db.connect() as con:
             linhas = RCM.listar(con, limite=100)
+            pend = RMR.pendentes(con, hoje=agora()[:10])
+            cobra_taxa = RMR.cobra_taxa_da_crc(con)
         return render_template("rc_materializacoes.html", linhas=linhas,
-                               codigo_ato=RCM.CODIGO_ATO)
+                               codigo_ato=RCM.CODIGO_ATO, pend=pend,
+                               cobra_taxa=cobra_taxa,
+                               SITUACOES_DO_REPASSE=RMR.SITUACOES)
 
     @app.route("/rcpn/materializacoes", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -10006,7 +10011,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         dados = {k: _campo(k) for k in (
             "nome_parte", "requerente", "cartorio_nome", "cartorio_cidade",
             "cartorio_uf", "funcionario_expedidor", "valor_emolumentos",
-            "especie", "matricula")}
+            "especie", "matricula", "pedido_crc")}
         # O ENVELOPE SE MONTA ANTES DE GRAVAR: o que falta no formulário ou no
         # cadastro (a versão da tabela) recusa aqui, sem deixar materialização
         # cancelada para trás.
@@ -10041,9 +10046,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   {"motivo": motivo})
             flash(f"O selo da materialização NÃO saiu: {motivo}.", "danger")
             return redirect(volta)
+        # O VALOR DE TERCEIRO RECEBIDO SE LIGA À MATERIALIZAÇÃO pelo pedido da
+        # CRC (F010, 25/11/2026). Depois do selo, e fora dele: o envelope já
+        # saiu, e nada aqui o muda.
+        # Falhar aqui não desfaz o selo, que já saiu: fica no registro, e a
+        # ligação se refaz pelo pedido.
+        import rc_materializacao_repasse as RMR
+        try:
+            with db.transaction() as con:
+                ligados = RMR.vincular_materializacao(con, mid,
+                                                      conferido.get("pedido_crc"))
+        except Exception:                                   # noqa: BLE001
+            app.logger.exception("ligar o valor de terceiro à materialização %s", mid)
+            ligados = 0
         audit("RCPN_MATERIALIZACAO_SELADA", RCM.TABELA, mid,
               {"selo": res["numero"], "codigo": RCM.CODIGO_ATO,
-               "isento": bool(selo_isento)})
+               "isento": bool(selo_isento), "valor_de_terceiro_ligado": ligados})
         import selo_no_papel as SP
         with db.connect() as con:
             t = banco(con).um("SELECT texto FROM sd_selos WHERE numero=%s",

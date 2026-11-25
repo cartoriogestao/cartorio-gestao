@@ -4,7 +4,68 @@
 {% include '_serventia.html' %}
 <div class="actions">
   <a class="button" href="{{ url_for('rcpn_certidoes') }}">&larr; Certidões</a>
+  <a class="button" href="{{ url_for('rcpn_materializacao_repasses') }}">Repasses aos cartórios de origem</a>
 </div>
+
+{% if pend.a_repassar or pend.desfeitos %}
+<div class="notice warning">
+  <strong>Valor de outro cartório parado na casa:</strong>
+  {{ pend.a_repassar | length }} pedido(s), R$ {{ pend.total_a_repassar }}
+  {% if pend.vencidos %}— <strong>{{ pend.vencidos }} fora do prazo</strong>{% endif %}
+  {% if pend.desfeitos %}; {{ pend.desfeitos | length }} com o lançamento desfeito, a encerrar{% endif %}.
+  <a href="{{ url_for('rcpn_materializacao_repasses') }}">Ver os repasses</a>.
+</div>
+{% endif %}
+
+{# O VALOR DO OUTRO CARTÓRIO — F010, 25/11/2026 (solução B da CR004). O
+   cliente paga aqui a materialização (o item do protocolo) E a certidão que
+   o outro cartório emite. Essa segunda parte entra no caixa como «valor de
+   terceiro»: não é receita do titular, nem base do ISS, nem receita do Livro
+   Diário, e sai para o outro cartório pelo repasse, com comprovante. #}
+<section class="panel">
+  <div class="panel-head"><span>Receber o valor do outro cartório</span></div>
+  <form method="post" class="grid2" style="padding:14px"
+        action="{{ url_for('rcpn_materializacao_receber_terceiro') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p style="grid-column:1/-1; margin:0"><small>
+      O que o cliente paga pela certidão que <strong>o outro cartório</strong> emite.
+      Entra no <strong>seu caixa aberto</strong>, no protocolo da materialização (que
+      precisa ter o item {{ codigo_ato }}), como <strong>valor de terceiro</strong>:
+      fora da receita, do ISS e do Livro Diário. O item {{ codigo_ato }} desta casa
+      continua sendo cobrado no protocolo, como sempre.
+    </small></p>
+    <label>Protocolo da materialização
+      <input name="protocolo" required placeholder="AAAA.MM.N"></label>
+    <label>Nº do pedido na CRC
+      <input name="pedido_crc" required></label>
+    <label>Cartório de origem
+      <input name="cartorio_nome" required></label>
+    <label>Cidade do cartório de origem
+      <input name="cartorio_cidade" required></label>
+    <label>UF do cartório de origem
+      <input name="cartorio_uf" required maxlength="2" placeholder="PI"></label>
+    <label>Emolumentos cobrados lá (R$)
+      <input name="emolumentos_origem" required inputmode="decimal" placeholder="0,00"></label>
+    <label>Fundos cobrados lá (R$) <small>(se vierem separados)</small>
+      <input name="fundos_origem" inputmode="decimal" placeholder="0,00"></label>
+    {% if cobra_taxa %}
+    <label>Taxa da CRC (R$) <small>(paga pelo cliente)</small>
+      <input name="taxa_crc" inputmode="decimal" placeholder="0,00"></label>
+    {% endif %}
+    <label>Forma de pagamento
+      <select name="forma_pagamento" required>
+        <option value="">—</option>
+        {% for cod, rot in FORMAS_DO_TERCEIRO.items() %}<option value="{{ cod }}">{{ rot }}</option>{% endfor %}
+      </select></label>
+    <label>Pagador <small>(vazio: o interessado do protocolo)</small>
+      <input name="pagador"></label>
+    <label>CPF/CNPJ do pagador <small>(opcional)</small>
+      <input name="pagador_documento"></label>
+    <button class="button primary" style="grid-column:1/-1"
+            onclick="return confirm('Receber no caixa o valor do outro cartório?');">
+      Receber valor de terceiro</button>
+  </form>
+</section>
 
 {# A MATERIALIZAÇÃO — 26/10/2026. A certidão chega eletrônica de outro
    cartório (pela CRC), e esta casa a imprime e entrega ao cliente. A
@@ -45,8 +106,10 @@
         <option value="OBITO">Óbito</option>
         <option value="OUTRA">Outra</option>
       </select></label>
-    <label style="grid-column:1/-1">Matrícula <small>(os 32 dígitos, se a certidão trouxer)</small>
+    <label>Matrícula <small>(os 32 dígitos, se a certidão trouxer)</small>
       <input name="matricula" inputmode="numeric"></label>
+    <label>Nº do pedido na CRC <small>(liga ao valor do outro cartório recebido; não vai no selo)</small>
+      <input name="pedido_crc"></label>
     <label style="display:flex; gap:6px; align-items:center">
       <input type="checkbox" name="selo_gratuito" value="1" style="width:auto">
       Selo isento (gratuidade)</label>
@@ -69,7 +132,7 @@
   <div class="table-wrap">
   <table class="table">
     <thead><tr><th>Quando</th><th>De quem</th><th>Cartório de origem</th>
-               <th>Selo</th><th>Situação</th></tr></thead>
+               <th>Selo</th><th>Situação</th><th>Valor do outro cartório</th></tr></thead>
     <tbody>
     {% for m in linhas %}
       <tr>
@@ -81,6 +144,9 @@
               <br><small>{{ m.cancelada_motivo }}</small>
             {% elif m.selo %}<span class="badge ok">selada</span>
             {% else %}<span class="badge">sem selo</span>{% endif %}</td>
+        <td><small>{% if m.pedido_crc %}pedido {{ m.pedido_crc }}<br>{% endif %}
+            {% if m.repasse_situacao %}{{ SITUACOES_DO_REPASSE.get(m.repasse_situacao, m.repasse_situacao) }}
+            {% elif m.pedido_crc %}nada recebido por este pedido{% else %}—{% endif %}</small></td>
       </tr>
     {% endfor %}
     </tbody>

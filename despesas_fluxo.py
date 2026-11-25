@@ -1,6 +1,7 @@
 """Leitura assistida e correcao auditada de despesas ainda nao pagas. Sem rede."""
 from __future__ import annotations
 
+import papeis as PAP
 import hashlib
 import json
 from datetime import date, datetime
@@ -115,7 +116,7 @@ def corrigir(con, despesa_id: int, *, dados: Any, motivo: str, versao: str,
     if not versao or versao != revisao(d):
         raise DP.DespesaError('A despesa mudou depois que a tela foi aberta. Recarregue e confira os dados.')
     pessoa = bd.um('SELECT id,username,role,active,eh_robo FROM users WHERE id=%s', (int(usuario_id),))
-    if not pessoa or not pessoa['active'] or pessoa['role'] != 'ADMIN' or pessoa['eh_robo']:
+    if not pessoa or not pessoa['active'] or not PAP.equivale_a(pessoa, 'ADMIN') or pessoa['eh_robo']:  # o TI segue o ADMIN (T015)
         raise DP.DespesaError('A correcao exige a conta humana do oficial.')
     novo = {k: dados.get(k) for k in CAMPOS if k != 'codigo_barras'}
     novo['forma'] = str(novo['forma'] or '')

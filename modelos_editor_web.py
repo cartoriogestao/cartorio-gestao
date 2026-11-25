@@ -8,6 +8,7 @@ essas são do Robô Fidelidade (modelos_motor*).
 """
 from __future__ import annotations
 
+import papeis as PAP
 from flask import (
     Response, abort, flash, jsonify, redirect, render_template,
     request, session, url_for,
@@ -44,7 +45,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     row = banco(con).um(
                         "SELECT role FROM users WHERE id=%s", (uid,))
                     if row:
-                        return row["role"] or ""
+                        return PAP.papel_efetivo(row)  # o TI segue o ADMIN (T015)
         except Exception:
             pass
         return (session.get("role") or "").upper()

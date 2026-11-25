@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import papeis as PAP
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -125,7 +126,7 @@ def referencia(con, comp, *, cns):
 
 def _titular(con, usuario_id):
     pessoa = banco(con).um('SELECT id,username,role,active,eh_robo FROM users WHERE id=%s', (int(usuario_id),))
-    if not pessoa or not pessoa['active'] or pessoa['role'] != 'ADMIN' or pessoa['eh_robo']:
+    if not pessoa or not pessoa['active'] or not PAP.equivale_a(pessoa, 'ADMIN') or pessoa['eh_robo']:  # o TI segue o ADMIN (T015)
         raise DP.DespesaError('Esta conferencia exige a conta humana do titular.')
     return pessoa
 

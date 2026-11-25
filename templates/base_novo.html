@@ -41,6 +41,8 @@
   <script defer src="{{ url_for('static', filename='navegacao.js') }}?v={{ VERSION }}"></script>
   <script defer src="{{ url_for('static', filename='avisos.js') }}?v={{ VERSION }}"></script>
   <script defer src="{{ url_for('static', filename='manter_rolagem.js') }}?v={{ VERSION }}"></script>
+  {# O PAPEL TI NÃO SELA (T015): o que sela fica desabilitado na tela; quem recusa é o servidor. #}
+  {% if user and user.papel_real == 'TI' %}<script defer src="{{ url_for('static', filename='ti_nao_sela.js') }}?v={{ VERSION }}"></script>{% endif %}
   <script defer src="{{ url_for('static', filename='nu_avisos_modal.js') }}?v={{ VERSION }}"></script>
   <script defer src="{{ url_for('static', filename='produtividade_rapida.js') }}?v={{ VERSION }}"></script>
   <script defer src="{{ url_for('static', filename='ri_partes_do_ato.js') }}"></script>
@@ -82,7 +84,7 @@
         <span class="cg-eu-nome">{{ user.full_name.split(' ')[0] }}</span>
       </summary>
       <div class="cg-pop cg-pop-eu">
-        <p class="cg-pop-t"><strong>{{ user.full_name }}</strong><br><small>{{ user.role }} · v{{ VERSION }}</small></p>
+        <p class="cg-pop-t"><strong>{{ user.full_name }}</strong><br><small>{{ user.papel_real or user.role }} · v{{ VERSION }}</small></p>
         <a class="cg-pi" href="{{ url_for('dois_fatores') }}">Verificação em duas etapas</a>
         <a class="cg-pi" href="{{ url_for('minha_senha') }}">Minha senha</a>
         {# O TAMANHO DA LETRA — pedido do oficial, 02/11/2026: «alguém que não enxerga tão bem poder aumentar

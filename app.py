@@ -171,7 +171,10 @@ EXPEDIENT_STAGES = ["RECEBIDO", "TRIADO", "DISTRIBUIDO", "EM_CUMPRIMENTO", "AGUA
 # Medido em 29/08/2026: 13 expedientes, TODOS em RECEBIDO, nenhum com data de
 # conclusao — e o expediente 6 com a tarefa dele ja CONCLUIDA.
 import expediente_tarefa as EXPT
-ROLES = ["ADMIN", "MANAGER", "USER", "AUDITOR"]
+# O PAPEL TI (T015, decisão do titular de 24/11/2026): tudo do ADMIN, menos
+# selar atos. A régua — equivalência, selo e escalada — mora em `papeis.py`.
+import papeis as PAP
+ROLES = ["ADMIN", "MANAGER", "USER", "AUDITOR", "TI"]
 FREQUENCIES = ["DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "SEMIANNUAL", "ANNUAL"]
 
 
@@ -352,7 +355,11 @@ def _montar_app(test_config: dict | None = None) -> Flask:
         user = db.get_user(int(uid)) if uid else None
         if user and not user["active"]:
             return None
-        return user
+        # O PAPEL QUE DECIDE O ACESSO (T015): o TI chega aqui com o `role` do
+        # ADMIN e o verdadeiro em `papel_real` — rota, menu, modelo e módulo
+        # perguntam pelo `role`; quem registra ou mostra o papel, e o selo,
+        # perguntam por `PAP.papel_de`. Ver o cabeçalho de `papeis.py`.
+        return PAP.usuario_efetivo(user)
 
     def carimbo_da_senha(uid) -> str:
         """A versão da credencial que a sessão leva (M3 do LS01, lote LX11).
@@ -476,6 +483,14 @@ def _montar_app(test_config: dict | None = None) -> Flask:
 
     app.extensions["usuario_papel"] = usuario_papel
 
+    # O PAPEL VERDADEIRO (T015): `usuario_papel` decide o acesso, e para o TI
+    # devolve o do ADMIN; este é o que se GRAVA na auditoria e se mostra —
+    # e o que o ponto mais baixo do selo lê (`ato_selado.barrar_quem_nao_sela`).
+    def usuario_papel_real():
+        return PAP.papel_de(current_user()) or None
+
+    app.extensions["usuario_papel_real"] = usuario_papel_real
+
     # O ID de quem esta na tela, para os anexos: `db.add_attachment` grava quem
     # enviou o arquivo, e quem envia e quem responde por ele. Publicado aqui
     # pelo mesmo motivo dos outros tres — uma implementacao so, e nao uma copia
@@ -518,7 +533,11 @@ def _montar_app(test_config: dict | None = None) -> Flask:
                 user = current_user()
                 if not user:
                     return redirect(url_for("login"))
-                if (metodos is None or request.method in metodos) and user["role"] not in roles:
+                # A REGRA CENTRAL (T015): o TI passa onde o ADMIN passa, sem
+                # escrever «TI» em cada uma das mil listas. `papeis_exigidos`
+                # continua sendo a lista que a rota escreveu.
+                if ((metodos is None or request.method in metodos)
+                        and not PAP.equivale_a(user, roles)):
                     abort(403)
                 return view(*args, **kwargs)
             # OS PAPÉIS FICAM À VISTA NA FUNÇÃO (LX12, 19/10/2026): o
@@ -2351,6 +2370,27 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     def users():
         if request.method == "POST":
             action = request.form.get("action")
+            # SEM ESCALADA (T015): o TI não dá ADMIN a ninguém, nem a si, não
+            # troca o próprio papel e não mexe na conta de um ADMIN — por
+            # qualquer dessas portas ele viraria ADMIN e selaria. A régua é
+            # `PAP.recusa_de_papel`; aqui só se pergunta a ela, por ação.
+            eu = current_user()
+            alvo_da_acao = None
+            if action in ("editar", "eh_robo", "funcao", "toggle", "reset"):
+                _uid_alvo = parse_int(request.form.get("user_id"))
+                alvo_da_acao = db.get_user(_uid_alvo) if _uid_alvo else None
+            recusa_ti = PAP.recusa_de_papel(
+                eu, alvo=alvo_da_acao,
+                papel_novo=(request.form.get("role") if action in ("create", "editar")
+                            else None),
+                mexe_na_conta=action in ("editar", "eh_robo", "funcao", "toggle", "reset"))
+            if recusa_ti:
+                audit("USER_PAPEL_RECUSADO_AO_TI", "USER",
+                      int(alvo_da_acao["id"]) if alvo_da_acao else None,
+                      {"acao": action, "papel_pedido": (request.form.get("role") or "").strip().upper() or None,
+                       "papel_do_autor": PAP.papel_de(eu)})
+                flash(recusa_ti, "danger")
+                return redirect(url_for("users"))
             if action == "create":
                 password = request.form.get("password", "")
                 ok, msg = db.validate_password(password)
@@ -2393,8 +2433,10 @@ def _montar_app(test_config: dict | None = None) -> Flask:
                 novo_role = (request.form.get("role") or "").strip().upper()
                 # O ADMIN NUNCA SE TRANCA DO LADO DE FORA — a mesma regra do
                 # `toggle` de baixo, aqui contra se rebaixar a si mesmo.
+                # O PAPEL PRÓPRIO É O VERDADEIRO (T015): o TI que corrige o
+                # próprio nome manda «TI», e isso não é rebaixar.
                 if (int(target["id"]) == int(current_user()["id"])
-                        and novo_role and novo_role != "ADMIN"):
+                        and novo_role and novo_role != PAP.papel_de(current_user())):
                     flash("Não é possível rebaixar o próprio perfil durante "
                           "a sessão.", "danger")
                     return redirect(url_for("users"))
@@ -2533,8 +2575,12 @@ def _montar_app(test_config: dict | None = None) -> Flask:
             pessoas_rotinas = IDR.pessoas_que_podem_responder(con, por="rotinas")
             resp_rotinas = IDR.responsavel_das_rotinas(con)
             identidade = IDR.conferencia(con)
+        # O QUE ESTE OPERADOR PODE DAR (T015): o TI não vê «ADMIN» na caixa.
+        papeis_que_da = [r for r in ROLES
+                         if not PAP.recusa_de_papel(current_user(), papel_novo=r)]
         return render_template(
-            "users.html", rows=linhas, roles=ROLES, em_espera=em_espera,
+            "users.html", rows=linhas, roles=papeis_que_da, em_espera=em_espera,
+            rotulos_papeis=PAP.ROTULOS,
             funcoes=json_list(db.get_setting("funcoes_cargos", ""), list(FUNCOES)),
             pessoas=pessoas, pessoas_rotinas=pessoas_rotinas,
             resp_rotinas=resp_rotinas, identidade=identidade)
@@ -3300,7 +3346,7 @@ def _montar_app(test_config: dict | None = None) -> Flask:
         if view is None:
             return False
         papeis = getattr(view, "papeis_exigidos", None)
-        if papeis is not None and papel not in papeis:
+        if papeis is not None and not PAP.equivale_a(papel, papeis):
             return False
         # A FUNÇÃO TAMBÉM CONTA AQUI (LH06, 21/10/2026): a auxiliar que o
         # `before_request` tira do Protesto não pode baixar pelo endereço do
@@ -3968,8 +4014,38 @@ def _montar_app(test_config: dict | None = None) -> Flask:
                                             roles_required, audit)
 
     @app.errorhandler(403)
-    def forbidden(_):
+    def forbidden(erro):
+        # A RECUSA DO SELO AO TI DIZ O PORQUÊ (T015): «O papel TI não sela
+        # atos», e não a frase genérica — quem é TI sabe na hora que a porta
+        # é de propósito.
+        # O botão Selar recusa o TI pela trava do robô (`selo_robo.
+        # exige_humano_para_selar`), com `abort(403)` cru: a rota de selo é a
+        # única porta que o TI encontra fechada, e a frase é a dele.
+        if (getattr(erro, "description", None) == PAP.MSG_NAO_SELA
+                or (not PAP.sessao_pode_selar()
+                    and "sel" in str(request.endpoint or ""))):
+            return render_template("error.html", code=403, message=PAP.MSG_NAO_SELA), 403
         return render_template("error.html", code=403, message="Você não tem permissão para acessar esta área."), 403
+
+    # A REDE DE CIMA DO SELO PARA O TI (T015): o POST que sela — rota de
+    # selar, ou selo digitado no formulário — responde 403 antes de a rota
+    # começar. É a segunda trava, e não a única: a primeira mora no ponto mais
+    # baixo do selo (`ato_selado.barrar_quem_nao_sela`). Só o POST com login
+    # pergunta, e só lê o banco quando o pedido sela.
+    @app.before_request
+    def _ti_nao_sela_pela_rota():
+        if request.method != "POST" or not session.get("user_id"):
+            return None
+        if PAP.rota_sela(request.endpoint, request.form) and not PAP.sessao_pode_selar():
+            abort(403, description=PAP.MSG_NAO_SELA)
+        return None
+
+    # O TI NÃO SELA, EM CAMINHO NENHUM (T015). O ponto mais baixo do selo
+    # (`ato_selado`, `selador_cliente`) recusa com `PAP.TINaoSela`; a rota que
+    # não a apanhou responde 403 com a frase, e não 500.
+    @app.errorhandler(PAP.TINaoSela)
+    def ti_nao_sela(_erro):
+        return render_template("error.html", code=403, message=PAP.MSG_NAO_SELA), 403
 
     @app.errorhandler(404)
     def not_found(_):

@@ -1012,6 +1012,8 @@ MODULOS_COM_PROCESSOS = ("despesas_automacao", "onr_certidoes_auto", "andamento_
                          "eprotocolo",
                          # as custas de retirada e cancelamento à CRA (18/11/2026)
                          "protesto_cra_custas",
+                         # o aviso diário da NFS-e, só leitura (23/11/2026)
+                         "nfse_aviso",
                          # a entrada do e-Protocolo do RI pelo ONR, só leitura (RI013 P1, 24/11/2026)
                          "onr_eprotocolo")
 

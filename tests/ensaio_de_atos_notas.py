@@ -319,6 +319,12 @@ def praticar(b, caso: Caso, *, anterior_id: int | None = None) -> Saida:
     if NARQ.arquivamento_obrigatorio(caso.tipo):
         F.arquivar_o_documento(b, ato_id, protocolo)
     saida.avisos.append(f"preencher: {_preencher(b, ato_id, caso)}")
+    # O QUADRO «PARA A CESDI» VEM ANTES DE LAVRAR desde as travas extras da CESDI (23/11/2026): o
+    # divórcio sem o responsável pelos menores não vai ao livro. A data e o regime vêm da minuta.
+    if caso.cesdi:
+        atual = F.ato(b, ato_id)
+        F._postar(b, f"/notas/atos/{ato_id}", {"acao": "cesdi", "casamento_data": atual["casamento_data"] or "",
+                                               "regime_bens": atual["regime_bens"] or "", **caso.cesdi})
     if anterior_id:
         html = F._postar(b, f"/notas/atos/{ato_id}", {"acao": "vincular_anterior",
                                                      "anterior_id": str(anterior_id)}).get_data(as_text=True)
@@ -332,10 +338,6 @@ def praticar(b, caso: Caso, *, anterior_id: int | None = None) -> Saida:
         return saida
     saida.termo = F._texto_do_odt(F.o_termo_do_livro(b, ato_id))
     saida.traslado = F._texto_do_odt(F.o_traslado(b, ato_id))
-    if caso.cesdi:
-        atual = F.ato(b, ato_id)
-        F._postar(b, f"/notas/atos/{ato_id}", {"acao": "cesdi", "casamento_data": atual["casamento_data"] or "",
-                                               "regime_bens": atual["regime_bens"] or "", **caso.cesdi})
     saida.censec = _censec(b, ato_id)
     if caso.doi_operacao:
         saida.doi = _doi(b, ato_id, caso.doi_operacao)

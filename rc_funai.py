@@ -60,6 +60,12 @@ PARA_QUE_SERVE = (
 # digitar «Indígena».
 COR_INDIGENA = ("INDIGENA", "INDÍGENA")
 
+# O QUE VEIO DO ACERVO CONTINUA NA TELA E NAO ENTRA NA COBRANCA DO GESTOR. A lista
+# e a de `gestor_conferencia.ORIGENS_DO_ACERVO` mais `ACERVO`, a origem do
+# lancamento direto do livro, que grava a data da digitacao: por isso a data
+# sozinha nao separa o acervo do ato novo. Ha teste que confere as duas listas.
+ORIGENS_DO_ACERVO = ("EOFICIO", "ARQUIVO", "IMPORTACAO", "ACERVO")
+
 # O que o oficio precisa dizer e o sistema NAO SABE — pergunta-se, nao se deduz.
 O_QUE_SE_PERGUNTA: tuple[dict, ...] = (
     {"campo": "etnia",
@@ -141,8 +147,21 @@ def dias_desde(data_ato: Any, *, hoje: str) -> int | None:
     return (ate - de).days
 
 
+def e_ato_novo(assento: dict) -> bool:
+    """O assento é ato lavrado nesta casa depois do corte do gestor? Só calcula.
+
+    **A ORIGEM VEM ANTES DA DATA**: o lançamento direto do livro grava a data da
+    digitação, e um termo antigo passaria por ato de hoje. Data que não se lê não
+    é «antes do corte» — na dúvida o ato fica à vista, e não some.
+    """
+    import gestor_conferencia as GC
+    if _texto(assento.get("origem")).upper() in ORIGENS_DO_ACERVO:
+        return False
+    return not GC.antes_do_corte(assento.get("data_ato"))
+
+
 def pendentes(con: sqlite3.Connection, *, hoje: str = "",
-              limite: int = 500) -> list[dict]:
+              limite: int | None = 20_000) -> list[dict]:
     """Os nascimentos de indígena que a FUNAI ainda não recebeu. Só lê.
 
     **DO MAIS ANTIGO PARA O MAIS NOVO**, porque o prazo é «imediatamente»: o que
@@ -152,6 +171,11 @@ def pendentes(con: sqlite3.Connection, *, hoje: str = "",
     «Indígena» com acento não casaria com «INDIGENA» — a mesma armadilha que
     deixou o CNIB sem achar ninguém por nome, e a busca do Protesto antes dela.
     A consulta traz os nascimentos e quem decide é `e_indigena`, em Python.
+
+    **O LIMITE VALE DEPOIS DO FILTRO.** Ele ficava no SQL, antes de `e_indigena`:
+    quando a carga do acervo pôs milhares de nascimentos antigos com cor na
+    frente, o corte só via os antigos, o ato novo ficou de fora e o painel disse
+    zero. `limite=None` não corta. Cada linha traz `ato_novo` (`e_ato_novo`).
     """
     linhas = banco(con).ler(
         # NAO SE PEDE `a.folha`: LIVRO E FOLHA MORAM NO ATO, e nao no assento —
@@ -160,30 +184,44 @@ def pendentes(con: sqlite3.Connection, *, hoje: str = "",
         # pendencias» disse **por que** nao mediu. Era exatamente para isso que
         # ele nao engole erro — e ele se provou no primeiro dia.
         """SELECT a.id, a.nome, a.numero, a.livro_volume,
-                  a.data_ato, a.data_fato, a.cor_raca, a.matricula
+                  a.data_ato, a.data_fato, a.cor_raca, a.matricula, a.origem
              FROM rc_assentos a
         LEFT JOIN rc_funai f ON f.assento_id = a.id
             WHERE a.especie = 'NASCIMENTO'
               AND COALESCE(a.situacao, 'ATIVO') <> 'CANCELADO'
               AND a.cor_raca IS NOT NULL AND TRIM(a.cor_raca) <> ''
               AND f.id IS NULL
-         ORDER BY a.data_ato IS NULL, a.data_ato, a.id
-            LIMIT %s""", (limite,))
-    saida = []
+         ORDER BY a.data_ato IS NULL, a.data_ato, a.id""")
+    saida: list[dict] = []
     for linha in linhas:
         d = dict(linha)
         if not e_indigena(d.get("cor_raca")):
             continue
+        if limite is not None and len(saida) >= limite:
+            break
         d["dias"] = dias_desde(d.get("data_ato"), hoje=hoje) if hoje else None
         d["chama_atencao"] = bool(
             d["dias"] is not None and d["dias"] >= DIAS_PARA_CHAMAR_ATENCAO)
+        d["ato_novo"] = e_ato_novo(d)
         saida.append(d)
     return saida
 
 
+def atos_novos(con: sqlite3.Connection, *, hoje: str = "") -> list[dict]:
+    """Os pendentes que são ato novo, sem teto. É o que o gestor pode cobrar."""
+    return [p for p in pendentes(con, hoje=hoje, limite=None) if p["ato_novo"]]
+
+
 def quantas_pendentes(con: sqlite3.Connection) -> int:
-    """Quantas esperam. Só lê — serve ao painel e ao aviso."""
-    return len(pendentes(con))
+    """Quantas esperam, sem teto. Só lê — serve ao painel e ao aviso."""
+    return len(pendentes(con, limite=None))
+
+
+def quantas_por_grupo(con: sqlite3.Connection) -> dict:
+    """Quantas são ato novo e quantas são do acervo. Só lê — serve ao painel."""
+    todas = pendentes(con, limite=None)
+    novas = sum(1 for p in todas if p["ato_novo"])
+    return {"ato_novo": novas, "acervo": len(todas) - novas}
 
 
 def montar(con: sqlite3.Connection, assento_id: int, *, serventia: dict,

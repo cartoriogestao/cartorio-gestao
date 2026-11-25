@@ -35,7 +35,8 @@ import notas_certidao as NCE                                 # noqa: E402
 import notas_livro as NL                                     # noqa: E402
 from bd_nativo import banco                                  # noqa: E402
 from test_fluxo_notas import (                               # noqa: E402
-    CEM_MIL, COMPRA, ESCREVENTE, PESSOAS, SEGUNDA, VENDE, Caso, _caso, _etiqueta,
+    CEM_MIL, COMPRA, ESCREVENTE, PESSOAS, QUADRO_CESDI, VENDE, Caso, _casal, _caso,
+    _etiqueta,
     _flashes, _ler, _o_papel_de_balcao_e_adequado, _postar, _reconhecer_sinal,
     _tela, _texto_do_odt, _um, _usado, abrir_cartao, abrir_protocolo_pago, ato,
     balcao, emitir_certidao, etiqueta_do_reconhecimento, itens_oferecidos,
@@ -58,7 +59,9 @@ def test_o_divorcio_sem_bens_sela_pelo_13_7_no_caminho_sem_valor_e_gasta_o_item_
     o selo sai pelo caminho sem valor, como a tela o mostra. Até o LD02 o zero
     ia pelo caminho com valor declarado, e a tela não oferecia o 13.7."""
     b = balcao
-    caso = Caso("NT-ESC-DIVORCIO", "ESCRITURA", [VENDE, SEGUNDA], valor=0, item="13.7")
+    # o casal, o advogado e o quadro «Para a CESDI»: o divórcio sem eles não lavra (23/11/2026)
+    caso = Caso("NT-ESC-DIVORCIO", "ESCRITURA", _casal("DIVORCIANDO(A)"), valor=0, item="13.7",
+                cesdi=QUADRO_CESDI)
     protocolo = abrir_protocolo_pago(b, [("13.7", 1)])
     ato_id, item, recado = lavrar_pela_tela(b, caso, protocolo)
     a = ato(b, ato_id)

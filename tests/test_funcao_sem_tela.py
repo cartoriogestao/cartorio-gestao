@@ -172,7 +172,7 @@ JA_SABIDAS: frozenset[str] = frozenset({
     # passou a chama-la para montar a matricula do Livro D que vai ao
     # e-Proclamas. **Nome que deixou de ser orfao sai da lista**, senao ela so
     # cresce e o varredor vira enfeite.
-    "conferir_ato", "conferir_declaracao",
+    "conferir_declaracao",
     # `conferir_remessa` FICA (30/10/2026): `protesto_remessa._conferir_lote`
     # confere título a título pela mesma `CRA.conferir_titulo`, e a tela de conferir
     # a remessa mostra a falta de cada um. Uma segunda conta diria a mesma coisa.

@@ -135,10 +135,18 @@ RESPONDEM_CERTIDAO = {"ObterXMLSolicitacoes_v6", "InformarCustasCertidao", "Envi
 
 #: E EM 26/10/2026 O ACOMPANHAMENTO DE TÍTULOS: as escritas dele (cadastrar o
 #: título e os status) só saem da fila de fatos gravados (`onr_acompanhamento`).
+#: E EM 25/11/2026 (RI013 B0) O TRANSPORTE DO E-PROTOCOLO, DA E-INTIMAÇÃO E DA
+#: MATRÍCULA ONLINE: as escritas deles estão no contrato, mas presas em
+#: `ESPERAM_O_PODE_DO_TITULAR` — a sessão as recusa (test_onr_wsoficio_transporte).
+LEITURAS_SEM_PREFIXO = {"ContratoXMLtoPDF", "ObterXmlSolicitacoes", "ObterXmlSolicitacoesV2"}
+
+
 def test_so_le_salvo_as_certidoes():
     for metodo in W.CAMPOS:
         assert (re.match(r"^(Login|List|Get)", metodo) or metodo in RESPONDEM_CERTIDAO
-                or metodo in W.ESCREVEM_NO_ACOMPANHAMENTO), metodo
+                or metodo in W.ESCREVEM_NO_ACOMPANHAMENTO
+                or metodo in W.ESPERAM_O_PODE_DO_TITULAR
+                or metodo in LEITURAS_SEM_PREFIXO), metodo
     assert all(W.SERVICO_DO_METODO[m] == "certidoes" for m in RESPONDEM_CERTIDAO)
 
 

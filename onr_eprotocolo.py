@@ -14,7 +14,9 @@ O QUE ESTA ETAPA FAZ — E SÓ ISSO
     em tabela própria, com o XML da ficha CONGELADO (o trecho exato que o ONR
     mandou, com o SHA-256) e os campos achatados em `dados_json`, no molde de
     `onr_cert_pedidos`. **Nada se prenota, nada se emite, nada se sela e nada se
-    escreve no ONR**: os `Set*` do serviço nem estão em `onr_wsoficio.CAMPOS`.
+    escreve no ONR**: os `Set*` do serviço estão em `onr_wsoficio.CAMPOS` desde
+    a RI013 B0 (25/11/2026), mas presos em `ESPERAM_O_PODE_DO_TITULAR` — a
+    sessão os recusa — e este módulo não os monta.
 
 A ORDEM É A DA REMESSA (CNN 326)
     A fila sai por `DataRemessa`, e o desempate é o `IDContrato` — o manual dá

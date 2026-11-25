@@ -2,6 +2,7 @@
 {% block title %}ONR {{ p.protocolo }} — aprovar{% endblock %}
 {% block heading %}<h1>Pedido ONR {{ p.protocolo }} — o que o robô preparou</h1>{% endblock %}
 {% block content %}
+{% import '_onr_prazo.html' as prazo %}
 <div class="actions">
   <a class="button" href="{{ url_for('onr_auto_fila') }}">&larr; Preparados pelo robô</a>
   <a class="button" href="{{ url_for('onr_certidao_ficha', pedido_id=p.id) }}">Ficha do pedido</a>
@@ -16,6 +17,8 @@
        <strong>Valor:</strong> {{ p.valor or '—' }}</p>
     <p><strong>Solicitante:</strong> {{ p.solicitante or '—' }} ·
        <strong>Pedido em:</strong> {{ (p.data_pedido or '')[:16]|replace('T', ' ') }}</p>
+    {% if relogio %}<p><strong>Prazo:</strong> {{ prazo.selo(relogio) }}
+      <span class="small muted">{{ relogio.base }}{% if relogio.de_onde %} — contado {{ relogio.de_onde }}{% endif %}.</span></p>{% endif %}
     {% if p.matricula_id %}<p><strong>Matrícula:</strong>
       <a href="{{ url_for('ri_ficha', matricula_id=p.matricula_id) }}">{{ p.matricula_numero }}</a></p>{% endif %}
     {% if a.pessoa_busca %}<p><strong>Pessoa pesquisada:</strong> {{ a.pessoa_busca }}</p>{% endif %}

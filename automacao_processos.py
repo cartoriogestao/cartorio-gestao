@@ -1062,6 +1062,11 @@ def sementes_de_outros_modulos() -> list[dict]:
                 # limite de idade do teste de restauração). Sem eles a semente
                 # nascia com `{}` e o processo dependia só do padrão do código.
                 "parametros": dict(item.get("parametros") or {}),
+                # As agendas e descrições de fábrica que a de hoje substituiu
+                # (RI013, 24/11/2026): `automacao.semear` troca só onde o
+                # cadastro ainda está com uma delas — o que o oficial mexeu fica.
+                "agendas_antigas": tuple(item.get("agendas_antigas") or ()),
+                "descricoes_antigas": tuple(item.get("descricoes_antigas") or ()),
             })
     return saida
 

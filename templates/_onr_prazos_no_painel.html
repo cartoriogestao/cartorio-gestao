@@ -1,0 +1,21 @@
+{# AS CERTIDÕES DO ONR COM O PRAZO APERTADO (RI013, 24/11/2026) — CNN art. 327:
+   inteiro teor com o número da matrícula em até 2 h úteis. Só aparece quando há
+   pedido vencido ou com menos de 1 h, e só para quem pode aprovar. #}
+{% if onr_prazos_no_painel %}
+{% import '_onr_prazo.html' as prazo %}
+<section class="panel">
+  <div class="panel-head"><h2>Certidões do ONR com o prazo apertado ({{ onr_prazos_no_painel|length }})</h2>
+    <a href="{{ url_for('onr_auto_fila') }}">abrir as certidões do ONR</a></div>
+  <div class="table-wrap"><table><thead><tr><th>Protocolo ONR</th><th>Tipo</th><th>Matrícula</th><th>Prazo</th></tr></thead><tbody>
+  {% for x in onr_prazos_no_painel %}
+    <tr {% if x.relogio.situacao == 'VENCIDO' %}class="danger"{% endif %}>
+      <td><a href="{{ url_for('onr_auto_pedido', pedido_id=x.pedido_id) if x.etapa else url_for('onr_certidao_ficha', pedido_id=x.pedido_id) }}">{{ x.protocolo }}</a></td>
+      <td class="small">{{ rotulo_do_tipo_onr(x.tipo_certidao) }}</td>
+      <td>{{ x.matricula_numero or '—' }}</td>
+      <td>{{ prazo.selo(x.relogio) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody></table></div>
+  <p class="small muted">Medido na hora, em horas de expediente (CN-TJMA art. 436). Some quando o pedido é respondido.</p>
+</section>
+{% endif %}

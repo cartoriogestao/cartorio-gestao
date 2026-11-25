@@ -753,6 +753,14 @@ ACHADAS_EM_16_11_2026: dict[str, str] = {
 }
 
 
+# 23/11/2026: o aviso diário da NFS-e (F003). Entrada do catálogo da central de
+# automação, que o despachante chama; só lê. test_nfse guarda o processo.
+ACHADAS_EM_23_11_2026: dict[str, str] = {
+    "verificar": "nfse_aviso — chamada pelo catálogo da central de automação; "
+                 "test_nfse guarda o processo (nasce desligado) e a leitura",
+}
+
+
 def _conhecidas() -> set[str]:
     """As medições datadas que formam o piso do varredor."""
     return (set(JA_SABIDAS) | set(NASCIDAS_DEPOIS_DA_3_6_51)
@@ -772,7 +780,7 @@ def _conhecidas() -> set[str]:
             | set(ACHADAS_EM_29_10_2026_REPASSE)
             | set(ACHADAS_EM_30_10_2026)
             | set(ACHADAS_EM_11_11_2026)
-            | set(ACHADAS_EM_16_11_2026))
+            | set(ACHADAS_EM_16_11_2026) | set(ACHADAS_EM_23_11_2026))
 
 
 def test_nenhuma_funcao_nova_fica_sem_tela():

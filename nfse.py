@@ -277,7 +277,12 @@ SCHEMA: tuple[tuple[str, str], ...] = (
         )"""),
 )
 
-COLUNAS_DO_RECIBO = (("nfse_numero", "TEXT"), ("nfse_chave", "TEXT"))
+# `nfse_sem_condicao` (P1, 23/11/2026): o que faltava para gerar a nota quando o
+# balcão emitiu o recibo, em texto. Vazio = o recibo nasceu com condição. É uma
+# marca À PARTE: o teor do recibo (`corpo`, `discriminacao`, `hash_recibo`) não
+# muda, e a segunda via sai idêntica à primeira.
+COLUNAS_DO_RECIBO = (("nfse_numero", "TEXT"), ("nfse_chave", "TEXT"),
+                     ("nfse_sem_condicao", "TEXT"))
 
 
 class NfseError(ValueError):
@@ -546,6 +551,39 @@ def pendencias_da_configuracao(cfg: Mapping[str, str], pasta: Any = None) -> lis
 
 # ------------------------------------------------------- o recibo e a base
 
+def lancamento_sem_separacao(natureza: Any, forma: Any, valores: Mapping[str, Any]) -> bool:
+    """O lançamento de ato pago que não separa o emolumento dos fundos? Só calcula.
+
+    P3 (23/11/2026): 39 recibos de 2026 ficaram com base 0,00 porque o caixa
+    aceitou o lançamento sem as parcelas, e a NFS-e só o recusou depois. É o
+    mesmo teste de `base_do_recibo`: nenhuma das cinco parcelas preenchida.
+    «Ato gratuito» não é o caso (não há emolumento), e a saída, o estorno e o
+    depósito prévio (adiantamento, ainda não é emolumento) também não.
+    """
+    if natureza not in ("RECEBIMENTO", "COMPLEMENTO") or forma == "GRATUITO":
+        return False
+    return all(_vazio(valores.get(c)) for c in ("emolumentos",) + FUNDOS_FORA_DA_BASE)
+
+
+def pendencias_do_iss(cfg: Mapping[str, str]) -> list[str]:
+    """A configuração que deixa o ISS «—» na fila (P4, 23/11/2026). Só LÊ.
+
+    NÃO TRAVA a emissão (a trava de `preparar` é a de sempre): com a alíquota
+    vazia e o convênio em ordem, a Sefin pode devolver o ISS no XML. É o que o
+    ADMIN precisa ver ANTES do lote, e não depois, na apuração zerada.
+    """
+    faltas = []
+    if not str(cfg.get("nfse_convenio_ativo") or ""):
+        faltas.append("O convênio do município no emissor nacional não foi conferido "
+                      "(Gestor → NFS-e → «Consultar os parâmetros do município»).")
+    da_sefin = (str(cfg.get("nfse_optante_simples") or "1") == "1"
+                and str(cfg.get("nfse_convenio_ativo") or "") == "1")
+    if not str(cfg.get("nfse_aliquota") or "").strip() and not da_sefin:
+        faltas.append("A alíquota do ISS está vazia: o ISS da fila fica «—» e a apuração "
+                      "só o terá do XML da Sefin. Informe a alíquota ou confira o convênio.")
+    return faltas
+
+
 def _vazio(valor: Any) -> bool:
     return valor is None or not str(valor).strip()
 
@@ -593,6 +631,11 @@ def base_do_recibo(recibo: Mapping[str, Any],
         base = 0
         for l in vivos:
             if all(_vazio(l.get(c)) for c in ("emolumentos",) + FUNDOS_FORA_DA_BASE):
+                # O lançamento marcado «Ato gratuito» sem parcelas é o gratuito
+                # de verdade (P3, 23/11/2026): não há emolumento, e não é
+                # lançamento a corrigir.
+                if l.get("forma_pagamento") == "GRATUITO":
+                    continue
                 numero = f"{l['numero']}/{l['ano']}" if l.get("numero") else f"id {l['id']}"
                 pendencias.append(
                     f"O lançamento {numero} não separa o emolumento dos fundos: "
@@ -660,7 +703,7 @@ def _lancamentos_de(bd, recibo_ids: list[int]) -> dict[int, list[dict]]:
         return por_recibo
     for l in bd.ler(
             """SELECT id, recibo_id, numero, ano, sentido, valor, emolumentos,
-                      ferc, fadep, femp, ferrfis, estornado,
+                      ferc, fadep, femp, ferrfis, estornado, forma_pagamento,
                       COALESCE(excluido, 0) AS excluido
                  FROM cx_lancamentos WHERE recibo_id = ANY(%s)
                 ORDER BY recibo_id, id""", (recibo_ids,)):
@@ -761,6 +804,7 @@ def avaliar(con, recibos: list[Mapping[str, Any]], cfg: Mapping[str, str]) -> li
             iss, pendencias = None, pendencias + [str(erro)]
         saida.append({"recibo": dict(r), "base": base, "iss": iss, "tomador": tomador,
                       "gratuito": gratuito,
+                      "configuracao_pendente": pendencias_do_iss(cfg),
                       "documento_mascarado": mascarar_documento(tomador.documento),
                       "pendencias": pendencias, "nota": notas.get(rid)})
     return saida
@@ -773,6 +817,45 @@ def recibo(con, recibo_id: int) -> dict | None:
 def avaliar_recibo(con, recibo_id: int, cfg: Mapping[str, str]) -> dict | None:
     r = recibo(con, recibo_id)
     return avaliar(con, [r], cfg)[0] if r else None
+
+
+def condicao_do_recibo(con, recibo_id: int, cfg: Mapping[str, str] | None = None) -> list[str]:
+    """O que falta para este recibo virar nota, ou [] se ele tem condição. Só LÊ.
+
+    P1 (23/11/2026): é o `avaliar` de sempre, sem o recibo cancelado e sem o ato
+    gratuito (que não gera nota, e por isso não é «sem condição»). Com a
+    emissão desligada devolve [] — a marca só tem sentido onde a nota existe.
+    """
+    cfg = cfg if cfg is not None else configuracao(con)
+    if not ligada(cfg):
+        return []
+    item = avaliar_recibo(con, recibo_id, cfg)
+    if item is None or item["gratuito"] or item["recibo"].get("cancelado"):
+        return []
+    return list(item["pendencias"])
+
+
+def marcar_condicao_do_recibo(con, recibo_id: int, cfg: Mapping[str, str] | None = None) -> list[str]:
+    """Grava (ou limpa) a marca «sem condição de gerar nota» do recibo. ESCREVE.
+
+    Só mexe em `nfse_sem_condicao`: o teor do recibo, o hash e a numeração não
+    mudam. Devolve as faltas, para o balcão ver na hora.
+    """
+    faltas = condicao_do_recibo(con, recibo_id, cfg)
+    banco(con).escrever("UPDATE cx_recibos SET nfse_sem_condicao = %s WHERE id = %s",
+                        (" ".join(faltas) or None, int(recibo_id)))
+    return faltas
+
+
+def _remarcar_do_documento(con, documento: str) -> None:
+    """Refaz a marca dos recibos já marcados deste CPF/CNPJ: o endereço gravado
+    para um vale para todos os dele, e a marca velha não pode ficar mentindo."""
+    bd = banco(con)
+    cfg = configuracao(con)
+    for r in bd.ler("SELECT id, pagador_documento FROM cx_recibos "
+                    "WHERE nfse_sem_condicao IS NOT NULL ORDER BY id"):
+        if DPS.digitos(r["pagador_documento"]) == documento:
+            marcar_condicao_do_recibo(con, r["id"], cfg)
 
 
 def fila(con, cfg: Mapping[str, str], *, data: str | None = None,
@@ -856,6 +939,8 @@ def gravar_tomador(con, recibo_id: int, valores: Mapping[str, Any], *,
                 atualizado_por = excluded.atualizado_por,
                 atualizado_em = excluded.atualizado_em""",
         (doc, *endereco.values(), por, agora))
+    marcar_condicao_do_recibo(con, recibo_id)
+    _remarcar_do_documento(con, doc)
     return DPS.Tomador(documento=doc, nome=nome or r["pagador"] or "",
                        **{k: v for k, v in endereco.items() if k != "nome"})
 

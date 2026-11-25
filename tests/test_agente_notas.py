@@ -233,7 +233,8 @@ def test_rascunho_com_as_partes_de_procuracao_lavrada(con):
     a = _regra(AN.regra_rascunhos(con, HOJE), "NOTAS_RASCUNHO")[0]
     assert f"procuração {lavrada}" in a["titulo"]
     assert a["titulo"].startswith("Procuração ")
-    assert "NOTAS_RASCUNHO" in AN.REGRAS_SEM_TAREFA
+    # G007 («pode» do titular, 25/11/2026): o rascunho sobrando vira tarefa.
+    assert "NOTAS_RASCUNHO" not in GR.REGRAS_SEM_TAREFA
 
 
 def test_rascunho_vazio_de_ontem_ainda_nao_e_achado(con):
@@ -446,7 +447,7 @@ def test_a_rodada_do_gestor_cobra_so_os_casos_de_risco(con, cg_casa):
     for ref in (f"GESTOR:{AN.RASCUNHO_QUINZENA_FECHADA}:PESSOA:{autor}",
                 f"GESTOR:{AN.PDF_30_DIAS}:PESSOA:{autor}"):
         assert refs[ref]["assigned_user_id"] == autor
-    # O resto continua só no relatório (ordem do oficial de 06/10/2026).
+    # Desde o G007 (25/11/2026) o PDF por anexar também vira tarefa.
     assert not [r for r in refs if r.split(":")[1] in AN.REGRAS_SEM_TAREFA]
     # O achado fica gravado com o setor das Notas — é ele que o semáforo lê.
     setores = {r["regra"]: r["setor"] for r in con.execute(

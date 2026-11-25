@@ -1,4 +1,4 @@
-"""PARA ONDE VAI CADA REGRA DO GESTOR — a checklist, a tarefa do escrevente ou o projeto.
+"""PARA ONDE VAI CADA REGRA DO GESTOR — a checklist, a tarefa do escrevente ou o compliance.
 
     «limpar o checklist do dia e deixar apenas tarefas que podem ser feitas pela
     TI ou por admin. Checklist do dia nao serve para pratica de atos do
@@ -6,6 +6,11 @@
     cartorio. [...] As tarefas dos escreventes devem ficar no campo de
     processos com tarefas para resolverem. [...] A aba projetos serve para
     projetos maiores» — o oficial, 25/11/2026 (G007)
+
+    «minha ideia para o modulo de conformidade e projetos eh conseguir
+    delimitar exatamente o que precisa ser acompanhado e regularizado no dia a
+    dia [...] sem lidar com debito passado, que cabe ao agente de compliance e
+    tarefas aos escreventes» — o oficial, 25/11/2026 (G007, segunda ordem)
 
 OS TRÊS LUGARES
     TI_ADMIN    a Checklist do dia (`gestor_checklist`). O que a TI ou o
@@ -19,8 +24,12 @@ OS TRÊS LUGARES
                 dinheiro contado, e a conferência física. O gestor já abre uma
                 tarefa por regra e setor (`gestor_rotina.sincronizar_tarefas`);
                 a checklist só diz quantos saíram dela e onde está a tarefa.
-    PROJETO     a aba Projetos. O passivo grande, a carga inicial numa central
-                nova, a decisão sobre o acervo inteiro.
+    COMPLIANCE  o débito passado: o acervo de antes do corte, a carga inicial
+                numa central, a decisão sobre o acervo inteiro. Quem acompanha é
+                o agente de compliance; não é rotina do dia a dia, e por isso
+                também não vai a Projetos (que só guarda o que destrava a
+                rotina). Até a segunda ordem do G007 este destino se chamava
+                PROJETO.
 
 UMA TABELA SÓ, E ELA NÃO MEXE NA COR
     `DESTINO` é o único lugar que diz o destino de uma regra. Ele muda o que a
@@ -34,13 +43,14 @@ REGRA QUE A TABELA NÃO CONHECE FICA NA CHECKLIST
     (`tests/test_gestor_destino.py`) cobra que toda regra com rótulo no gestor
     esteja aqui.
 
-O QUE AINDA NÃO TEM CAMINHO DE TAREFA (proposta ao titular, G007)
-    Algumas regras de escrevente estão em `gestor_rotina.REGRAS_SEM_TAREFA` por
-    ordens anteriores do oficial (06/10, 13/10 e 18/11/2026: só vira tarefa o
-    que pode dar responsabilidade civil). Elas saem da checklist como as outras,
-    mas a tela as mostra à parte, «sem tarefa», para não sumirem: é
-    `SEM_TAREFA_A_DECIDIR`. Virar tarefa depende do «pode» do titular — e a
-    mudança é tirá-las de `REGRAS_SEM_TAREFA`. O teste amarra as duas listas.
+TODA REGRA DE ESCREVENTE VIRA TAREFA («pode» do titular, 25/11/2026)
+    Treze regras de escrevente estavam em `gestor_rotina.REGRAS_SEM_TAREFA` por
+    ordens anteriores (06/10, 13/10 e 18/11/2026: só vira tarefa o que pode dar
+    responsabilidade civil): a digitalização, o caixa do balcão, o PDF e o
+    rascunho das Notas, o Livro de Pagamentos do Protesto, três do RCPN e dois
+    livros do RTD/PJ. Fora da checklist e sem tarefa, ninguém as veria. O
+    titular mandou tirá-las de lá (P1 do G007), e o teste cobra que nenhuma
+    regra de escrevente volte a `REGRAS_SEM_TAREFA` calada.
 
 SÓ CALCULA
     Nada aqui grava. `tarefas_do_gestor` só lê `tasks`.
@@ -49,12 +59,12 @@ from __future__ import annotations
 
 from bd_nativo import banco
 
-TI_ADMIN, ESCREVENTE, PROJETO = "TI_ADMIN", "ESCREVENTE", "PROJETO"
-DESTINOS = (TI_ADMIN, ESCREVENTE, PROJETO)
+TI_ADMIN, ESCREVENTE, COMPLIANCE = "TI_ADMIN", "ESCREVENTE", "COMPLIANCE"
+DESTINOS = (TI_ADMIN, ESCREVENTE, COMPLIANCE)
 ROTULO_DO_DESTINO = {
     TI_ADMIN: "TI e administração (checklist do dia)",
     ESCREVENTE: "Escreventes (tarefa no processo)",
-    PROJETO: "Projeto",
+    COMPLIANCE: "Débito passado (agente de compliance)",
 }
 
 #: Os motivos que se repetem, para a tabela caber na tela.
@@ -68,7 +78,7 @@ _LIVRO = "livro, folha ou termo: precisa estar no cartório"
 _CAIXA = "dinheiro contado no balcão: quem fechou o caixa"
 _DIGI = "digitalização: só quem está no cartório (ordem de 25/11/2026)"
 _TEXTO = "texto do ato lavrado: retificação por quem qualifica"
-_PASSIVO = "passivo grande ou cadastro em central nova"
+_PASSIVO = "débito passado (acervo de antes do corte ou carga inicial): agente de compliance"
 
 #: A TABELA: regra → (destino, motivo). Uma linha por regra do gestor.
 DESTINO: dict[str, tuple[str, str]] = {
@@ -140,10 +150,10 @@ DESTINO: dict[str, tuple[str, str]] = {
     "PROTESTO_PROTOCOLO_TARDIO": (TI_ADMIN, _CONTROLE),
     "PROTESTO_RETORNO_TARDIO": (TI_ADMIN, _CONTROLE),
     "PROTESTO_FORA_DO_SISTEMA": (TI_ADMIN, "processo de trabalho fora do sistema: administrador"),
-    # ---- PROJETO: o passivo grande e a central nova
-    "ONR_ACERVO_DECISAO": (PROJETO, _PASSIVO),
-    "ONR_CARGA_INICIAL": (PROJETO, _PASSIVO),
-    "PROTESTO_ANTES_DO_CORTE": (PROJETO, _PASSIVO),
+    # ---- COMPLIANCE: o débito passado
+    "ONR_ACERVO_DECISAO": (COMPLIANCE, _PASSIVO),
+    "ONR_CARGA_INICIAL": (COMPLIANCE, _PASSIVO),
+    "PROTESTO_ANTES_DO_CORTE": (COMPLIANCE, _PASSIVO),
     # ---- ESCREVENTE: digitalização
     "DIGITALIZACAO_DA_FICHA": (ESCREVENTE, _DIGI),
     "DIGITALIZACAO_ATRASADA": (ESCREVENTE, _DIGI),
@@ -212,19 +222,6 @@ DESTINO: dict[str, tuple[str, str]] = {
     "RTDPJ_TITULO_PARADO": (ESCREVENTE, _ATO),
 }
 
-#: As regras de ESCREVENTE que o gestor hoje não transforma em tarefa
-#: (`gestor_rotina.REGRAS_SEM_TAREFA`). A checklist as mostra à parte, «sem
-#: tarefa». Proposta G007 ao titular: tirá-las de `REGRAS_SEM_TAREFA`. O teste
-#: cobra que esta lista seja exatamente o cruzamento das duas.
-SEM_TAREFA_A_DECIDIR = frozenset({
-    "DIGITALIZACAO_DA_FICHA", "DIGITALIZACAO_ATRASADA",
-    "CAIXA_DO_DIA_ABERTO", "CAIXA_ABERTO", "CAIXA_DIFERENCA",
-    "NOTAS_PDF", "NOTAS_RASCUNHO",
-    "PROTESTO_PAGAMENTO_SEM_LIVRO",
-    "RCPN_DADOS_A_CONFERIR", "RCPN_DADO_COMPLEMENTAR", "RCPN_FOLHA_SEGURANCA",
-    "RTDPJ_ENCERRAMENTO_DIARIO", "RTDPJ_LIVRO",
-})
-
 
 def destino(regra: str | None) -> str:
     """O destino de uma regra. A que a tabela não conhece fica na checklist."""
@@ -260,7 +257,7 @@ def fora_da_checklist(achados: dict[str, list[dict]],
     """O que saiu da checklist, por destino e regra, com a tarefa que o leva. Só calcula.
 
     `achados` é o de `gestor_checklist.achados_por_area` (cada achado com
-    `destino`). Devolve `{ESCREVENTE: [...], PROJETO: [...]}`, uma linha por
+    `destino`). Devolve `{ESCREVENTE: [...], COMPLIANCE: [...]}`, uma linha por
     regra e área: quantos, quantos fazem a cor, e as tarefas abertas da regra
     (`tarefas=None` quer dizer «não deu para ler as tarefas», e a linha diz
     isso em vez de «sem tarefa»).
@@ -277,11 +274,10 @@ def fora_da_checklist(achados: dict[str, list[dict]],
                 "regra": a["regra"], "area": area,
                 "rotulo": rotulos.get(a["regra"], a["regra"]), "motivo": motivo(a["regra"]),
                 "n": 0, "fazem_a_cor": 0,
-                "tarefas": None if tarefas is None else tarefas.get(a["regra"], []),
-                "sem_tarefa_a_decidir": a["regra"] in SEM_TAREFA_A_DECIDIR})
+                "tarefas": None if tarefas is None else tarefas.get(a["regra"], [])})
             linha["n"] += 1
             linha["fazem_a_cor"] += 1 if a.get("faz_a_cor") else 0
-    saida: dict[str, list[dict]] = {ESCREVENTE: [], PROJETO: []}
+    saida: dict[str, list[dict]] = {ESCREVENTE: [], COMPLIANCE: []}
     for (d, _, _), linha in sorted(linhas.items(), key=lambda kv: (kv[0][0], -kv[1]["n"],
                                                                      kv[0][1], kv[0][2])):
         saida[d].append(linha)

@@ -57,9 +57,8 @@ SÓ O QUE A TI E O ADMINISTRADOR RESOLVEM (25/11/2026, G007)
     A lista dos achados mostra só as regras de destino TI_ADMIN
     (`gestor_destino.DESTINO`, a tabela única regra → destino). O que é do
     escrevente sai da lista e aparece num quadro à parte, uma linha por regra,
-    com a tarefa do gestor que o leva ao processo (ou «sem tarefa», quando a
-    regra ainda não vira tarefa); o que é projeto aparece com o caminho da aba
-    Projetos. A COR OFICIAL NÃO MUDA: o semáforo conta todos os achados, de
+    com a tarefa do gestor que o leva ao processo; o débito passado aparece à
+    parte, porque quem o acompanha é o agente de compliance. A COR OFICIAL NÃO MUDA: o semáforo conta todos os achados, de
     qualquer destino, e a tela diz isso ao lado do quadro.
 
 O SIGILO DO PLD
@@ -408,5 +407,5 @@ def montar(db, hoje: date | None = None, *, papel: str, area: str | None = None,
             # G007: o que saiu da lista, por destino — contado, e com a tarefa.
             "fora": fora, "erro_tarefas": erro_tarefas,
             "total_fora": {d: sum(x["n"] for x in v) for d, v in fora.items()},
-            "abre_tarefa": abre("task_detail"), "abre_projetos": abre("dev_projetos_lista"),
+            "abre_tarefa": abre("task_detail"),
             "itens": itens, "pode_conferir": papel in QUEM_CONFERE}

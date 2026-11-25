@@ -8,10 +8,9 @@ provam:
   * a tabela `gestor_destino.DESTINO` classifica TODA regra que o gestor rotula,
     com destino conhecido e motivo; regra nova fica na checklist;
   * as cargas das centrais ficam com a TI; a digitalização vai ao escrevente;
-  * a lista «sem tarefa» é exatamente o cruzamento das regras de escrevente com
-    as que o gestor não transforma em tarefa — não cresce calada;
+  * nenhuma regra de escrevente fica sem tarefa (P1 do G007, «pode» do titular);
   * a checklist só lista TI_ADMIN; o de escrevente sai, aparece no quadro «Fora
-    da checklist» com a tarefa do gestor; o de projeto, com o caminho;
+    da checklist» com a tarefa do gestor; o débito passado, à parte (compliance);
   * a COR OFICIAL não muda: o semáforo conta os achados de todos os destinos.
 
 Datas fixas: terça 10/11/2026 é «hoje». Dados inventados.
@@ -82,7 +81,7 @@ def test_regra_que_a_tabela_nao_conhece_fica_na_checklist():
 def test_as_centrais_ficam_com_a_ti_e_a_digitalizacao_vai_ao_escrevente():
     # 13/10/2026: «as centrais e cargas automático [...] eu vou centralizar elas
     # com envio automático por agentes» — e 25/11/2026: a checklist é delas.
-    # (a carga inicial e o acervo inteiro do ONR são projeto; nenhuma é do escrevente)
+    # (a carga inicial e o acervo inteiro do ONR são débito passado; nenhuma é do escrevente)
     for regra in GR.REGRAS_DAS_CENTRAIS:
         assert GDS.destino(regra) != GDS.ESCREVENTE, regra
     for regra in ("SIRC", "CRC", "CENSEC", "DOI", "IBGE", "OBITO_MENSAL", "CARGAS_RCPN_PRONTA",
@@ -96,12 +95,17 @@ def test_as_centrais_ficam_com_a_ti_e_a_digitalizacao_vai_ao_escrevente():
                   "RCPN_ANOTACAO", "NOTAS_PDF", "PRENOTACAO_VENCIDA", "PROTESTO_TITULO_PARADO"):
         assert GDS.destino(regra) == GDS.ESCREVENTE, regra
     for regra in ("ONR_ACERVO_DECISAO", "ONR_CARGA_INICIAL", "PROTESTO_ANTES_DO_CORTE"):
-        assert GDS.destino(regra) == GDS.PROJETO, regra
+        assert GDS.destino(regra) == GDS.COMPLIANCE, regra
 
 
-def test_a_lista_sem_tarefa_e_o_cruzamento_e_nao_cresce_calada():
+def test_toda_regra_de_escrevente_vira_tarefa():
+    """P1 do G007 («pode» do titular, 25/11/2026): fora da checklist e sem
+    tarefa, o achado do escrevente não chegaria a ninguém."""
     escrevente = {r for r, (d, _) in GDS.DESTINO.items() if d == GDS.ESCREVENTE}
-    assert GDS.SEM_TAREFA_A_DECIDIR == frozenset(escrevente & GR.REGRAS_SEM_TAREFA)
+    assert not escrevente & GR.REGRAS_SEM_TAREFA
+    for regra in ("DIGITALIZACAO_DA_FICHA", "CAIXA_DO_DIA_ABERTO", "NOTAS_PDF",
+                  "PROTESTO_PAGAMENTO_SEM_LIVRO", "RCPN_FOLHA_SEGURANCA", "RTDPJ_LIVRO"):
+        assert regra not in GR.REGRAS_SEM_TAREFA, regra
 
 
 # ------------------------------------------------------------ a checklist
@@ -122,14 +126,14 @@ def test_a_checklist_so_lista_ti_admin_e_o_resto_vai_ao_quadro(cg_casa):
     regras = {a: [x["regra"] for x in v] for a, v in ck["achados"].items()}
     assert regras == {"RCPN": ["SIRC"], "ADMINISTRACAO": ["REGRA_NOVA"]}
     assert ck["total_achados"] == 2
-    assert ck["total_fora"] == {GDS.ESCREVENTE: 3, GDS.PROJETO: 1}
+    assert ck["total_fora"] == {GDS.ESCREVENTE: 3, GDS.COMPLIANCE: 1}
     linhas = {x["regra"]: x for x in ck["fora"][GDS.ESCREVENTE]}
     assert linhas["RCPN_ANOTACAO"]["n"] == 2 and linhas["RCPN_ANOTACAO"]["area"] == "RCPN"
     assert linhas["RCPN_ANOTACAO"]["tarefas"] == [{"id": anotacao, "setor": "RCPN"}]
     assert linhas["RCPN_ANOTACAO"]["rotulo"] == GR.ROTULOS["RCPN_ANOTACAO"]
     digi = linhas["DIGITALIZACAO_DA_FICHA"]
-    assert digi["tarefas"] == [] and digi["sem_tarefa_a_decidir"] is True
-    assert [x["regra"] for x in ck["fora"][GDS.PROJETO]] == ["ONR_ACERVO_DECISAO"]
+    assert digi["tarefas"] == []          # nasce na próxima rodada do gestor
+    assert [x["regra"] for x in ck["fora"][GDS.COMPLIANCE]] == ["ONR_ACERVO_DECISAO"]
 
 
 def test_a_cor_oficial_conta_todos_os_destinos(cg_casa):
@@ -161,7 +165,8 @@ def test_a_tela_mostra_o_quadro_fora_da_checklist(cg_casa_logada):
     assert "Achados abertos da TI e da administração" in html and "(1)" in lista
     assert GR.ROTULOS["NOTAS_PDF_30_DIAS"] in quadro
     assert f'href="/tarefas/{tarefa}"' in quadro
-    assert GR.ROTULOS["DIGITALIZACAO_DA_FICHA"] in quadro and "sem tarefa" in quadro
+    assert GR.ROTULOS["DIGITALIZACAO_DA_FICHA"] in quadro
+    assert "a tarefa nasce na próxima rodada" in quadro
     assert "contam na cor oficial" in quadro
     # filtrado pela área, o quadro também filtra
     so_ri = c.get("/administrativo/gestor/checklist?area=RI").get_data(as_text=True)
@@ -182,7 +187,7 @@ def test_o_auditor_ve_o_quadro_sem_link_que_recusa(cg_casa):
     html = c.get("/administrativo/gestor/checklist").get_data(as_text=True)
     quadro = html[html.index('id="fora"'):html.index('id="conferencias"')]
     assert GR.ROTULOS["ONR_CARGA_INICIAL"] in quadro
-    assert "/desenvolvimento/projetos" not in quadro      # o auditor não abre Projetos
+    assert "agente de compliance" in quadro
 
 
 def test_tarefas_do_gestor_le_so_as_abertas_do_gestor(cg_casa):

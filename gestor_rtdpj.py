@@ -94,9 +94,12 @@ ROTULOS = {
 #: da inspeção (sanção administrativa); dinheiro sem lançamento é da casa; o
 #: número repetido do acervo e a Central fora do ar são decisão e aviso; o que o
 #: agente corrigiu é para o oficial revisar. Todos continuam no relatório.
+#: G007, «pode» do titular em 25/11/2026: o encerramento do dia e a
+#: conferência do livro saíram daqui e viram tarefa. São trabalho do
+#: escrevente no livro, e a Checklist do dia só mostra o que a TI e o admin
+#: resolvem (`gestor_destino`).
 REGRAS_SEM_TAREFA = frozenset({
-    CENTRAL_NAO_LIDA, ENCERRAMENTO_DIARIO, LIVRO, SEM_PAGAMENTO,
-    REGISTRO_REPETIDO, CORRIGIDO,
+    CENTRAL_NAO_LIDA, SEM_PAGAMENTO, REGISTRO_REPETIDO, CORRIGIDO,
 })
 
 FUNDAMENTO = "Lei 6.015/1973, arts. 114 a 148; Lei 8.935/1994, art. 30"

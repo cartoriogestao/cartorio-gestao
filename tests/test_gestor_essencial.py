@@ -129,10 +129,11 @@ def test_so_vira_tarefa_o_que_pode_gerar_responsabilidade_civil(cg_casa):
     achados = [dict(_a("SIRC:1", "SIRC", "VENCIDO"), setor="RCPN"),
                dict(_a("DOC:1", "DOCUMENTO_INVALIDO", "CRITICO"), setor="RCPN"),
                dict(_a("FUNAI:1", "FUNAI", "VENCIDO"), setor="RCPN"),
-               dict(_a("CAIXA_HOJE:1", "CAIXA_DO_DIA_ABERTO", "CRITICO"), setor="PESSOA:1")]
+               dict(_a("CAIXA_HOJE:1", "CAIXA_DO_DIA_ABERTO", "CRITICO"), setor="RCPN")]
     GR.sincronizar_tarefas(con, achados, {}, _date(2026, 10, 6))
     refs = {r[0] for r in con.execute("SELECT source_ref FROM tasks WHERE source_type='GESTOR'")}
-    assert refs == {"GESTOR:DOCUMENTO_INVALIDO:RCPN"}
+    # G007 (25/11/2026): o caixa do balcão voltou a ser tarefa de escrevente.
+    assert refs == {"GESTOR:DOCUMENTO_INVALIDO:RCPN", "GESTOR:CAIXA_DO_DIA_ABERTO:RCPN"}
 
 
 def test_as_centrais_e_as_cargas_nao_viram_tarefa_e_a_aberta_fecha(cg_casa):
@@ -163,10 +164,11 @@ def test_a_tarefa_que_ja_existia_fecha_dizendo_o_motivo_verdadeiro(cg_casa):
     from gestor_schema import init_gestor_schema
     init_gestor_schema(con)
     tid = con.execute("""INSERT INTO tasks (source_type, source_ref, title, status, created_at,
-                             updated_at) VALUES ('GESTOR', 'GESTOR:DIGITALIZACAO_DA_FICHA:RI', 'Digitalizacao', 'ABERTA', ?, ?)""",
+                             updated_at) VALUES ('GESTOR', 'GESTOR:FECHAMENTO_DO_MES:GESTAO', 'Fechamento', 'ABERTA', ?, ?)""",
                       (AGORA, AGORA)).lastrowid
     # 13/10/2026: era o IBGE, que passou a ser Central (nota própria, no teste acima).
-    GR.sincronizar_tarefas(con, [dict(_a("DIGI:1", "DIGITALIZACAO_DA_FICHA", "PRAZO"), setor="RI")], {},
+    # 25/11/2026: era a digitalização, que voltou a ser tarefa (G007).
+    GR.sincronizar_tarefas(con, [dict(_a("FEC:1", "FECHAMENTO_DO_MES", "PRAZO"), setor="GESTAO")], {},
                            _date(2026, 10, 6))
     assert con.execute("SELECT status FROM tasks WHERE id=?", (tid,)).fetchone()[0] == "CONCLUIDA"
     nota = con.execute("SELECT note FROM task_history WHERE task_id=? ORDER BY id DESC",

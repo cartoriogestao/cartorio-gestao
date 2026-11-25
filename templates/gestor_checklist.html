@@ -7,6 +7,24 @@
 {% block heading %}<h1>Checklist de gestão do dia</h1>{% endblock %}
 {% block content %}
 {% set m = ck.medicao %}
+{% set classe_cor = {'VERMELHO': 'critica', 'AMARELO': 'alta', 'VERDE': 'ok'} %}
+{% macro tabela(itens) %}
+  <div class="table-wrap">
+  <table>
+    <tr><th>Gravidade</th><th>O que é</th><th>Regra</th><th>Prazo</th><th>Em aberto</th><th>Onde resolver</th></tr>
+    {% for x in itens %}
+    <tr>
+      <td><span class="badge {{ {'VENCIDO': 'critica', 'CRITICO': 'critica', 'PRAZO': 'alta', 'NAO_MEDIU': 'alta', 'OUTRA': 'alta'}.get(x.gravidade, '') }}">{{ gravidades[x.gravidade] }}</span></td>
+      <td>{{ x.titulo }}</td>
+      <td><code>{{ x.regra }}</code></td>
+      <td>{% if x.prazo %}{{ x.prazo[8:10] }}/{{ x.prazo[5:7] }}/{{ x.prazo[:4] }}{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td>{% if x.dias_em_aberto is none %}<span class="muted">?</span>{% elif x.dias_em_aberto == 0 %}desde hoje{% else %}{{ x.dias_em_aberto }} dia(s){% endif %}</td>
+      <td>{% if x.link %}<a href="{{ x.link }}">abrir</a>{% else %}<span class="muted">sem tela</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+{% endmacro %}
 
 {% if not m %}
 <div class="notice critical">Sem medição: não deu para ler o semáforo ({{ ck.erro_medicao }}). Nenhuma área nem item aparece como em dia.</div>
@@ -19,6 +37,10 @@
   painel geral, e as <strong>conferências do dia</strong>. O botão «conferido hoje»
   grava quem olhou e quando — <strong>não resolve achado</strong>: o achado só sai
   quando a conferência seguinte do gestor vê que foi resolvido.</p>
+  <p>Em cada área, a <strong>rotina</strong> (o que o gestor viu pela primeira vez há
+  até {{ ck.rotina_dias_uteis }} dias úteis) vem primeiro; o <strong>débito passado</strong>
+  vem depois, recolhido e contado. A cor oficial da área conta os dois; «só a rotina»
+  é a cor que ela teria sem o débito.</p>
   {% if m and m.gestor.ultima_rodada and ck.medido %}<p class="small muted">O gestor rodou em {{ m.gestor.ultima_rodada[8:10] }}/{{ m.gestor.ultima_rodada[5:7] }} às {{ m.gestor.ultima_rodada[11:16] }}.</p>{% endif %}
   <nav class="filtros" aria-label="Áreas">
     <a href="{{ url_for('gestor_checklist') }}" {% if not ck.area %}aria-current="page"{% endif %}>{% if not ck.area %}<strong>Todas as áreas</strong>{% else %}Todas as áreas{% endif %}</a>
@@ -39,24 +61,22 @@
     {% else %}<p class="muted">Sem medição: não dá para dizer se {% if ck.area %}{{ areas[ck.area] }} está{% else %}as áreas estão{% endif %} em dia.</p>{% endif %}
   {% else %}
   {% for area, lista in ck.achados.items() %}{% set a = m.areas.get(area) if m else none %}
+  {% set da_rotina = lista|selectattr('idade', 'equalto', 'ROTINA')|list %}
+  {% set do_debito = lista|selectattr('idade', 'equalto', 'DEBITO')|list %}
+  {% set cor_rotina = ck.cor_da_rotina.get(area) %}
   <h3>{{ areas[area] }}
-    {% if a %}<span class="badge {{ {'VERMELHO': 'critica', 'AMARELO': 'alta', 'VERDE': 'ok'}.get(a.cor, '') }}">{{ cores[a.cor] }}</span>{% endif %}
-    <small class="muted">{{ lista|length }} aberto(s)</small></h3>
-  <div class="table-wrap">
-  <table>
-    <tr><th>Gravidade</th><th>O que é</th><th>Regra</th><th>Prazo</th><th>Em aberto</th><th>Onde resolver</th></tr>
-    {% for x in lista %}
-    <tr>
-      <td><span class="badge {{ {'VENCIDO': 'critica', 'CRITICO': 'critica', 'PRAZO': 'alta', 'NAO_MEDIU': 'alta', 'OUTRA': 'alta'}.get(x.gravidade, '') }}">{{ gravidades[x.gravidade] }}</span></td>
-      <td>{{ x.titulo }}</td>
-      <td><code>{{ x.regra }}</code></td>
-      <td>{% if x.prazo %}{{ x.prazo[8:10] }}/{{ x.prazo[5:7] }}/{{ x.prazo[:4] }}{% else %}<span class="muted">—</span>{% endif %}</td>
-      <td>{% if x.dias_em_aberto is none %}<span class="muted">?</span>{% elif x.dias_em_aberto == 0 %}desde hoje{% else %}{{ x.dias_em_aberto }} dia(s){% endif %}</td>
-      <td>{% if x.link %}<a href="{{ x.link }}">abrir</a>{% else %}<span class="muted">sem tela</span>{% endif %}</td>
-    </tr>
-    {% endfor %}
-  </table>
-  </div>
+    {% if a %}<span class="badge {{ classe_cor.get(a.cor, '') }}">{{ cores[a.cor] }}</span>{% endif %}
+    {% if cor_rotina %}<span class="badge {{ classe_cor.get(cor_rotina, '') }}" title="A cor que a área teria só com a rotina">só a rotina: {{ cores[cor_rotina] }}</span>{% endif %}
+    <small class="muted">{{ lista|length }} aberto(s): {{ da_rotina|length }} da rotina, {{ do_debito|length }} de débito passado</small></h3>
+  <h4 class="idade-rotina">Rotina <small class="muted">— visto há até {{ ck.rotina_dias_uteis }} dias úteis; vem primeiro</small></h4>
+  {% if da_rotina %}{{ tabela(da_rotina) }}
+  {% else %}<p class="muted small">Nada da rotina aberto{% if not ck.medido %} na última conferência (sem medição){% endif %}.</p>{% endif %}
+  {% if do_debito %}
+  <details class="idade-debito"{% if ck.area or not da_rotina %} open{% endif %}>
+    <summary><strong>Débito passado</strong> — {{ do_debito|length }} aberto(s), {{ do_debito|selectattr('faz_a_cor')|list|length }} que faz(em) a cor <small class="muted">(visto há mais de {{ ck.rotina_dias_uteis }} dias úteis)</small></summary>
+    {{ tabela(do_debito) }}
+  </details>
+  {% endif %}
   {% endfor %}
   {% endif %}
   {% if nao_mede %}<p class="small muted">Ainda não entram: {{ nao_mede|join('; ') }}.</p>{% endif %}

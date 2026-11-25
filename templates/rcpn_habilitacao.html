@@ -270,7 +270,7 @@
          escolher. O escrevente confirma qual protocolo pago cobre o 14.1.x. #}
       {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
       {% set s_selo = seletor_do_selo('hc_habilitacoes') %}
-      {{ protocolo_do_selo(s_selo.candidatos, s_selo.pedidos, atendendo=s_selo.atendendo) }}
+      {{ protocolo_do_selo(s_selo.candidatos, s_selo.pedidos, atendendo=s_selo.atendendo, tabela='hc_habilitacoes', rotulo='Continuar', se_nao_sair='a habilitação não é expedida e a tela mostra o que falta') }}
       <button class="primary">Habilitar</button>
       {% if not prazo_venceu %}
       <span class="small muted">prazo de oposição até {{ fmt_date(h.edital_prazo_ate) }} (em curso — não impede habilitar)</span>
@@ -297,7 +297,7 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
         {% set s_selo = seletor_do_selo('hc_habilitacoes') %}
-        {{ protocolo_do_selo(s_selo.candidatos, s_selo.pedidos, atendendo=s_selo.atendendo) }}
+        {{ protocolo_do_selo(s_selo.candidatos, s_selo.pedidos, atendendo=s_selo.atendendo, tabela='hc_habilitacoes', rotulo='Continuar', se_nao_sair='a habilitação não é expedida e a tela mostra o que falta') }}
         <button class="primary">Pedir o selo ao aparelho</button>
         <span class="small muted">É um selo só: ele vale pela habilitação e
           pelo assento de casamento (item 14.1.1).</span>

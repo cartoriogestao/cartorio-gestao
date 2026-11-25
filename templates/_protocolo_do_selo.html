@@ -22,7 +22,15 @@
                              csrf_token=csrf_token) }}
 #}
 {% macro protocolo_do_selo(candidatos, pedidos, atendendo=None, url_de_selar=None,
-                           csrf_token=None, nome_campo="protocolo_selo") %}
+                           csrf_token=None, nome_campo="protocolo_selo",
+                           tabela=None, rotulo='Lavrar', se_nao_sair=None,
+                           alternativas=False) %}
+{# «COBRE? SIM» SÓ COM O CÓDIGO EXATO (P008). Com a família do grupo («14.*»)
+   ou com itens alternativos (a firma: 13.17.2, 13.17.3 OU 13.17.4), «sim»
+   queria dizer «tem algum deles pago», e 10 dos 14 reconhecimentos suspensos
+   em quatro semanas tinham o 13.17.4 pago para uma firma do 13.17.2. #}
+{% set ns_cobre = namespace(por_grupo=alternativas) %}
+{% for codigo, quantidade in (pedidos or []) %}{% if codigo.endswith('*') %}{% set ns_cobre.por_grupo = true %}{% endif %}{% endfor %}
 {# Quem ficou de fora (`selecionavel` falso) aparece com o motivo e sem
    botão. Não conta como o candidato único: marcar o protocolo de outro
    cliente só porque o que está em atendimento não serve gastaria o
@@ -39,6 +47,14 @@
 {% endif %}
 <fieldset class="protocolo-do-selo">
   <legend>Protocolo que paga o selo</legend>
+  {# O SINAL VERDE/VERMELHO (P008, 24/11/2026): com `tabela`, a conta do selo
+     com o protocolo marcado e o item EXATO que o formulário pede — a coluna
+     «Cobre?» abaixo olha só o grupo da tabela. Não vai no quadro de depois
+     (`url_de_selar`), que já é o recado do que faltou. #}
+  {% if tabela and not url_de_selar %}
+  {% from '_sinal_do_selo.html' import sinal_do_selo %}
+  {% if se_nao_sair %}{{ sinal_do_selo(tabela, pedidos, rotulo=rotulo, se_nao_sair=se_nao_sair) }}{% else %}{{ sinal_do_selo(tabela, pedidos, rotulo=rotulo) }}{% endif %}
+  {% endif %}
   {% if pedidos %}
   <p class="muted">Este ato pede:
     {% for codigo, quantidade in pedidos %}<strong>{% if codigo.endswith('*') %}item do grupo {{ codigo[:-2] }} da tabela{% else %}{{ codigo }}{% endif %}</strong>{% if quantidade > 1 %} × {{ quantidade }}{% endif %}{% if not loop.last %} ou {% endif %}{% endfor %}.
@@ -68,7 +84,7 @@
         </td>
         <td>
           {% if c.selecionavel is sameas false %}{{ c.motivo }} — não dá para escolher
-          {% elif c.cobre_tudo %}sim{% else %}
+          {% elif c.cobre_tudo %}{% if ns_cobre.por_grupo %}tem item pago do grupo — confira o código{% else %}sim{% endif %}{% else %}
             {% for f in c.faltam %}faltam {{ f.faltam }} do {{ f.codigo }}{% if not loop.last %}; {% endif %}{% endfor %}
             — acrescente no protocolo
           {% endif %}

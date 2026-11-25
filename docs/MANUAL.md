@@ -288,7 +288,7 @@ causa do seu perfil ou porque a administração fechou o módulo.
 | Tela | Para quê |
 |---|---|
 | Visão geral | a primeira tela do dia: avisos, tarefas vencidas, protocolos parados, atos sem conclusão e comunicações pendentes |
-| Projetos | os projetos de desenvolvimento da casa, só para o administrador |
+| Projetos | os projetos de desenvolvimento da casa, para o administrador e o gerente. No layout novo, fica em **Trabalho › Projetos** |
 
 ### Tabelionato de Notas
 

@@ -437,14 +437,37 @@ def verificar_wsoficio(ctx: Contexto) -> dict:
                      f"{dias} dias, nenhum novo desde a última verificação.", achados, estado=estado)
 
 
-def verificar_cnib(ctx: Contexto) -> dict:
-    """Averbações de indisponibilidade DEVIDAS que ainda não foram lavradas.
+def _caso_cnib(p: dict) -> str:
+    """A identidade de um caso: matrícula, ordem e pessoa (a mesma chave de `pendentes`).
 
-    ORDEM DO OFICIAL, 24/11/2026 (tarefa 486): minuta só no caso devido — o
-    CPF/CNPJ da ordem é o de quem é dono hoje —, e o resto fica como aviso na
-    ficha da matrícula, para o escrevente conferir ao abri-la. Até então esta
-    rotina cobrava os 1.669 casos como «sem decisão», e a cobrança diária de
-    homônimo virou nota repetida que ninguém lia.
+    Vai para o `estado` do processo só o resumo (SHA-256), e não o nome e o
+    CPF/CNPJ: a base serve para dizer «já vi», não para guardar outra cópia
+    de quem é atingido.
+    """
+    import hashlib
+    o = p["ordem"]
+    chave = (f"{int(p['matricula_id'])}:{o.get('protocolo_cnib') or ''}:"
+             f"{o.get('documento') or ''}:{o.get('nome') or ''}")
+    return hashlib.sha256(chave.encode("utf-8")).hexdigest()[:20]
+
+
+def verificar_cnib(ctx: Contexto) -> dict:
+    """Caso NOVO da CNIB abre tarefa; os já conhecidos, não.
+
+    ORDENS DO OFICIAL:
+    - 24/11/2026 (tarefa 486): minuta só no caso devido (o CPF/CNPJ da ordem é
+      o de quem é dono hoje); o resto fica como aviso na ficha da matrícula,
+      para o escrevente conferir ao abri-la.
+    - 25/11/2026 (tarefa 704, que repetia a 486): «é só se continuar esses
+      1669 docs. se tiver qualquer outro doc novo, é para abrir tarefa de
+      rotina». Os casos que já estavam na lista ficam como BASE (`estado`), e
+      só caso fora dela põe a rodada em AVISO, e por isso abre tarefa. Os
+      conhecidos seguem nas tarefas do plano e na ficha.
+
+    A BASE É GRAVADA NA PRIMEIRA RODADA desta versão, com o que estiver
+    pendente naquele dia, e não cresce sozinha: caso novo continua novo até ser
+    decidido ou lavrado, quando sai da lista. Sem isso, a tarefa aberta num dia
+    fecharia sozinha no seguinte («normalizou») sem ninguém ter olhado.
 
     Com `pode_agir`, prepara a minuta do caso devido que ainda não tem nenhuma
     (não lavra, não sela). Desligado, só conta.
@@ -464,29 +487,51 @@ def verificar_cnib(ctx: Contexto) -> dict:
                           "minutas": feito["preparadas"]})
     with ctx.db.connect() as con:
         pendentes = ri_cnib.pendentes(con, com_teor=False)
-    devidas = [p for p in pendentes if p["devida"]]
-    avisos = len(pendentes) - len(devidas)
     situacao = lambda p: (p["ordem"].get("minuta") or {}).get("situacao")
-    prontas = sum(1 for p in devidas if situacao(p) == MIN.A_REVISAR)
-    descartadas = sum(1 for p in devidas if situacao(p) == MIN.DESCARTADA)
-    sem_minuta = len(devidas) - prontas - descartadas
-    achados = [{"matricula": p.get("matricula_numero"), "protocolo": p["ordem"].get("protocolo_cnib"),
-                "minuta": (p["ordem"].get("minuta") or {}).get("id"), "situacao_da_minuta": situacao(p)}
-               for p in devidas[:200]]
-    quadro = (f"{avisos} ocorrência(s) ficam só como aviso na ficha da matrícula, para o escrevente "
-              "conferir se corresponde ao abri-la.")
-    if devidas:
-        partes = [f"{prontas} com minuta pronta esperando revisão e lavratura"]
-        if sem_minuta:
-            partes.append(f"{sem_minuta} sem minuta")
-        if descartadas:
-            partes.append(f"{descartadas} com a minuta descartada e sem decisão")
+
+    def quadro(casos: list[dict]) -> str:
+        devidas = [p for p in casos if p["devida"]]
+        texto = f"{len(devidas)} averbação(ões) devida(s)"
+        if devidas:
+            prontas = sum(1 for p in devidas if situacao(p) == MIN.A_REVISAR)
+            descartadas = sum(1 for p in devidas if situacao(p) == MIN.DESCARTADA)
+            partes = [f"{prontas} com minuta pronta"]
+            if len(devidas) - prontas - descartadas:
+                partes.append(f"{len(devidas) - prontas - descartadas} sem minuta")
+            if descartadas:
+                partes.append(f"{descartadas} com a minuta descartada")
+            texto += f" ({', '.join(partes)})"
+        return texto + f" e {len(casos) - len(devidas)} aviso(s) para conferir na ficha"
+
+    base = ctx.estado.get("conhecidos")
+    estado = None
+    if not isinstance(base, list):
+        base = sorted({_caso_cnib(p) for p in pendentes})
+        estado = {"conhecidos": base, "base_em": ctx.agora.isoformat(timespec="seconds"),
+                  "base_tamanho": len(base)}
+    conhecidos = set(base)
+    novos = [p for p in pendentes if _caso_cnib(p) not in conhecidos]
+    velhos = [p for p in pendentes if _caso_cnib(p) in conhecidos]
+    base_em = str((estado or ctx.estado).get("base_em") or "")[:10]
+    sobre_os_velhos = (f"Dos {len(conhecidos)} já conhecidos em {base_em}, {len(velhos)} seguem "
+                       f"pendentes — {quadro(velhos)}; esses não abrem tarefa (Registro de "
+                       "Imóveis → CNIB e ficha da matrícula).")
+    if estado is not None:
+        r = resultado(SCH.OK, f"CNIB: base gravada com os {len(base)} caso(s) pendentes hoje, por "
+                      "ordem do oficial de 25/11/2026; daqui em diante, só caso novo abre tarefa. "
+                      f"{sobre_os_velhos}", estado=estado)
+    elif novos:
+        achados = [{"matricula": p.get("matricula_numero"), "protocolo": p["ordem"].get("protocolo_cnib"),
+                    "criterio": p.get("criterio"), "devida": p["devida"],
+                    "minuta": (p["ordem"].get("minuta") or {}).get("id"),
+                    "situacao_da_minuta": situacao(p)} for p in novos[:200]]
         r = resultado(SCH.AVISO,
-                      f"CNIB: {len(devidas)} averbação(ões) de indisponibilidade devida(s) — o "
-                      f"documento da ordem é o do dono de hoje: {', '.join(partes)}. Lavre ou "
-                      f"decida em Registro de Imóveis → CNIB. {quadro}", achados)
+                      f"CNIB: {len(novos)} caso(s) novo(s) desde {base_em}: {quadro(novos)}. Devida "
+                      "é quando o documento da ordem é o do dono de hoje: lavre ou decida; nos "
+                      "avisos, confira na ficha se corresponde e grave a decisão em Registro de "
+                      f"Imóveis → CNIB. {sobre_os_velhos}", achados)
     else:
-        r = resultado(SCH.OK, f"CNIB: nenhuma averbação devida à espera. {quadro}")
+        r = resultado(SCH.OK, f"CNIB: nenhum caso novo desde {base_em}. {sobre_os_velhos}")
     if acoes:
         r["acoes"] = acoes
     return r
@@ -958,9 +1003,9 @@ SEMENTES: tuple[dict, ...] = (
     {"codigo": "RI_CNIB", "nome": "CNIB — ordens sem decisão", "setor": "RI",
      "alvo": "automacao_processos:verificar_cnib", "robo_oficial": "RI", "timeout_s": 900,
      "agenda": {"dias": _UTEIS, "horarios": ["07:45"]},
-     "descricao": "Averbações de indisponibilidade devidas (documento da ordem = dono de hoje) "
-                  "ainda não lavradas; com «pode agir», prepara a minuta. O resto fica como aviso "
-                  "na ficha da matrícula."},
+     "descricao": "Caso novo da CNIB (fora dos já conhecidos na 1ª rodada) abre tarefa; com "
+                  "«pode agir», prepara a minuta da averbação devida (documento da ordem = dono de "
+                  "hoje). O resto fica como aviso na ficha da matrícula."},
     {"codigo": "RI_CNIB_MINUTAS", "nome": "CNIB — minutas diárias (rotina de fora)", "setor": "RI",
      "alvo": "automacao_processos:verificar_log", "robo_oficial": "RI", "timeout_s": 60,
      "parametros": {"chave_config": SCH.CHAVE_CNIB_LOG, "nome": "as minutas do CNIB", "horas": 26,

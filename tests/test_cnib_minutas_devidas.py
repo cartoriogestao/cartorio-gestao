@@ -152,21 +152,65 @@ def test_a_ficha_diz_devida_ou_aviso_para_conferir(casa):
     assert "POSSÍVEL INDISPONIBILIDADE PENDENTE" in aviso  # o quadro de sempre continua
 
 
-def _ctx(casa, pode_agir):
-    return AP.Contexto(db=casa["db"], agora=datetime(2026, 11, 24, 7, 45),
+def _ctx(casa, pode_agir, estado=None):
+    return AP.Contexto(db=casa["db"], agora=datetime(2026, 11, 26, 7, 45),
                        pasta_dados=Path(casa["banco"]).parent, raiz=RAIZ,
-                       processo={"codigo": "RI_CNIB", "pode_agir": pode_agir})
+                       processo={"codigo": "RI_CNIB", "pode_agir": pode_agir, "estado": estado or {}})
 
 
-def test_a_rotina_cobra_so_a_devida_e_conta_os_avisos(casa):
+# Ordem do oficial, 25/11/2026: «é só se continuar esses 1669 docs. se tiver
+# qualquer outro doc novo, é para abrir tarefa de rotina».
+
+def test_a_primeira_rodada_grava_a_base_e_nao_cobra_os_conhecidos(casa):
     _cenario(casa)
     r = AP.verificar_cnib(_ctx(casa, 0))
-    assert r["situacao"] == SCH.AVISO
-    assert "1 averbação(ões) de indisponibilidade devida(s)" in r["relato"]
-    assert "1 sem minuta" in r["relato"]
-    assert "3 ocorrência(s) ficam só como aviso" in r["relato"]
-    assert "sem decisão" not in r["relato"].split("—")[0]
+    assert r["situacao"] == SCH.OK
+    assert len(r["estado"]["conhecidos"]) == 4 and r["estado"]["base_tamanho"] == 4
+    assert "base gravada com os 4 caso(s)" in r["relato"]
+    assert "1 averbação(ões) devida(s) (0 com minuta pronta, 1 sem minuta) e 3 aviso(s)" in r["relato"]
     assert _minutas(casa) == []  # desligada, só conta
+    # a rodada seguinte, com a base, também não cobra
+    r2 = AP.verificar_cnib(_ctx(casa, 0, r["estado"]))
+    assert r2["situacao"] == SCH.OK and "nenhum caso novo" in r2["relato"]
+    assert "estado" not in r2  # a base não é regravada
+
+
+def _caso_novo(casa, *, documento="00077777777", nome="NOVA DEVEDORA", protocolo="NOVA-1", dona=True):
+    con = _con(casa)
+    with con:
+        _ordem(con, nome=nome, documento=documento, protocolo=protocolo)
+        _matricula(con, numero="50", partes=[(nome, documento if dona else None, "proprietario", 1)])
+
+
+def test_caso_novo_abre_tarefa_e_continua_novo_ate_ser_decidido(casa):
+    _cenario(casa)
+    base = AP.verificar_cnib(_ctx(casa, 0))["estado"]
+    _caso_novo(casa)
+    r = AP.verificar_cnib(_ctx(casa, 0, base))
+    assert r["situacao"] == SCH.AVISO
+    assert "1 caso(s) novo(s)" in r["relato"] and "1 averbação(ões) devida(s)" in r["relato"]
+    assert [a["protocolo"] for a in r["achados"]] == ["NOVA-1"]
+    assert "Dos 4 já conhecidos" in r["relato"]
+    # não entra na base sozinho: no dia seguinte ainda é novo
+    assert AP.verificar_cnib(_ctx(casa, 0, base))["situacao"] == SCH.AVISO
+    # decidido, sai da lista, e a rodada volta ao normal
+    con = _con(casa)
+    with con:
+        mid = con.execute("SELECT id FROM ri_matriculas WHERE numero='50'").fetchone()[0]
+        con.execute("""INSERT INTO ri_cnib_decisoes (matricula_id, protocolo_cnib, pessoa_nome,
+                           pessoa_documento, decisao, motivo, decidido_por, decidido_em)
+                       VALUES (?, 'NOVA-1', 'NOVA DEVEDORA', '00077777777', 'NAO_E_A_PESSOA',
+                               'teste', 'mario', '2026-11-26T08:00')""", (mid,))
+    assert AP.verificar_cnib(_ctx(casa, 0, base))["situacao"] == SCH.OK
+
+
+def test_caso_novo_so_por_nome_tambem_abre_tarefa(casa):
+    _cenario(casa)
+    base = AP.verificar_cnib(_ctx(casa, 0))["estado"]
+    _caso_novo(casa, dona=False)
+    r = AP.verificar_cnib(_ctx(casa, 0, base))
+    assert r["situacao"] == SCH.AVISO
+    assert "1 caso(s) novo(s)" in r["relato"] and "0 averbação(ões) devida(s) e 1 aviso(s)" in r["relato"]
 
 
 def test_a_rotina_com_pode_agir_prepara_a_minuta(casa):
@@ -177,11 +221,8 @@ def test_a_rotina_com_pode_agir_prepara_a_minuta(casa):
     assert "1 com minuta pronta" in r["relato"]
 
 
-def test_so_avisos_e_ok(casa):
-    con = _con(casa)
-    with con:
-        _ordem(con, nome="JOAO HOMONIMO DA SILVA", documento="00099999999", protocolo="NOME-1")
-        _matricula(con, numero="20", partes=[("JOAO HOMONIMO DA SILVA", None, "proprietario", 1)])
+def test_sem_nada_pendente_e_ok(casa):
     r = AP.verificar_cnib(_ctx(casa, 0))
-    assert r["situacao"] == SCH.OK
-    assert "1 ocorrência(s) ficam só como aviso" in r["relato"]
+    assert r["situacao"] == SCH.OK and r["estado"]["conhecidos"] == []
+    _caso_novo(casa)
+    assert AP.verificar_cnib(_ctx(casa, 0, r["estado"]))["situacao"] == SCH.AVISO

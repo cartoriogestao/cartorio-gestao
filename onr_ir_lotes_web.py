@@ -38,7 +38,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             "onr_ir_lotes.html", r=resultado, f=filtros or {"classes": [LOTES.PRONTA], "limite": LOTES.LOTE_PADRAO},
             historico=historico, eventos=eventos, entregues=entregues, faltam=faltam,
             nome_classe=LOTES.NOME_DA_CLASSE, nome_situacao=LOTES.NOME_DA_SITUACAO, transicoes=LOTES.TRANSICOES,
-            lote_maximo=LOTES.LOTE_MAXIMO, limite_tela=LINHAS_NA_TELA, DESCARTADO=LOTES.DESCARTADO)
+            lote_maximo=LOTES.LOTE_MAXIMO, limite_tela=LINHAS_NA_TELA, DESCARTADO=LOTES.DESCARTADO,
+            situacoes_externo=LOTES.SITUACOES_DO_EXTERNO)
 
     @app.route("/registro-imoveis/onr/indicador-real/lotes")
     @login_required
@@ -76,6 +77,30 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             "recusadas": feito["recusadas"], "filtros": {k: filtros[k] for k in filtros}})
         flash(f"Lote {feito['id']} gerado com {feito['registros']} matrícula(s). Nada foi enviado: baixe o "
               "arquivo e importe no Ofício Eletrônico.", "ok")
+        return redirect(url_for("onr_ir_lotes"))
+
+    @app.route("/registro-imoveis/onr/indicador-real/lotes/registrar-arquivo", methods=["POST"])
+    @login_required
+    @roles_required(*QUEM_ENTRA)
+    def onr_ir_lotes_registrar_arquivo():
+        """Um arquivo JÁ IMPORTADO no portal, gerado fora desta tela, entra no histórico."""
+        enviado = request.files.get("arquivo")
+        conteudo = enviado.read(LOTES.MAIOR_ARQUIVO_EXTERNO + 1) if enviado else b""
+        situacao = (request.form.get("situacao") or "").strip()
+        try:
+            with db.transaction() as con:
+                feito = LOTES.registrar_arquivo_externo(
+                    con, conteudo=conteudo, nome=enviado.filename if enviado else "", situacao=situacao,
+                    visto_em=request.form.get("visto_em"), observacao=request.form.get("observacao"),
+                    settings=_settings(con), por=usuario_nome(), agora=db.now())
+        except LOTES.LoteError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("onr_ir_lotes"))
+        audit("RI_ONR_LOTE_EXTERNO", "RI_ONR", feito["id"], {
+            "arquivo": feito["arquivo"], "sha256": feito["sha256"], "registros": feito["registros"],
+            "situacao": situacao, "visto_em": request.form.get("visto_em")})
+        flash(f"Lote {feito['id']}: o arquivo com {feito['registros']} matrícula(s) entrou no histórico como "
+              f"«{LOTES.NOME_DA_SITUACAO[situacao]}». Nada foi enviado.", "ok")
         return redirect(url_for("onr_ir_lotes"))
 
     @app.route("/registro-imoveis/onr/indicador-real/lotes/<int:lote_id>/arquivo")

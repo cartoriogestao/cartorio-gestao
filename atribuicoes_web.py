@@ -8860,9 +8860,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         """Os nascimentos de indigena que a FUNAI ainda nao recebeu. SÓ LÊ."""
         with db.connect() as con:
             hoje = db.now()[:10]
-            esperando = FUNAI.pendentes(con, hoje=hoje)
+            todos = FUNAI.pendentes(con, hoje=hoje, limite=None)
             historico = FUNAI.historico(con)
-        return render_template("rcpn_funai.html", esperando=esperando,
+        return render_template("rcpn_funai.html",
+                               esperando=[x for x in todos if x["ato_novo"]],
+                               acervo=[x for x in todos if not x["ato_novo"]],
                                historico=historico, norma=FUNAI, hoje=hoje)
 
     @app.route("/rcpn/funai/<int:assento_id>", methods=["GET", "POST"])

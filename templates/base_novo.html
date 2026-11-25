@@ -251,10 +251,11 @@
   </div>
 
   <aside class="cg-apoio" aria-label="Ferramentas de apoio">
+    {# o superusuário logo acima do WhatsApp: pedido do titular (24/11/2026, S005) #}
+    {% include '_superusuario_atalho.html' %}
     {% include '_whatsapp_atalho.html' %}
     {% include '_produtividade_rapida.html' %}
     {% if ajuda_tela %}{% include '_ajuda.html' %}{% endif %}
-    {% include '_superusuario_atalho.html' %}
   </aside>
 
   {# A JANELA DE PENDÊNCIAS ABRE SOZINHA também aqui (decisão do oficial, 01/11/2026): o aviso

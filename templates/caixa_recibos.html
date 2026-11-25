@@ -19,7 +19,9 @@
       <th style="text-align:right">Valor</th><th></th></tr></thead>
     <tbody>{% for r in rows %}
       <tr {% if r.cancelado %}class="pendente"{% endif %}>
-        <td>{{ r.numero }}/{{ r.ano }}{% if r.cancelado %}<br><span class="badge alta">cancelado</span>{% endif %}</td>
+        <td>{{ r.numero }}/{{ r.ano }}{% if r.cancelado %}<br><span class="badge alta">cancelado</span>{% endif %}
+          {# P1 (23/11/2026): o recibo que nasceu sem os dados da nota fica à vista. #}
+          {% if r.nfse_sem_condicao and not r.cancelado and not (r.nfse_numero or r.nfse_chave) %}<br><span class="badge alta" title="{{ r.nfse_sem_condicao }}">sem condição de gerar nota</span>{% endif %}</td>
         <td class="small">{{ fmt_date(r.data_emissao) }}</td>
         <td class="small">{{ r.pagador }}</td>
         <td class="small">{{ r.protocolo_numero or '—' }}</td>

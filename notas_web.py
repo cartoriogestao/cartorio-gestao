@@ -6056,24 +6056,41 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         "partes.qualidade": "escolha a qualificação no quadro «Partes»",
         "partes.numeroDocumento": "corrija o CPF/CNPJ no cartão da parte",
         "partes.documento": "corrija o CPF/CNPJ no cartão da parte",
+        "partes.oab": "informe OAB nº e UF no quadro «Partes»",
+        "partes.dataNascimento": "complete nascimento no quadro «Partes»",
+        "partes.sexo": "informe o sexo no quadro «Partes»",
+        "partes.localResidenciaMunicipio": "informe cidade e UF de residência no quadro «Partes»",
+        "dataCasamento": "preencha a data no quadro «Para a CESDI»",
+        "regimeBens": "preencha o regime de bens no quadro «Para a CESDI»",
+        "responsavel": "informe o responsável pelos menores no quadro «Para a CESDI»",
         "valor": "informe o valor em Notas → Escrituras pendentes",
         "naturezaEscritura": "escolha a natureza em Notas → Escrituras pendentes",
     }
 
-    def _aviso_do_autor_da_heranca(a: dict, partes: list) -> str | None:
-        """Frase para a tela e a montagem do teor — vazio se o inventário já tem falecido."""
-        preparados = []
-        for p in partes:
-            linha = dict(p)
-            if not linha.get("qualidade_cesdi"):
-                linha["qualidade_cesdi"] = NC.qualidade_cesdi_da_qualificacao(
-                    linha.get("qualificacao"))
-            preparados.append(linha)
-        imps = NC.impedimentos_do_autor_da_heranca(dict(a), preparados)
-        if not imps:
-            return None
-        onde = _ONDE_CORRIGIR.get(imps[0].campo, "quadro «Partes»")
-        return f"{imps[0].motivo} — {onde}"
+    def _avisos_cesdi_antes_de_lavrar(ato_id: int) -> list[str]:
+        """Frases da CESDI e do autor da herança para o flash da montagem do teor.
+
+        Lê o ato de novo: a montagem acabou de gravar a data do casamento e o regime que a minuta
+        pergunta, e o dict lido antes dela os dava em branco — o aviso acusava o que já estava lá.
+        """
+        a = q1("SELECT * FROM nt_atos WHERE id=%s", (ato_id,))
+        if not a:
+            return []
+        a = dict(a)
+        sucessao = NC.ato_exige_autor_da_heranca(a)
+        if a.get("tipo_cesdi") is None and not sucessao:
+            return []
+        with db.connect() as con:
+            partes = NC._partes_do_ato(con, ato_id)
+        imps = list(NC.impedimentos_do_autor_da_heranca(a, partes)) if sucessao else []
+        if a.get("tipo_cesdi") is not None:
+            imps += [p for p in NC.impedimentos_cesdi_corrigiveis(a, partes)
+                     if not (sucessao and (p.motivo or "").endswith("exige uma parte Falecido"))]
+        saida = []
+        for imp in imps[:4]:
+            onde = _ONDE_CORRIGIR.get(imp.campo)
+            saida.append(imp.motivo + (f" — {onde}" if onde else ""))
+        return saida
 
     def _pendencias_do_teor(teor: str) -> list[str]:
         """Campo em branco do teor: `[CAMPO]`, `{ESCOLHA}` e a fileira de X.
@@ -6319,9 +6336,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   + "; ".join(faltas[:3]), "warning")
         else:
             flash("Teor montado com a qualificação das partes.", "success")
-        falta_falecido = _aviso_do_autor_da_heranca(a, partes)
-        if falta_falecido:
-            flash(f"Teor montado, mas {falta_falecido}", "warning")
+        for aviso in _avisos_cesdi_antes_de_lavrar(ato_id):
+            flash(f"Teor montado, mas {aviso}", "warning")
         return redirect(url_for("notas_ato", ato_id=ato_id))
 
     @app.route("/notas/atos/<int:ato_id>/selar-arquivamento", methods=["POST"])
@@ -6471,9 +6487,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   f"{', '.join(faltam[:6])}", "warning")
         else:
             flash("Teor montado a partir do modelo.", "success")
-        falta_falecido = _aviso_do_autor_da_heranca(a, partes)
-        if falta_falecido:
-            flash(f"Teor montado, mas {falta_falecido}", "warning")
+        for aviso in _avisos_cesdi_antes_de_lavrar(ato_id):
+            flash(f"Teor montado, mas {aviso}", "warning")
         return redirect(url_for("notas_ato", ato_id=ato_id))
 
     @app.route("/notas/atos/<int:ato_id>/traslado")

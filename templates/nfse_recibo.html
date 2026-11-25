@@ -28,6 +28,13 @@
 </section>
 {% endif %}
 
+{% if item.configuracao_pendente and papel == 'ADMIN' %}
+<section class="panel">
+  <h2>Pendência de configuração: ISS</h2>
+  <ul>{% for p in item.configuracao_pendente %}<li>{{ p }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
 <section class="panel">
   <h2>Tomador</h2>
   <p>{{ t.nome or 'sem nome' }} · {{ mascarar(t.documento) or 'sem CPF/CNPJ' }}

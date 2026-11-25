@@ -197,7 +197,7 @@
     <nav>
       <div class="nav-grupo">Atalhos</div>
       <a class="nav-inicio{% if aqui == 'dashboard' %} atual{% endif %}" href="{{ url_for('dashboard') }}">Visão geral</a>
-      {% if user.role == 'ADMIN' %}
+      {% if user.role in ['ADMIN','MANAGER'] %}
       <a class="nav-inicio{% if aqui and aqui.startswith('dev_projetos') %} atual{% endif %}" href="{{ url_for('dev_projetos_lista') }}">Projetos</a>
       {% endif %}
 

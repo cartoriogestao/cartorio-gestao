@@ -82,6 +82,11 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("Treinamento", "tr_inicio", termos="aprender aula escrevente"),
              _i("Primeiro dia", "tr_trilha", trilha="primeiro-dia"),
              _i("Aprendizagem da equipe", "tr_equipe", AM),)),
+         # PROJETOS SAIU DE GESTÃO › CONFIGURAÇÕES (24/11/2026), por decisão do oficial:
+         # só mudou de lugar. O endereço `/desenvolvimento/projetos` é o mesmo; o
+         # gerente passou a entrar junto com o administrador.
+         ("Projetos", (
+             _i("Projetos", "dev_projetos_lista", AM, termos="desenvolvimento andamento"),)),
      )},
     {"chave": "NOTAS", "curto": "Notas", "nome": "Tabelionato de Notas", "cor": "NOTAS",
      "icone": "pena", "lavra": True, "secoes": (
@@ -451,8 +456,7 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("Corrigir dado do acervo", "acervo_corrigir", A),
              _i("Painel no celular", "painel_celular", A),
              _i("Apostila de Haia", "apostila_lista", quando="apostila_visivel"),
-             _i("Apostila de Haia (desligada)", "apostila_configuracao", A, quando="apostila_escondida"),
-             _i("Projetos", "dev_projetos_lista", A),)),
+             _i("Apostila de Haia (desligada)", "apostila_configuracao", A, quando="apostila_escondida"),)),
          ("Modelos da casa", (
              _i("Modelos dos documentos", "modelos", AMU),)),
          ("Atualizações", (
@@ -698,7 +702,7 @@ PAI: dict[str, tuple[str, str]] = {
     "gestor_ia": ("GESTAO", "Configurações"),
     "ri_qualificacao_ia_configuracao": ("GESTAO", "Configurações"),
     "asset_detail": ("GESTAO", "Configurações"),
-    "dev_projetos_detalhe": ("GESTAO", "Configurações"),
+    "dev_projetos_detalhe": ("TRABALHO", "Projetos"),
     "centrais_status": ("GESTAO", "Envios às Centrais"),
     "correcoes_de_oficio_ficha": ("GESTAO", "Erros e correções"),
     "correcoes_de_oficio_propor": ("GESTAO", "Erros e correções"),

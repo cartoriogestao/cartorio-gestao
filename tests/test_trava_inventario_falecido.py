@@ -154,7 +154,8 @@ def test_qualidade_sem_de_para_no_inventario_trava(monkeypatch):
     ]
     monkeypatch.setattr(NC, "_partes_do_ato", lambda con, ato_id: partes)
     imps = NC.impedimentos_para_lavrar(None, ato)
-    assert any("não vale" in i.motivo for i in imps)
+    # com as travas extras da CESDI (#497), a qualidade sem de-para sai com a sugestão
+    assert any("COMPRADOR" in i.motivo and "sugestão" in i.motivo for i in imps)
 
 
 def test_cep_nao_muda(monkeypatch):
@@ -187,6 +188,9 @@ def test_inventario_com_autor_da_heranca_lavra(serventia):
     aid = _abrir_inventario(serventia)
     _parte(serventia, aid, "JOSE EXEMPLO DOS SANTOS", "AUTOR DA HERANÇA", CPF_OK)
     _parte(serventia, aid, "ANA EXEMPLO HERDEIRA", "HERDEIRA", CPF_OK)
+    # o inventário também pede o advogado com a OAB (travas extras da CESDI, #497)
+    adv = _parte(serventia, aid, "CARLOS EXEMPLO ADVOGADO", "ADVOGADO", CPF_OK)
+    _sql(serventia, "UPDATE nt_ato_partes SET oab_numero='00000', oab_uf='MA' WHERE id=?", (adv,))
     _postar(serventia, aid, acao="teor", teor="<p>escritura de inventario exemplo</p>")
     _postar(serventia, aid, acao="lancar")
     a = _ato(serventia, aid)

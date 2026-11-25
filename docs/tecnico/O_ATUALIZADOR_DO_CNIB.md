@@ -83,6 +83,9 @@ em 18/09/2026:
    **atividade**: uma janela de junho/2026 devolveu ordem com `datapedido` de
    2012, porque o que se moveu foi o cancelamento. Quem responde «até quando
    esta cópia vale» é `ri_cnib_leituras`.
+   **Ressalva de 23/11/2026:** uma leitura `VAZIA` não prova que a cópia vale.
+   O achado `CNIB_PARADO` agora mede a ordem mais nova e as leituras vazias
+   seguidas (`gestor_conferencia.regra_cnib_parado`).
 
 ---
 

@@ -477,10 +477,34 @@ def ligar_ao_protocolo(b, ato_id: int, protocolo: dict) -> None:
                 and "protocolo" in f.lower()], _flashes(html)
 
 
+# O QUE A CESDI PEDE DE CADA CÔNJUGE do divórcio e da separação — o nascimento, o sexo e o
+# município (item 14 do ensaio de atos das Notas, 03/11/2026). Trava a lavratura desde as travas
+# extras da CESDI (23/11/2026).
+MULHERES = ("JOANA", "ANA", "LUCIA")
+
+
+def _dados_da_cesdi(nome: str) -> dict:
+    return {"nascimento_data": "1980-01-01",
+            "sexo_parte": "F" if nome.split()[0] in MULHERES else "M",
+            "cidade": "Cidade Exemplo", "uf": "MA"}
+
+
+def _municipio_de_exemplo(b) -> None:
+    """A cidade das partes no cadastro do IBGE, como a serventia de verdade tem (a CESDI o pede)."""
+    import ibge_schema as IB
+    with b["db"].transaction() as con:
+        banco(con).escrever(
+            "INSERT INTO ib_municipios (codigo_ibge, codigo_uf, codigo_mun, uf, nome, nome_norm, origem) "
+            "VALUES (2199999, 21, '99999', 'MA', 'Cidade Exemplo', %s, 'TESTE') ON CONFLICT DO NOTHING",
+            (IB.normalizar_nome("Cidade Exemplo"),))
+
+
 def incluir_parte(b, ato_id: int, nome: str, qualificacao: str, *,
-                  testemunha: bool = False) -> None:
+                  testemunha: bool = False, cesdi: bool = False) -> None:
     dados = {"acao": "parte_nova", "nome": nome, "documento": PESSOAS[nome],
              "qualificacao": qualificacao, **QUALIFICACAO_DA_PESSOA}
+    if cesdi:
+        dados |= _dados_da_cesdi(nome)
     if qualificacao.upper().startswith("ADVOGAD"):
         dados |= {"oab_numero": "00000", "oab_uf": "MA"}
     if testemunha:
@@ -648,7 +672,11 @@ def _conferir_termo(b, a: dict, caso, texto: str, odt: bytes) -> None:
           "a data por extenso (CN-MA art. 795, § 4º; art. 798, I)")
     exige(CIDADE in texto, "o local do ato (CN-MA art. 798, I)")
     exige(ESCREVENTE in texto, "quem lavrou (CN-MA art. 798, XIII)")
-    for nome, _qualificacao, testemunha in caso.partes:
+    # O autor da herança é parte para a CESDI, mas não comparece nem assina: a
+    # minuta o qualifica no parágrafo dela (`notas_teor.FALECIDO`, 03/11/2026).
+    comparecentes = [p for p in caso.partes
+                     if not p[1].upper().startswith("AUTOR DA HERAN")]
+    for nome, _qualificacao, testemunha in comparecentes:
         exige(nome in texto, f"a parte {nome} (CN-MA art. 798, V)")
         if not testemunha:
             exige(_sem_acento(PESSOAS[nome]).replace(".", "").replace("-", "")
@@ -661,7 +689,7 @@ def _conferir_termo(b, a: dict, caso, texto: str, odt: bytes) -> None:
     exige(re.search(r"encerr|dou fé", texto, re.I) is not None,
           "o encerramento (CN-MA art. 798, XII)")
     linhas = texto.count("_________________________________")
-    exige(linhas >= len(caso.partes) + 1,
+    exige(linhas >= len(comparecentes) + 1,
           f"uma linha de assinatura por comparecente e a de quem lavrou "
           f"(CN-MA art. 798, XIII): {linhas}")
     exige(a["selo"] in texto, "o número do selo no corpo do ato (CN-MA art. 131)")
@@ -765,8 +793,11 @@ def preparar_o_ato(b, caso, protocolo: dict, *,
     ato_id = abrir_o_ato(b, caso.minuta, interessado=caso.partes[0][0])
     assert ato(b, ato_id)["tipo"] == caso.tipo
     ligar_ao_protocolo(b, ato_id, protocolo)
+    if caso.cesdi:
+        _municipio_de_exemplo(b)
     for nome, qualificacao, testemunha in caso.partes:
-        incluir_parte(b, ato_id, nome, qualificacao, testemunha=testemunha)
+        incluir_parte(b, ato_id, nome, qualificacao, testemunha=testemunha,
+                      cesdi=bool(caso.cesdi))
     # O ADVOGADO É PARTE DO QUADRO, COM A OAB, desde 03/11/2026 (ensaio de atos das Notas, item 5): a
     # minuta que o assiste o lê de lá (`{{ advogados }}`), e sem ele o teor fica marcado.
     corpo = _um(b, "SELECT corpo FROM nt_modelos WHERE codigo = %s", (caso.minuta,))["corpo"]
@@ -779,6 +810,10 @@ def preparar_o_ato(b, caso, protocolo: dict, *,
         arquivar_o_documento(b, ato_id, protocolo)
     preencher_pelo_modelo(b, ato_id, caso.minuta,
                           aceita_pendencia=aceita_pendencia)
+    if caso.cesdi:
+        # o quadro «Para a CESDI», antes de lavrar: o divórcio sem ele não vai ao livro
+        _postar(b, f"/notas/atos/{ato_id}", {"acao": "cesdi", **caso.cesdi},
+                de=f"/notas/atos/{ato_id}")
     return ato_id
 
 
@@ -797,8 +832,9 @@ class Caso:
     """Um tipo de ato de livro: a minuta de fábrica e o que o balcão informa."""
 
     def __init__(self, minuta, tipo, partes, *, valor=None, item="13.2",
-                 especie=None, marcas=()):
+                 especie=None, marcas=(), cesdi=None):
         self.minuta, self.tipo, self.partes = minuta, tipo, partes
+        self.cesdi = cesdi
         self.valor, self.item, self.especie = valor, item, especie
         self.marcas = marcas
         import notas_arquivamento as NARQ
@@ -813,6 +849,24 @@ COMPRA = ("JOANA EXEMPLO DA SILVA", "OUTORGADO", False)
 SEGUNDA = ("JOANA EXEMPLO DA SILVA", "OUTORGANTE", False)
 TESTEMUNHAS = [("PAULO EXEMPLO TESTEMUNHA", "TESTEMUNHA", True),
                ("LUCIA EXEMPLO TESTEMUNHA", "TESTEMUNHA", True)]
+# A sucessão não lavra sem o autor da herança (pedido do oficial, 23/11/2026),
+# e a CESDI não aceita OUTORGANTE no inventário: o balcão qualifica quem herda,
+# quem deixou a herança e o advogado que assiste (Res. CNJ 35, art. 8º).
+HERDEIRA = ("ANA EXEMPLO HERDEIRA", "HERDEIRA", False)
+FALECIDO = ("MARIO EXEMPLO DOS SANTOS", "AUTOR DA HERANÇA", False)
+ADVOGADO = ("CARLOS EXEMPLO ADVOGADO", "ADVOGADO", False)
+INVENTARIANTE = ("ANA EXEMPLO HERDEIRA", "INVENTARIANTE", False)
+SUCESSAO = [HERDEIRA, FALECIDO, ADVOGADO]
+# O divórcio e a separação: os cônjuges com a qualidade da CESDI, o advogado, e o quadro «Para a
+# CESDI» com a data do casamento, o regime e quem fica com os menores (travas extras, 23/11/2026).
+def _casal(qualidade: str) -> list:
+    return [("MARIO EXEMPLO DOS SANTOS", qualidade, False),
+            ("JOANA EXEMPLO DA SILVA", qualidade, False), ADVOGADO]
+
+
+QUADRO_CESDI = {"casamento_data": "2000-05-10", "regime_bens": "comunhão parcial de bens",
+                "filhos_menores": "0", "filhos_maiores": "0",
+                "responsavel_menores": "SemDeclaracao"}
 CEM_MIL = 10_000_000          # R$ 100.000,00, em centavos
 
 
@@ -831,14 +885,18 @@ CASOS_DE_LIVRO = [
                 "NT-ESC-USUFRUTO")],
     Caso("NT-ESC-PERMUTA", "ESCRITURA", [VENDE, SEGUNDA], valor=CEM_MIL,
          item="FAIXA"),
-    *[Caso(m, "ESCRITURA", [VENDE, SEGUNDA], valor=CEM_MIL, item="FAIXA")
+    *[Caso(m, "ESCRITURA", SUCESSAO, valor=CEM_MIL, item="FAIXA")
       for m in ("NT-ESC-INVENTARIO-PARTILHA", "NT-ESC-SOBREPARTILHA",
                 "NT-ESC-PARTILHA-ADJUDICACAO")],
     # Escrituras sem valor econômico: 13.2.
+    Caso("NT-ESC-NOMEACAO-INVENTARIANTE", "ESCRITURA",
+         [INVENTARIANTE, FALECIDO, ADVOGADO], valor=0),
+    *[Caso(m, "ESCRITURA", _casal(q), valor=0, cesdi=QUADRO_CESDI)
+      for m, q in (("NT-ESC-DIVORCIO", "DIVORCIANDO(A)"), ("NT-ESC-SEPARACAO", "SEPARANDO(A)"),
+                   ("NT-ESC-CONVERSAO-DIVORCIO", "DIVORCIANDO(A)"))],
+    Caso("NT-ESC-RESTABELECIMENTO", "ESCRITURA", _casal("RECONCILIANDO(A)"), valor=0),
     *[Caso(m, "ESCRITURA", [VENDE, SEGUNDA], valor=0)
-      for m in ("NT-ESC-NOMEACAO-INVENTARIANTE", "NT-ESC-DIVORCIO",
-                "NT-ESC-SEPARACAO", "NT-ESC-CONVERSAO-DIVORCIO",
-                "NT-ESC-RESTABELECIMENTO", "NT-ESC-UNIAO-ESTAVEL",
+      for m in ("NT-ESC-UNIAO-ESTAVEL",
                 "NT-ESC-DISSOLUCAO-UNIAO-ESTAVEL", "NT-ESC-QUITACAO",
                 "NT-ESC-DISTRATO", "NT-ESC-PACTO-ANTENUPCIAL")],
     Caso("NT-ESC-EMANCIPACAO", "ESCRITURA", [VENDE, COMPRA], valor=0),

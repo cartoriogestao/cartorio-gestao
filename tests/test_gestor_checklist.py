@@ -196,7 +196,8 @@ def test_todo_item_tem_rota_e_codigo_unico():
     rotulos = {r for _, r, *_ in CK.CONFERENCIAS}
     assert {"Envios às Centrais", "Automação", "Robôs", "Leitura dos textos (IA)",
             "Caixas para o visto", "Selos cancelados", "Gratuidades",
-            "Problemas do sistema", "Correções de ofício", "Avisos", "Tarefas"} == rotulos
+            "Problemas do sistema", "Correções de ofício", "Avisos", "Tarefas",
+            "Painel de conformidade do ONR"} == rotulos
 
 
 # ------------------------------------------------------------ a tela

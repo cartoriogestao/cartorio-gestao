@@ -539,6 +539,21 @@ def test_fluxo_com_triagem_retorna_pendencia_e_retoma_sem_novo_documento(tmp_pat
     assert chamadas == [{'somente_malote': True}]
 
 
+def test_relato_da_rodada_conta_o_obito_marcado_sem_erro(tmp_path, monkeypatch, arquivos):
+    import malote_fluxo as FL
+    import malote_agente as MA
+    cofre = CofreNaMemoria({MR.CREDENCIAL: {'usuario': '00011122233', 'senha': 'segredo'}})
+    cofre.instalar(monkeypatch)
+    monkeypatch.setattr(FL, 'conferir_distribuicao', lambda con: {})
+    monkeypatch.setattr(MA, 'medir', lambda *a: {'cadastrados': 0, 'grupos': [], 'erros': []})
+    ctx = _ctx(tmp_path)
+    ctx.processo['parametros'] = {'triar_recebidos': True}
+    triagem = lambda *a, **kw: {'triados': 1, 'tarefas': 0, 'obitos': 1, 'pendentes': 0}
+    r = MR.ciencia_diaria(ctx, cliente=MR.ClienteMalote(MaloteFalso({})), triar=triagem)
+    assert r['situacao'] == 'OK'
+    assert '1 comunicação(ões) de óbito' in r['relato'] and 'acervo RCPN' in r['relato']
+
+
 def test_distribuicao_incompleta_para_antes_da_ciencia(tmp_path, monkeypatch, arquivos):
     import malote_fluxo as FL
     cofre = CofreNaMemoria({MR.CREDENCIAL: {'usuario': '00011122233', 'senha': 'segredo'}})

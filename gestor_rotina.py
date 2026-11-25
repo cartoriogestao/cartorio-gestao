@@ -466,16 +466,27 @@ def gravar_achados(con, achados: list[dict],
     # da auditoria do Protesto): o achado `NAO_MEDIU` diz o que segura
     # (`GC.segura`), e o aberto que casa com isso fica aberto.
     padroes = GC.padroes_segurados(achados)
+    sumiram = [r for r in bd.ler(
+        "SELECT id, chave, regra FROM ge_achados WHERE resolvido_em IS NULL "
+        "ORDER BY id") if r["chave"] not in vistos]
+    # A FUNAI SÓ FECHA COM CAUSA: envio, dispensa, cancelamento ou correção do
+    # assento. Item que apenas saiu da lista (teto, regra quebrada) segue aberto;
+    # sem medir, também — não se prova que foi comunicado.
+    da_funai = [r for r in sumiram if r["regra"] == "FUNAI"
+                and r["chave"].startswith(GC.PREFIXO_ACHADO_FUNAI)]
+    devidas = GC.chaves_funai_devidas(con, hoje) if da_funai else set()
+    seguem = {r["id"] for r in da_funai
+              if devidas is None or r["chave"] in devidas}
     resolvidos = segurados = 0
-    for r in bd.ler("SELECT id, chave, regra FROM ge_achados WHERE resolvido_em IS NULL "
-                    "ORDER BY id"):
-        if r["chave"] not in vistos:
-            if GC.esta_segurado(padroes, r["regra"], r["chave"]):
-                segurados += 1
-                continue
-            resolvidos += 1
-            bd.escrever("UPDATE ge_achados SET resolvido_em=%s WHERE id=%s",
-                        (agora, r["id"]))
+    for r in sumiram:
+        if GC.esta_segurado(padroes, r["regra"], r["chave"]):
+            segurados += 1
+            continue
+        if r["id"] in seguem:
+            continue
+        resolvidos += 1
+        bd.escrever("UPDATE ge_achados SET resolvido_em=%s WHERE id=%s",
+                    (agora, r["id"]))
     return {"novos": novos, "resolvidos": resolvidos, "segurados": segurados}
 
 
@@ -836,6 +847,12 @@ def despacho_do_oficial(con, hoje: date, resumo: dict,
     linhas.append(f"3. MALOTE PARA CIÊNCIA ({len(ciencia)}) — o agente leu; nada pedem à casa")
     for c in ciencia[:20]:
         linhas.append(f"   {c['protocolo'] or '#' + str(c['id'])}: {c['resumo'] or c['assunto']}")
+    obitos = GX.para_verificar_obito(con)
+    if obitos:
+        linhas.append(f"   VERIFICAR NO ACERVO RCPN ({len(obitos)}) — comunicação de óbito de "
+                      "outra serventia, sem tarefa; se a pessoa estiver aqui, avisar o oficial")
+        for c in obitos[:20]:
+            linhas.append(f"   {c['protocolo'] or '#' + str(c['id'])}: {c['resumo'] or c['assunto']}")
     linhas.append("")
     linhas.append("4. A EQUIPE — tarefas abertas e vencidas de cada um")
     for r in bd.ler(

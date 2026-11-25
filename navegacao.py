@@ -21,6 +21,7 @@ import unicodedata
 from typing import Any, Callable
 
 from modulos import POR_CHAVE, clarear, modulo_da_tela
+import papeis as PAP
 
 TODOS: tuple[str, ...] | None = None
 AMU = ("ADMIN", "MANAGER", "USER")
@@ -81,6 +82,11 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("Treinamento", "tr_inicio", termos="aprender aula escrevente"),
              _i("Primeiro dia", "tr_trilha", trilha="primeiro-dia"),
              _i("Aprendizagem da equipe", "tr_equipe", AM),)),
+         # PROJETOS SAIU DE GESTÃO › CONFIGURAÇÕES (24/11/2026), por decisão do oficial:
+         # só mudou de lugar. O endereço `/desenvolvimento/projetos` é o mesmo; o
+         # gerente passou a entrar junto com o administrador.
+         ("Projetos", (
+             _i("Projetos", "dev_projetos_lista", AM, termos="desenvolvimento andamento"),)),
      )},
     {"chave": "NOTAS", "curto": "Notas", "nome": "Tabelionato de Notas", "cor": "NOTAS",
      "icone": "pena", "lavra": True, "secoes": (
@@ -128,7 +134,10 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
      "icone": "predio", "lavra": True, "secoes": (
          ("Protocolo", (
              _i("Prenotação RI - Livro 1", "ri_protocolo", antigo="Protocolo / prenotação", termos="prenotar titulo exigencia"),
-             _i("Pedidos em andamento", "ri_pedidos"),)),
+             _i("Pedidos em andamento", "ri_pedidos"),
+             _i("ONR: e-Protocolo (títulos remetidos)", "onr_eprotocolo", QUATRO,
+                antigo="ONR — e-Protocolo (títulos remetidos)",
+                termos="eprotocolo titulo eletronico remessa central"),)),
          ("Matrículas", (
              _i("Matrículas", "ri_matriculas", termos="ficha imovel"),)),
          ("Certidões", (
@@ -153,11 +162,14 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("Modelos", "livro3_modelos", antigo="Livro 3 — modelos (ficha e certidão)"),)),
          ("Consulta", (
              _i("Indicador Real", "ri_indicador_real"),
-             _i("Indicador Pessoal", "ri_indicador_pessoal"),)),
+             _i("Indicador Pessoal", "ri_indicador_pessoal"),
+             _i("Georreferenciamento a conferir", "ri_georref_pendentes", antigo="Georreferenciamento — a conferir",
+                termos="mosaico sigri sig-ri poligono 343-f perimetro"),)),
          ("Centrais e obrigações", (
              _i("DOI", "ri_doi", AMA, antigo="DOI — Receita Federal", termos="receita federal declaracao"),
              _i("CTP", "ri_ctp", AMA, antigo="CTP — prefeituras", termos="prefeitura sefin"),
              _i("ONR: índice real e editais", "ri_onr_painel", antigo="ONR — índice real e editais"),
+             _i("ONR: painel de conformidade", "ri_onr_conformidade", AMA, antigo="ONR — painel de conformidade", termos="provimento 143 195 itn 003 adpf 743 cronograma corregedoria"),
              _i("ONR: endereços a conferir", "ri_onr_enderecos", AMU, antigo="ONR — endereços a conferir"),
              _i("Exportação ONR", "ri_onr", AM),
              _i("Indicador Real: o arquivo inteiro", "onr_ir", AM, antigo="Indicador Real — o arquivo inteiro", termos="xml acervo onr"),
@@ -449,8 +461,7 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("Corrigir dado do acervo", "acervo_corrigir", A),
              _i("Painel no celular", "painel_celular", A),
              _i("Apostila de Haia", "apostila_lista", quando="apostila_visivel"),
-             _i("Apostila de Haia (desligada)", "apostila_configuracao", A, quando="apostila_escondida"),
-             _i("Projetos", "dev_projetos_lista", A),)),
+             _i("Apostila de Haia (desligada)", "apostila_configuracao", A, quando="apostila_escondida"),)),
          ("Modelos da casa", (
              _i("Modelos dos documentos", "modelos", AMU),)),
          ("Atualizações", (
@@ -528,6 +539,7 @@ PAI: dict[str, tuple[str, str]] = {
     "onr_auto_fila": ("RI", "Certidões"),
     "onr_auto_pedido": ("RI", "Certidões"),
     "onr_certidao_ficha": ("RI", "Certidões"),
+    "onr_eprotocolo_ficha": ("RI", "Protocolo"),
     "onr_certidoes_certificado": ("RI", "Certidões"),
     "ri_retificacao": ("RI", "Processos longos"),
     "ri_intimacao": ("RI", "Processos longos"),
@@ -698,7 +710,7 @@ PAI: dict[str, tuple[str, str]] = {
     "gestor_ia": ("GESTAO", "Configurações"),
     "ri_qualificacao_ia_configuracao": ("GESTAO", "Configurações"),
     "asset_detail": ("GESTAO", "Configurações"),
-    "dev_projetos_detalhe": ("GESTAO", "Configurações"),
+    "dev_projetos_detalhe": ("TRABALHO", "Projetos"),
     "centrais_status": ("GESTAO", "Envios às Centrais"),
     "correcoes_de_oficio_ficha": ("GESTAO", "Erros e correções"),
     "correcoes_de_oficio_propor": ("GESTAO", "Erros e correções"),
@@ -831,7 +843,9 @@ def cor_do_modulo(modulo: dict) -> tuple[str, str]:
 
 def _ve(entrada: dict, papel: str, flags: dict) -> bool:
     papeis = entrada.get("papeis")
-    if papeis is not None and papel not in papeis:
+    # A REGRA CENTRAL (T015): o TI vê o que o ADMIN vê — `papeis.equivale_a`,
+    # e não «TI» escrito em cada tupla deste registro.
+    if papeis is not None and not PAP.equivale_a(papel, papeis):
         return False
     quando = entrada.get("quando")
     if quando and not flags.get(quando):

@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% block title %}e-Protocolo {{ p.protocolo or p.id_contrato }}{% endblock %}
+{% block heading %}<h1>e-Protocolo do ONR — {{ p.protocolo or ('contrato ' ~ p.id_contrato) }}</h1>{% endblock %}
+{% block content %}
+{% set nivel_badge = {'perigo': 'critica', 'atencao': 'alta', 'info': 'media'} %}
+<div class="actions"><a class="button" href="{{ url_for('onr_eprotocolo') }}">&larr; e-Protocolo do ONR</a></div>
+
+{% if alertas %}
+<section class="panel">
+  <h2>Avisos</h2>
+  <ul>{% for a in alertas %}<li><span class="badge {{ nivel_badge[a.nivel] }}">{{ a.tipo|replace('_', ' ')|lower }}</span> {{ a.texto }}
+    {% if a.pedido_id %}<a href="{{ url_for('onr_eprotocolo_ficha', pedido_id=a.pedido_id) }}">abrir</a>{% endif %}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>O título</h2>
+  <dl class="detail">
+    <dt>Contrato no ONR</dt><dd>{{ p.id_contrato }}</dd>
+    <dt>Protocolo</dt><dd>{{ p.protocolo or '—' }}{% if p.protocolo_origem %} <span class="small muted">(reenvio do {{ p.protocolo_origem }})</span>{% endif %}</dd>
+    <dt>Status no ONR</dt><dd>{{ rotulo_do_status(p.id_status) or '—' }} <span class="small muted">({{ p.situacao|replace('_', ' ')|lower }} aqui)</span></dd>
+    <dt>Remessa</dt><dd>{{ (p.data_remessa or '—')|replace('T', ' ') }}</dd>
+    <dt>Solicitação</dt><dd>{{ (p.data_solicitacao or '—')|replace('T', ' ') }}</dd>
+    <dt>Serviço</dt><dd>{{ p.tipo_servico and rotulo_do_tipo_servico(p.tipo_servico) or rotulo_do_tipo_servico(p.id_tipo_servico) or '—' }}</dd>
+    <dt>Documento</dt><dd>{{ p.tipo_documento or '—' }}</dd>
+    <dt>Solicitante</dt><dd>{{ p.solicitante or '—' }}{% if p.instituicao %} — {{ p.instituicao }}{% endif %}</dd>
+    <dt>Apresentante</dt><dd>{{ p.apresentante_nome or '—' }}{% if p.apresentante_documento %} ({{ p.apresentante_documento }}){% endif %}</dd>
+    <dt>Valor pago na Central</dt><dd>{{ p.valor_servico or '—' }}</dd>
+    <dt>Cobrança</dt><dd>{{ tipos_de_cobranca.get(p.tipo_cobranca, p.tipo_cobranca or '—') }}{% if p.tipo_isencao %} · isenção: {{ tipos_de_isencao.get(p.tipo_isencao, p.tipo_isencao) }}{% endif %}{% if p.fundamento_legal %} · {{ p.fundamento_legal }}{% endif %}</dd>
+    {% if p.prenotacao_numero or p.prenotacao_data %}
+    <dt>Prenotação (no ONR)</dt><dd>nº {{ p.prenotacao_numero or '—' }}, de {{ p.prenotacao_data or '—' }}, vence {{ p.prenotacao_vencimento or '—' }}</dd>
+    {% endif %}
+    {% if p.constricao_tipo or p.constricao_processo %}
+    <dt>Constrição</dt><dd>{{ p.constricao_tipo }} · processo {{ p.constricao_processo or '—' }} · {{ p.constricao_vara or '—' }} · valor {{ p.constricao_valor or '—' }}</dd>
+    {% endif %}
+    {% if p.url_mandado %}<dt>Mandado</dt><dd><a href="{{ p.url_mandado }}" target="_blank" rel="noopener noreferrer">arquivo no ONR</a></dd>{% endif %}
+    {% if p.url_gratuidade %}<dt>Despacho da gratuidade</dt><dd><a href="{{ p.url_gratuidade }}" target="_blank" rel="noopener noreferrer">arquivo no ONR</a></dd>{% endif %}
+    <dt>Extrato XML</dt><dd>{{ 'sim — gerado de extrato eletrônico (Prov. 228/2026)' if p.importacao_extrato else 'não' }}</dd>
+    <dt>Recebido aqui</dt><dd>{{ p.recebido_em[:16]|replace('T', ' ') }}{% if p.ficha_em %} · ficha lida em {{ p.ficha_em[:16]|replace('T', ' ') }}{% else %} · <span class="warning">ficha ainda não lida</span>{% endif %}</dd>
+    {% if p.erro_ficha %}<dt>Erro da ficha</dt><dd class="danger">{{ p.erro_ficha }}</dd>{% endif %}
+  </dl>
+</section>
+
+<section class="panel">
+  <h2>Imóveis</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Matrícula</th><th>No acervo</th><th>Endereço</th></tr></thead>
+    <tbody>{% for im in p.imoveis %}
+      <tr><td>{{ im.matricula_texto or '—' }}</td>
+        <td>{% if im.matricula_id %}<a href="{{ url_for('ri_ficha', matricula_id=im.matricula_id) }}">abrir a ficha</a>{% else %}<span class="muted">não achada</span>{% endif %}</td>
+        <td>{{ im.endereco or '—' }}</td></tr>
+    {% else %}<tr><td colspan="3">Nenhum imóvel na ficha{% if not p.ficha_lida %} (ficha ainda não lida){% endif %}.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+
+{% set partes = [] %}{% for chave, valor in p.dados.items() if chave.startswith('Partes/') and chave.endswith('/Nome') %}{% set _ = partes.append(chave[:-5]) %}{% endfor %}
+<section class="panel">
+  <h2>Partes</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Nome</th><th>CPF/CNPJ</th><th>Qualidade</th></tr></thead>
+    <tbody>{% for base in partes %}
+      <tr><td>{{ p.dados[base ~ '/Nome'] }}</td><td>{{ p.dados.get(base ~ '/CPFCNPJ', '') }}</td><td>{{ p.dados.get(base ~ '/Qualidade', '') }}</td></tr>
+    {% else %}<tr><td colspan="3">—</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+
+<section class="panel">
+  <h2>Anexos no ONR</h2>
+  <p class="small muted">O arquivo fica no ONR: esta etapa guarda o nome e o endereço, e não baixa nada.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Grupo</th><th>Nome</th><th>Descrição</th><th>Incluído em</th><th>Endereço</th></tr></thead>
+    <tbody>{% for a in p.anexos %}
+      <tr><td>{{ a.grupo|lower }}</td><td>{{ a.nome or '—' }}</td><td>{{ a.descricao or '—' }}</td><td>{{ a.data_inclusao or '—' }}</td>
+        <td>{% if a.url %}<a href="{{ a.url }}" target="_blank" rel="noopener noreferrer">abrir no ONR</a>{% else %}—{% endif %}</td></tr>
+    {% else %}<tr><td colspan="5">Nenhum anexo registrado.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+
+<section class="panel">
+  <details><summary>Tudo o que o ONR mandou ({{ p.dados|length }} campos)</summary>
+    <table>{% for chave, valor in p.dados.items() %}<tr><td class="small">{{ chave }}</td><td>{{ valor }}</td></tr>{% endfor %}</table>
+  </details>
+  <details><summary>O XML congelado</summary>
+    {% if p.xml_sha256 %}<p class="small muted">SHA-256 {{ p.xml_sha256 }}</p>{% endif %}
+    <pre style="white-space:pre-wrap">{{ p.xml_pedido or p.xml_lista }}</pre>
+  </details>
+</section>
+{% endblock %}

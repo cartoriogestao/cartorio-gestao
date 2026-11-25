@@ -1,6 +1,7 @@
 """A ficha de trabalho reúne fatos nativos; não cria outro protocolo legal."""
 from __future__ import annotations
 
+import papeis as PAP
 import hashlib
 import json
 from datetime import date
@@ -74,7 +75,7 @@ def assumir(con, pid, *, usuario_id, autor_id, agora, gerencia=False):
     if atual and int(atual["usuario_id"]) != int(autor_id) and not gerencia:
         raise FluxoError("Outro escrevente cuida deste pedido. Peça a redistribuição à gestão.")
     u = bd.um("SELECT id, role, active FROM users WHERE id=%s", (int(usuario_id),))
-    if not u or not u["active"] or u["role"] not in ("ADMIN", "MANAGER", "USER"):
+    if not u or not u["active"] or not PAP.equivale_a(u, "ADMIN", "MANAGER", "USER"):  # o TI segue o ADMIN (T015)
         raise FluxoError("Escolha um escrevente ativo autorizado a trabalhar.")
     bd.escrever("""INSERT INTO at_responsaveis
         (protocolo_id,usuario_id,assumido_em,iniciado_em,alterado_por) VALUES (%s,%s,%s,%s,%s)

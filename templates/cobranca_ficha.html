@@ -40,6 +40,11 @@
   {% if c.pix_copia_e_cola %}<p>Pix copia e cola: <code style="word-break:break-all">{{ c.pix_copia_e_cola }}</code></p>{% endif %}
   {% if c.valor_recebido %}<p>Recebido R$ {{ reais(c.valor_recebido) }} em {{ c.data_pagamento or '?' }} ({{ c.forma_recebida|lower or 'boleto' }}).</p>{% endif %}
   {% if c.deposito_id %}<p>Lançada no caixa: depósito prévio #{{ c.deposito_id }}.</p>{% endif %}
+  {# O PAGAMENTO QUE NÃO FECHA OS ITENS (F005): o valor fica no depósito, e a
+     ficha diz quanto falta, para o balcão receber o resto em outra forma. #}
+  {% if falta %}<p class="badge alta">parcial: falta R$ {{ reais(falta) }} para quitar os itens do protocolo
+    {%- if protocolo %} {{ protocolo.numero }}{% endif %}. Receba o resto como depósito prévio do
+    protocolo (dinheiro ou Pix) ou numa nova cobrança: o item quita quando a soma fechar.</p>{% endif %}
   {% if c.caixa_lancamentos and c.caixa_lancamentos != '[]' %}<p>Conciliada com os lançamentos de caixa já existentes: {{ c.caixa_lancamentos }}. Nenhuma entrada duplicada.</p>{% endif %}
 </div>
 

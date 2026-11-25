@@ -43,6 +43,13 @@
 {% endif %}
   <ul>{% for f in faltas %}<li>{{ f }}</li>{% endfor %}</ul>{% if layout_novo %}</div>{% else %}</section>{% endif %}
 {% endif %}
+{% if faltas_do_iss %}
+{% if layout_novo %}<div class="notice danger cg-nfse-aviso"><strong>Pendência de configuração: ISS</strong>{% else %}
+<section class="panel"><h2>Pendência de configuração: ISS</h2>
+{% endif %}
+  <p class="muted small">Não trava a emissão, mas deixa o ISS «—» na fila e na apuração.</p>
+  <ul>{% for f in faltas_do_iss %}<li>{{ f }}</li>{% endfor %}</ul>{% if layout_novo %}</div>{% else %}</section>{% endif %}
+{% endif %}
 {% if avisos %}
 {% if layout_novo %}<div class="notice cg-nfse-aviso"><strong>A conferir</strong>{% else %}
 <section class="panel"><h2>A conferir</h2>

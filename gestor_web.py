@@ -19,6 +19,7 @@ O QUE ELA NÃO FAZ
 """
 from __future__ import annotations
 
+import papeis as PAP
 import sqlite3
 
 from flask import flash, redirect, render_template, request, url_for
@@ -262,7 +263,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             with db.connect() as con:
                 papel = banco(con).um("SELECT role FROM users WHERE id = %s",
                                       (session.get("user_id"),))
-                if not papel or papel["role"] != "ADMIN":
+                if not papel or not PAP.equivale_a(papel, "ADMIN"):  # o TI segue o ADMIN (T015)
                     return {"erros_no_painel": None}
                 r = GER.relatorio(con, situacao="abertos")
             return {"erros_no_painel": {"abertos": r["abertos"],
@@ -408,6 +409,6 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                       (session.get("user_id"),))
         except sqlite3.Error:
             return {"relatorio_ia_no_painel": None}
-        if not papel or papel["role"] != "ADMIN":
+        if not papel or not PAP.equivale_a(papel, "ADMIN"):  # o TI segue o ADMIN (T015)
             return {"relatorio_ia_no_painel": None}
         return {"relatorio_ia_no_painel": aviso}

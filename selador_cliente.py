@@ -491,7 +491,12 @@ def selar(con, pasta_de_dados: Any, caminho: str,
     `referencia` tem de ser a mesma entre tentativas do MESMO ato: e dela que
     sai o SID, e e o SID que faz o selador devolver o selo que ja existe em vez
     de vender outro.
+
+    O TI NAO SELA (T015): a ultima porta antes do aparelho pergunta de novo,
+    para quem chamar esta funcao por fora de `ato_selado.obter_selo`.
     """
+    from ato_selado import barrar_quem_nao_sela
+    barrar_quem_nao_sela()
     estado = SC.situacao(con, pasta_de_dados)
     if not estado["pronto"]:
         raise SeladorIndisponivel(" ".join(estado["faltas"]))
@@ -785,7 +790,11 @@ def vincular(con, numero: str, *, tabela: str,
 
     Chamado quando o ato fica pronto, e nao quando o selo chega. Enquanto nao
     for chamado, o selo aparece como obtido e nao usado — que e a verdade.
+
+    O TI NAO CONSOME SELO (T015).
     """
+    from ato_selado import barrar_quem_nao_sela
+    barrar_quem_nao_sela()
     banco(con).escrever(
         """UPDATE sd_selos SET tabela = %s, ato_id = %s, usado_em = %s
             WHERE numero = %s AND usado_em IS NULL""",

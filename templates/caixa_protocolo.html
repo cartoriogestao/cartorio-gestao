@@ -382,6 +382,18 @@
   <div class="stat"><strong>{{ pendente.total }}</strong><small>ainda a quitar</small></div>
   <div class="stat"><strong>{{ atos|selectattr('quitado')|list|length }}/{{ atos|length }}</strong><small>itens quitados</small></div>
 </section>
+{# O PAGAMENTO QUE AINDA NÃO FECHA (F005, pagamento dividido). O dinheiro que
+   está nos depósitos do protocolo só quita o item quando a soma fecha ao
+   centavo; até lá, a ficha diz quanto falta, e o selo continua travado. #}
+{% if parcial %}
+<div class="flash warning" data-fase="itens" id="cg-pagamento-parcial">
+  <strong>parcial: falta R$ {{ parcial.falta }}</strong> para quitar os itens em aberto.
+  Há R$ {{ parcial.nos_depositos }} em depósito prévio deste protocolo{% if parcial.pago_nos_itens != '0,00' %}
+  e R$ {{ parcial.pago_nos_itens }} já pagos em parte dos itens{% endif %}.
+  <br><span class="small">Receba o resto como depósito prévio do protocolo ou numa cobrança
+  (Caixa → Cobrança): o item quita sozinho quando a soma das formas fechar.</span>
+</div>
+{% endif %}
 
 <section class="panel cg-lado-largo" data-fase="itens">
   <div class="panel-head"><span>Itens e quitação</span>
@@ -414,6 +426,11 @@
       <button class="primary" name="acao" value="quitar_todos"
         onclick="return confirm('Quitar os {{ faltam }} itens que faltam, quitando-os e lançando cada um no caixa? O total a receber é {{ pendente.total }}.')">
         Quitar os {{ faltam }} que faltam — {{ pendente.total }}</button>
+      {# O LOTE GRAVA UMA FORMA SÓ (F005, P4): o cliente que paga parte em
+         dinheiro e parte no cartão não cabe nele. #}
+      <span class="small muted" id="cg-aviso-lote-uma-forma">O lote grava <strong>uma forma só</strong>
+        para todos os itens. Para dividir o pagamento entre formas, quite item a item —
+        ou, num item só, receba cada parte como depósito prévio do protocolo.</span>
     </form>
     {% endif %}
   </div>
@@ -475,6 +492,8 @@
               <button class="small" name="acao" value="desquitar">reabrir</button>
             {% else %}
               <span class="badge alta">a quitar</span>
+              {% if a.pago_parcial %}<br><span class="small">parcial: R$ {{ a.pago_parcial_rs }} pagos
+                pelo depósito, falta R$ {{ a.falta_parcial_rs }}</span>{% endif %}
               <select name="forma_pagamento" class="small" required aria-label="Forma de pagamento deste item">
                 <option value="">forma…</option>
                 {% for cod, rotulo in FORMAS.items() %}<option value="{{ cod }}">{{ rotulo }}</option>{% endfor %}
@@ -486,6 +505,22 @@
                 onclick="return confirm('Remover este item do protocolo?')">remover</button>
             {% endif %}
           </form>
+          {# AS FORMAS QUE PAGARAM O ITEM PELO DEPÓSITO (F005). Só o oficial e o
+             gerente veem: estornar uma parte devolve o valor ao depósito dela e
+             deixa o item a pagar; a outra parte continua paga. #}
+          {% for pt in a.partes or [] %}
+          <form method="post" action="{{ url_for('caixa_protocolo_itens', protocolo_id=p.id) }}"
+                class="small" style="margin-top:4px">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="item_id" value="{{ a.id }}">
+            <input type="hidden" name="deposito_id" value="{{ pt.deposito_id }}">
+            {{ pt.rotulo }} R$ {{ pt.valor }} · depósito {{ pt.numero }}
+            <input name="motivo" class="small" required minlength="10"
+                   placeholder="motivo do estorno" aria-label="Motivo do estorno desta parte">
+            <button class="small" name="acao" value="estornar_parte"
+              onclick="return confirm('Estornar esta parte? O valor volta ao depósito e o item fica a pagar.')">estornar esta parte</button>
+          </form>
+          {% endfor %}
           {% endif %}
         </td>
       </tr>

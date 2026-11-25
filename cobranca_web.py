@@ -206,12 +206,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                           (int(c["protocolo_id"]),))
             caixa = CB.caixa_aberto(con, usuario_nome())
             manuais = CB.recebimentos_manuais(con, c) if c['situacao'] == CB.RECEBIDA else []
+            # O RECEBIMENTO QUE NÃO FECHA OS ITENS (F005): a ficha diz quanto falta.
+            falta = CB.falta_do_protocolo(con, c)
         return render_template("cobranca_ficha.html", c=c, rastro=rastro, cfg=cfg,
                                protocolo=protocolo, caixa=caixa, endereco=CB.endereco(c),
                                pedido=CB.pedido(c), pedidos=CB.PEDIDOS,
                                recursos=CB.RECURSOS[c["banco"]], situacoes=CB.SITUACOES,
                                bancos=CB.BANCOS, reais=DP.reais, papel=usuario_papel(),
-                               com_cofre=_com_cofre(), recebimentos_manuais=manuais)
+                               com_cofre=_com_cofre(), recebimentos_manuais=manuais,
+                               falta=falta)
 
     @app.route("/caixa/cobranca/<int:cobranca_id>/boleto.pdf")
     @login_required

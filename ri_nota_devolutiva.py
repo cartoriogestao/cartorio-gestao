@@ -43,6 +43,7 @@ O QUE ESTE MÓDULO NÃO FAZ
 """
 from __future__ import annotations
 
+import papeis as PAP
 import json
 from typing import Any, Iterable
 
@@ -300,7 +301,7 @@ def excluir(con, protocolo_id: int, nota_id: int, *, motivo: str,
         raise NotaError("Escreva o motivo da exclusão (pelo menos 10 caracteres).")
     pessoa = bd.um("SELECT id,username,full_name,role,active,eh_robo,robo_responsavel_id "
                    "FROM users WHERE id=%s", (int(usuario_id),))
-    if not pessoa or not pessoa['active'] or pessoa['role'] not in ('ADMIN','MANAGER','USER'):
+    if not pessoa or not pessoa['active'] or not PAP.equivale_a(pessoa, 'ADMIN', 'MANAGER', 'USER'):  # o TI segue o ADMIN (T015)
         raise NotaError("A exclusão exige um usuário ativo que pratique atos.")
     if pessoa['eh_robo']:
         if not pessoa['robo_responsavel_id']:

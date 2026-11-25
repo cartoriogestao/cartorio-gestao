@@ -644,6 +644,9 @@ def ciencia_diaria(ctx, *, cliente: ClienteMalote | None = None, cadastrar=None,
               f"{len(resumo.get('fraudes') or [])} aviso(s) de fraude levado(s) à lista.")
     if triagem:
         relato += f" Triagem: {triagem.get('triados', 0)} expediente(s), {triagem.get('tarefas', 0)} tarefa(s) de cumprimento."
+        if triagem.get("obitos"):
+            relato += (f" {triagem['obitos']} comunicação(ões) de óbito de outra serventia, sem tarefa, "
+                       "marcada(s) para verificar no acervo RCPN.")
     if pendentes:
         relato += f" {len(pendentes)} grupo(s) pendente(s) de inclusão: " + \
             "; ".join(f"{g['nome']}: {g['nota'] or g['situacao']}" for g in pendentes[:5]) + "."

@@ -104,8 +104,8 @@ def test_a_ordem_dos_campos_e_a_do_wsdl_de_producao():
                 tipos[ct.get("name")] = tuple(e.get("name") for e in ct.iter(X + "element"))
     # A v6 das certidões usa o tipo da v2 (`ObterXMLSolicitacoesv2_WSReq`) — medido
     # no WSDL de produção em 11/10/2026.
-    req = {"LoginUsuarioCertificado": "Login_WSReq",
-           "ObterXMLSolicitacoes_v6": "ObterXMLSolicitacoesv2_WSReq"}
+    # E o `GetPedidoAC_V8` do e-Protocolo usa `GetPedidoAC_v8_WSReq` (24/11/2026).
+    req = dict(W.TIPO_DO_PEDIDO_NO_WSDL)
     for metodo, campos in W.CAMPOS.items():
         # O Acompanhamento de Títulos (26/10/2026) não tem WSDL na casa: a
         # ordem dele se confere contra o MANUAL, em test_onr_acompanhamento.

@@ -6511,12 +6511,13 @@
     {
       "id": "tela-b0feebb2ea27e74e",
       "nome": "Projetos",
-      "grupo": "Gestão",
-      "secao": "Configurações",
+      "grupo": "Atendimentos e aprendizagem",
+      "secao": "Projetos",
       "endpoint": "dev_projetos_lista",
       "args": {},
       "papeis": [
-        "ADMIN"
+        "ADMIN",
+        "MANAGER"
       ],
       "campos": [],
       "comandos": [],

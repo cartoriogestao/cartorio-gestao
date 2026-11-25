@@ -306,7 +306,7 @@ causa do seu perfil ou porque a administração fechou o módulo.
 | Tela | Para quê |
 |---|---|
 | Visão geral | a primeira tela do dia: avisos, tarefas vencidas, protocolos parados, atos sem conclusão e comunicações pendentes |
-| Projetos | os projetos de desenvolvimento da casa, para o administrador e o gerente. No layout novo, fica em **Trabalho › Projetos** |
+| Projetos | os projetos de desenvolvimento da casa, para o administrador e o gerente. No layout novo, fica em **Trabalho › Projetos**. O projeto que não cabe à gestão sai da lista por **Retirar dos projetos da gestão**, na ficha, com o motivo; **Ver os retirados** mostra quem, quando e por quê, e **Devolver à lista** o traz de volta. Nada se apaga |
 
 ### Tabelionato de Notas
 
@@ -1835,6 +1835,15 @@ volta com o quadro aberto.
 
 **Controles do oficial**
 
+- **Checklist de gestão do dia**: os achados abertos do gestor por área do semáforo
+  (cada cartão de **Conformidade por área**, na Visão geral, leva a ela) e as
+  conferências do dia. O oficial e o gerente podem **Retirar** da lista o achado que
+  não cabe à gestão nem à administração, com o motivo (um motivo pronto é opcional):
+  ele sai da lista e da contagem da tela, e **Ver os retirados** mostra quem retirou,
+  quando e por quê, com **Devolver à lista**. Retirar **não resolve nem apaga**: o
+  achado continua aberto no gestor e na **cor oficial** da área, que é a do painel e
+  do painel no celular; ao lado dela aparece a cor «sem os retirados». O auditor vê os
+  retirados e não retira.
 - **PLD / COAF**: a fila do COAF, só do administrador, porque as comunicações são
   sigilosas inclusive dentro da casa. O sistema seleciona, prepara e registra; **quem
   envia é a pessoa**, e o que se decide fica com ela.

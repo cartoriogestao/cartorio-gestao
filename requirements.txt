@@ -4,7 +4,7 @@
 Flask>=3.1,<4
 waitress>=3.0,<4
 # Converte as fichas digitalizadas (TIFF Grupo 4) para PNG, que o navegador exibe.
-Pillow>=10,<12
+Pillow>=13,<14
 # Converte a ficha de firma digitalizada em PDF para imagem, na hora do envio.
 # PDF dentro de um <img> nao amplia nem gira; convertido, comporta-se como as
 # outras e a lupa funciona igual. Faltando, o PDF e guardado como veio e a tela

@@ -3753,6 +3753,11 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     import onr_acompanhamento_web
     onr_acompanhamento_web.registrar_rotas(app, db, login_required, roles_required, audit)
 
+    # A ENTRADA DO E-PROTOCOLO DO RI PELO ONR (RI013 P1, 24/11/2026) — a fila dos
+    # títulos remetidos, na ordem da remessa, e o aviso no painel. Só lê.
+    import onr_eprotocolo_web
+    onr_eprotocolo_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+
     # A CONFERENCIA DO ENDERECO QUE VAI AO ONR — o que o teor da ficha diz,
     # ao lado do que a ficha tem, com a frase de onde cada campo saiu.
     # **Vem logo depois de `ri_onr_web`** porque e o passo anterior dele:

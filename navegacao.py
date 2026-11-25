@@ -61,10 +61,15 @@ ICONES: dict[str, str] = {
 
 
 def _i(rotulo: str, endpoint: str, papeis: tuple[str, ...] | None = TODOS, *,
-       quando: str = "", antigo: str = "", termos: str = "", **args: Any) -> dict:
-    """Uma entrada. `antigo` é o nome no menu de hoje: a busca acha pelos dois."""
+       quando: str = "", antigo: str = "", termos: str = "", atalho: bool = False,
+       **args: Any) -> dict:
+    """Uma entrada. `antigo` é o nome no menu de hoje: a busca acha pelos dois.
+
+    `atalho=True` é a segunda porta DECLARADA para uma tela que mora noutra aba (veja
+    `ATALHOS`): ela só abre a tela; o menu, as migalhas e a busca continuam com a dona.
+    """
     return {"rotulo": rotulo, "endpoint": endpoint, "papeis": papeis, "quando": quando,
-            "antigo": antigo, "termos": termos, "args": args}
+            "antigo": antigo, "termos": termos, "atalho": atalho, "args": args}
 
 
 # A ORDEM DOS MÓDULOS É A DO MOVIMENTO, medido em selos de 90 dias: Registro Civil
@@ -87,6 +92,13 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
          # gerente passou a entrar junto com o administrador.
          ("Projetos", (
              _i("Projetos", "dev_projetos_lista", AM, termos="desenvolvimento andamento"),)),
+         # A CHECKLIST DO DIA GANHOU UM ATALHO AQUI (25/11/2026), por pedido do oficial:
+         # «coloque o modulo de conferencia por area na aba de trabalho» / «atalho nela» /
+         # «mantendo no painel». É ATALHO, e não mudança: a tela continua morando em
+         # Gestão › Checklist do dia (menu, migalhas e busca), os cartões do painel
+         # continuam levando a ela, e o endereço e os papéis são os mesmos. Veja `ATALHOS`.
+         ("Checklist do dia", (
+             _i("Checklist do dia (por área)", "gestor_checklist", AMA, atalho=True),)),
      )},
     {"chave": "NOTAS", "curto": "Notas", "nome": "Tabelionato de Notas", "cor": "NOTAS",
      "icone": "pena", "lavra": True, "secoes": (
@@ -495,6 +507,20 @@ ENTRADAS_NOVAS: frozenset[tuple[str, tuple]] = frozenset({
     ("notas_atos", (("familia", "atas"),)),
 })
 
+# AS SEGUNDAS PORTAS DE PROPÓSITO, E O MOTIVO DE CADA UMA. A regra da casa é uma porta por
+# sala (`tests/test_menu_sem_duas_portas.py`, relatos #12 e #32): duas entradas para o mesmo
+# endereço fazem o operador escolher no escuro. Quando o oficial pede a mesma tela noutra aba,
+# a entrada leva `atalho=True` e o motivo fica escrito aqui — e o atalho não disputa o lugar
+# da tela: `localizar` prefere a dona, e a busca não o repete. Endereço repetido sem estar
+# nesta lista continua recusado (`tests/test_checklist_atalho_trabalho.py`).
+ATALHOS: dict[str, str] = {
+    "gestor_checklist":
+        "Pedido do oficial em 25/11/2026: «coloque o modulo de conferencia por area na aba "
+        "de trabalho» / «atalho nela» / «mantendo no painel». A checklist mora em Gestão › "
+        "Checklist do dia, e os cartões do semáforo no painel geral continuam levando a ela; "
+        "em Trabalho fica só o atalho, para quem confere as áreas no dia a dia.",
+}
+
 # A FICHA DE UM ATO NÃO TEM ENTRADA PRÓPRIA: ela pertence à seção da lista de onde se
 # chega nela. Sem isto a tela abriria com o menu fechado — o defeito que `modulos.py`
 # existe para impedir.
@@ -893,6 +919,8 @@ def localizar(endpoint: str, args: dict, papel: str, flags: dict,
     """Em que módulo e seção a tela está, e qual entrada a representa."""
     candidatos = [e for e in entradas(papel, flags)
                   if e["endpoint"] == endpoint and _bate(e, args)]
+    # O ATALHO SÓ ABRE A TELA: ela continua no lugar da dona (`ATALHOS`).
+    candidatos = [e for e in candidatos if not e.get("atalho")] or candidatos
     if candidatos:
         melhor = max(candidatos, key=lambda e: len(e["args"]))
         return melhor["modulo"], melhor["secao"], melhor
@@ -955,6 +983,8 @@ def montar(endpoint: str, args: dict, papel: str, gerar_url: Callable[..., str],
                     continue
                 visiveis.append({"rotulo": item["rotulo"], "url": url,
                                  "atual": onde_item is not None and item is _original(onde_item)})
+                if item.get("atalho"):
+                    continue    # a busca acha a tela pela dona: não se repete o resultado
                 indice.append({"r": item["rotulo"], "s": f'{m["curto"]} › {nome}', "u": url, "k": "ir",
                                "t": sem_acento(" ".join((item["rotulo"], nome, m["nome"], item["antigo"], item["termos"])))})
             if not visiveis:

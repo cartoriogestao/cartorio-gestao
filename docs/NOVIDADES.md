@@ -8,6 +8,31 @@ Uma instalação em uso recebe as versões como pacote `.cgu` (tela
 **Atualizações**). Cada pacote leva tudo o que as versões anteriores trouxeram:
 não é preciso aplicar uma por uma.
 
+## 3.7.22 — Item pago em duas formas, papel TI e travas da lavratura
+
+Inclui todas as mudanças posteriores à 3.7.21. O pacote parte da 3.7.21
+(`--desde v3.7.21`).
+
+- **Caixa — um item pago em duas formas.** O cliente pode pagar o mesmo item parte em dinheiro ou Pix e parte no cartão parcelado pelo link da Parcela Express: os depósitos do protocolo se somam, o item só fica quitado (e o selo liberado) quando a soma fecha ao centavo, e o recibo mostra cada forma com o seu valor; o oficial e o gerente podem estornar só uma das partes. Nova forma de pagamento «PG feito pela CRC», para o pedido feito e pago pela CRC, no mesmo molde da «PG feito pela ONR».
+- **Notas — travas da lavratura.** O inventário, a partilha e a sobrepartilha só se lavram com o autor da herança (nome e CPF) e um advogado com OAB; o divórcio pede a data do casamento, o regime de bens e o responsável pelos menores; e a qualidade de parte que a CESDI não aceita é recusada com uma sugestão, enquanto o rascunho continua salvando. O cartão de autógrafo com nome igual ao de outro reabre o formulário com os dados e abre o segundo cartão depois do «Já conferi»; o selo adicional da escritura pergunta se é outro imóvel ou outro ato; e o rascunho de quinzena da CENSEC já fechada e o ato sem PDF assinado há 30 dias viram tarefa de quem lavrou.
+- **Registro Civil.** O selo da anotação e da retificação sai pelo sistema e leva só o item delas, e a folha de verso («137v») vai ao Tribunal só com o número, sem precisar apagar o «v» à mão. Na correção do assento dá para retirar uma pessoa que não é titular (pai, avós, declarante, testemunha); o CPF averbado sai na certidão; a ficha avisa quando o livro do assento não bate com o da matrícula; os nascimentos dos livros A-1 a A-5 sem local recebem a naturalidade do registrado ou, na dúvida, o município da serventia, com a marca de que não vieram do livro; e o painel da FUNAI volta a mostrar os atos novos a comunicar, com o acervo à parte.
+- **Gratuidades do selo.** O nascimento e o óbito de gratuidade presumida saem da fila do Portal do Selo e do falso alarme de isenção divergente. A tela de comprovantes pede a certidão do ato num campo próprio e marca o que ainda falta, e o selo isento digitado sem texto volta a ser tratado como isento, e não como pago.
+- **Protesto.** Com o título em aberto e a CENPROT dizendo PAGO, o protesto só sai pela ficha, com a afirmação de que o pedido foi conferido no portal e não há comprovante de liquidação; o lote e o robô recusam, e a afirmação feita para outra trava não serve. O gestor passa a cobrar os prazos da CRA (retorno, confirmação e desistência sem baixa) e aponta o ato de protesto sem selo, que vira tarefa do Protesto.
+- **Registro de Imóveis e ONR.** Tela nova «ONR: painel de conformidade», com o que foi declarado ao ONR, o que existe no sistema e o que foi entregue com prova lado a lado, as pendências e um quadro para imprimir; e a tela «ONR: e-Protocolo» mostra, só para consulta, os títulos remetidos pelo e-Protocolo na ordem da remessa, com aviso de contraditório. A certidão de ônus leva dois selos; a abertura de matrícula e os atos que mudam o perímetro perguntam se o georreferenciamento foi conferido no SIG-RI; e o cancelamento lavrado na ficha de acervo marca os atos que cancela.
+- **Gestão.** Tela nova «Checklist do dia» (Gestão → Conformidade), e cada cartão do semáforo leva à lista da sua área; o Projetos passa para a área Trabalho e abre também para o gerente; e o botão do Superusuário fica no alto da coluna da direita, acima do WhatsApp, também para o oficial. O gestor não reabre expediente cuja tarefa já fechou, só trata como cópia o expediente com os mesmos anexos, marca o setor que a IA errou e não abre tarefa para a comunicação de óbito de outra serventia; a ficha provisória encerrada sem ato deixa de cobrar o modelo, e a base do CNIB parada deixa de aparecer como atualizada.
+- **Produtividade.** No cronômetro, «Trocar de tarefa» fecha a atual e abre a próxima na mesma hora, sem parar; se a troca é no mesmo minuto, só corrige o nome.
+- **Acesso e usuários — papel TI.** Novo papel de usuário TI, para o suporte: abre tudo o que o administrador abre, menos selar, e o ato que ele lavra fica pendente de selo para o escrevente. O TI não dá o papel de administrador a ninguém, nem a si, e não mexe na conta de um administrador.
+- **Servidor reserva.** A troca automática da versão na reserva só instala pacote assinado e mantém a chave de confiança no lugar; pacote recusado não troca nada. A situação só diz «EM DIA» quando há ligação de fato com o principal, e a sincronia acusa atraso quando ela cai.
+- **NFS-e.** O recibo nasce sabendo se dá nota: sem CPF ou CNPJ válido, nome ou endereço do tomador, ele ganha uma marca em Caixa → Recibos, sem travar o balcão. O ato lançado sem separar emolumento e fundos mostra aviso, a alíquota vazia e o convênio não conferido aparecem como pendência para o administrador, e uma rotina nova (nasce desligada e só lê) conta os recibos sem nota e as notas paradas ou rejeitadas.
+
+### Depois de instalar
+
+1. Em **Usuários**, cadastrar o papel TI para quem é do TI.
+2. No **ONR: painel de conformidade**, lançar os números declarados ao ONR: sem eles, o painel não acusa nada.
+3. No **ONR: e-Protocolo**, fazer a primeira leitura e, depois dela, ligar a rodada na **Automação**.
+4. Para contar as pendências da NFS-e todo dia, ligar a rotina nova na **Automação**.
+5. Na primeira rodada do gestor, os achados da FUNAI reabrem com os ofícios dos atos novos na pasta de cargas, e a tarefa da base do CNIB parada pode voltar para o TI: é o esperado.
+
 ## 3.7.21 — O botão de atualizar volta a funcionar no servidor Windows
 
 Traz tudo o que a 3.7.20 trouxe, e o pacote parte da 3.7.19

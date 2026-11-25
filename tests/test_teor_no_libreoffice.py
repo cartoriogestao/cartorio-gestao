@@ -101,6 +101,53 @@ def test_a_tela_mostra_o_teor_como_ele_vai_sair(casa):
     assert "SAIBAM quantos" in html
 
 
+def _previa_e_caixa(html: str) -> tuple[str, str]:
+    caixa = html.find('<textarea name="teor"')
+    previa = html.find("data-teor-previa")
+    return html[previa:html.find("</section>", previa)], html[caixa:previa]
+
+
+def test_a_previa_esconde_a_marca_e_a_caixa_a_guarda(casa):
+    """A marca separa o teor do bloco de assinaturas. A prévia mostrava a marca, e
+    a impressão da ficha a levava ao papel (G002). A caixa é o dado gravado: sem
+    a marca, guardar o teor faria o traslado repetir as assinaturas."""
+    import notas_teor as NT
+    teor = (f"<p>PROCURAÇÃO DE EXEMPLO. Dou fé.</p>\n{NT.MARCA_ASSINATURAS}\n"
+            "<p align=\"center\">FULANO DE EXEMPLO</p>")
+    html = casa["cliente"].get(
+        f"/notas/atos/{_ato(casa, situacao='LAVRADO', teor=teor)}").get_data(as_text=True)
+    previa, caixa = _previa_e_caixa(html)
+    conteudo = previa.split(">", 1)[1]          # depois da etiqueta da própria prévia
+    assert "PROCURAÇÃO DE EXEMPLO" in conteudo and "FULANO DE EXEMPLO" in conteudo
+    assert NT.MARCA_ASSINATURAS not in conteudo
+    assert f'data-teor-oculta="{NT.MARCA_ASSINATURAS}"' in previa
+    assert NT.MARCA_ASSINATURAS in caixa
+
+
+def test_a_caixa_do_teor_nao_vai_ao_papel(casa):
+    """A caixa guarda a marca; impressa, a ficha a levava ao papel (G002)."""
+    html = casa["cliente"].get(
+        f"/notas/atos/{_ato(casa, situacao='LAVRADO')}").get_data(as_text=True)
+    caixa = html.find('<textarea name="teor"')
+    assert html.rfind("<form method=\"post\" data-teor-edicao>", 0, caixa) > html.rfind("</form>", 0, caixa)
+    css = (RAIZ / "static" / "app.css").read_text(encoding="utf-8")
+    assert "@media print{[data-teor-edicao]{display:none!important}" in css
+
+
+def test_a_marca_sai_antes_de_limpar_o_script(casa):
+    import notas_teor as NT
+    teor = f'<p><a href="java{NT.MARCA_ASSINATURAS}script:alert(1)">x</a></p>'
+    previa, _ = _previa_e_caixa(casa["cliente"].get(
+        f"/notas/atos/{_ato(casa, teor=teor)}").get_data(as_text=True))
+    assert "javascript:" not in previa.lower()
+
+
+def test_o_script_da_previa_corta_a_marca_antes_de_limpar():
+    js = (RAIZ / "static" / "teor-marcas.js").read_text(encoding="utf-8")
+    assert 'getAttribute("data-teor-oculta")' in js
+    assert "semScript(semOculta(campo.value))" in js
+
+
 # ------------------------------------------------------------- exportar
 
 

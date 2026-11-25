@@ -98,6 +98,10 @@ a.modo-botao:hover{text-decoration:none;filter:brightness(.95)}
   border-radius:7px;padding:18px 20px;max-height:520px;overflow:auto}
 .teor-previa p{margin:0 0 9px;text-indent:2em}
 .teor-previa p:first-child{text-indent:0}
+/* A caixa do teor guarda a marca interna das assinaturas: impressa, a ficha
+   mostra só a prévia, e a prévia não tem limite de altura (G002). */
+@media print{[data-teor-edicao]{display:none!important}
+  .teor-previa{max-height:none;overflow:visible}}
 /* A barra de marcas do teor. Botoes pequenos, coladas na caixa de texto — e a
    dica ao lado, porque quem nunca marcou nao adivinha que precisa selecionar
    antes. */

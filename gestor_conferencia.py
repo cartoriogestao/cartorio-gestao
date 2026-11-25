@@ -1352,6 +1352,12 @@ def regra_modelo_nao_preenchido(con, hoje: date) -> list[dict]:
     depender da sorte da leitura: vira regra, que acha sempre.
     """
     import re
+    from notas_teor import MARCA_ASSINATURAS
+    # A MARCA INTERNA DAS ASSINATURAS NÃO É CAMPO DE MODELO (G002, 24/11/2026).
+    # `@@FIM_DO_TEOR_ANTES_DAS_ASSINATURAS@@` separa o teor do bloco de
+    # assinaturas, e o `@campo` abaixo a lia como campo. Ela não chega ao papel:
+    # traslado, termo, rascunho e certidão a cortam, e a ficha a tira da prévia
+    # e não imprime a caixa. Só ela sai da leitura, e exatamente ela.
     # «[INSERIR …]» ENTROU EM 06/10/2026, achado pela revisão em lote: a
     # matrícula 4019 foi aberta com «[INSERIR APÓS APRESENTAÇÃO DO DOCUMENTO]»
     # no CCIR, no CIB e no CAR, e esta regra só conhecia {{ }}, {% %} e @campo.
@@ -1386,7 +1392,7 @@ def regra_modelo_nao_preenchido(con, hoje: date) -> list[dict]:
     saida = []
     for tabela, setor, sql, args in fontes:
         for r in banco(con).ler(sql, args):
-            achados = marcador.findall(str(r["teor"] or ""))
+            achados = marcador.findall(str(r["teor"] or "").replace(MARCA_ASSINATURAS, " "))
             if achados:
                 saida.append(_achado(
                     f"MARCADOR:{tabela}:{r['id']}", "MODELO_NAO_PREENCHIDO", "CRITICO", setor,

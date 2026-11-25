@@ -10,7 +10,8 @@ O QUE ELA PÕE NO BANCO
     Tudo pela própria tela, com a pessoa do ensaio. Só caem para a função de domínio ou para
     `casa.inserir` as linhas que nenhuma tela escreve sem rede ou sem a chave da IA: o selo da
     prenotação e da conferência (digitado à mão no razão), o pedido de qualificação da IA, o lote
-    de transcrição, a imagem do E-Ofício e o pedido do ONR.
+    de transcrição, a imagem do E-Ofício, o pedido do ONR e o título do e-Protocolo (o XML que a
+    leitura gravaria, fictício).
 
     Os selos digitados ficam na faixa 80 a 99 do sufixo (`...CRSVO80`), que é do RI: o razão recusa
     o mesmo selo em dois atos, e as sementes das outras áreas, todas na mesma casa, têm de ficar
@@ -439,6 +440,59 @@ def _onr(casa) -> None:
     casa.pagina("ri_onr_endereco", proposta_id=int(proposta["id"]))
 
 
+def _eprotocolo(casa) -> None:
+    """O título do e-Protocolo como a leitura grava: a linha da lista, a ficha e os anexos.
+
+    Sem rede: o XML de resposta é fictício e passa pelas mesmas funções da leitura. O primeiro
+    imóvel é uma matrícula da casa (a ficha liga ao acervo), o segundo não existe aqui, e a
+    constrição faz a ficha mostrar o aviso."""
+    import onr_eprotocolo as EP
+    numero = _linha(casa, "SELECT numero FROM ri_matriculas WHERE id=%s", (_id(casa, "ri_mat_estruturada_com_ato"),))["numero"]
+
+    def soap(metodo: str, corpo: str) -> str:
+        return ('<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap='
+                '"http://schemas.xmlsoap.org/soap/envelope/"><soap:Body>'
+                f'<{metodo}Response xmlns="http://tempuri.org/WSOficio"><{metodo}Result>{corpo}'
+                f'</{metodo}Result></{metodo}Response></soap:Body></soap:Envelope>')
+
+    lista = soap("ListPedidosAC", "<RETORNO>true</RETORNO><QtdePaginas>1</QtdePaginas><Pedidos>"
+                 "<ListPedidosAC_Pedidos_WSResp><IDContrato>990001</IDContrato><Protocolo>EP-ENS-01</Protocolo>"
+                 "<Instituicao>BANCO DE EXEMPLO</Instituicao><IDTipoServico>1</IDTipoServico><IDStatus>1</IDStatus>"
+                 "<DataSolicitacao>2026-11-20</DataSolicitacao></ListPedidosAC_Pedidos_WSResp></Pedidos>")
+    imoveis = "".join(f"<GetPedidoAC_Imovel_WSResp><Matricula>{m}</Matricula><Via>RUA</Via>"
+                      "<Endereco>DO ENSAIO</Endereco><Numero>10</Numero><Cidade>CIDADE EXEMPLO</Cidade>"
+                      "<Estado>MA</Estado></GetPedidoAC_Imovel_WSResp>" for m in (numero, "990099"))
+    ficha = soap("GetPedidoAC_V8", (
+        "<RETORNO>true</RETORNO><CODIGOERRO>0</CODIGOERRO><IDContrato>990001</IDContrato>"
+        "<Protocolo>EP-ENS-01</Protocolo><IDStatus>1</IDStatus><DataRemessa>2026-11-20</DataRemessa>"
+        "<Solicitante>CARLA EXEMPLO</Solicitante><Instituicao>BANCO DE EXEMPLO</Instituicao>"
+        "<TipoDocumento>1</TipoDocumento><TipoServico>1</TipoServico>"
+        "<ImportacaoExtratoXML>false</ImportacaoExtratoXML>"
+        f"<DadosApresentante><Nome>JOAO EXEMPLO</Nome><CPFCNPJ>{CPF}</CPFCNPJ></DadosApresentante>"
+        "<PrenotacaoNumero></PrenotacaoNumero><ValorServico>150.00</ValorServico><TipoCobranca>1</TipoCobranca>"
+        "<TipoIsencao>0</TipoIsencao>"
+        "<DadosConstricao><TipoConstricao>PENHORA</TipoConstricao><NumeroProcesso>0000000-00.2026.0.00.0000"
+        "</NumeroProcesso><Vara>1ª VARA DE EXEMPLO</Vara><ValorDivida>1000.00</ValorDivida></DadosConstricao>"
+        f"<DadosImovel>{imoveis}</DadosImovel>"
+        f"<Partes><GetPedidoAC_DadosParte_WSResp><Nome>BEATRIZ EXEMPLO</Nome><CPFCNPJ>{CPF}</CPFCNPJ>"
+        "<Qualidade>Compradores</Qualidade></GetPedidoAC_DadosParte_WSResp></Partes>"))
+    anexos = soap("ListAnexosAC", (
+        "<RETORNO>true</RETORNO><CODIGOERRO>0</CODIGOERRO><AnexosContrato><ListAnexosAC_Anexos_WSResp>"
+        "<IDAnexo>71</IDAnexo><Nome>escritura.pdf</Nome><URLAnexo>https://site-exemplo.invalid/a/71</URLAnexo>"
+        "<Descricao>Escritura</Descricao><DataInclusao>2026-11-20</DataInclusao></ListAnexosAC_Anexos_WSResp>"
+        "</AnexosContrato><AnexosAverbacao /><AnexosExigencia />"))
+    agora = casa.db.now()
+    with casa.transacao() as con:
+        EP.init_schema(con)
+        item = EP.itens_da_lista(lista)[0][0]
+        pid = EP.guardar_da_lista(con, "PRODUCAO", item, agora)["pedido_id"]
+        EP.guardar_ficha(con, pid, EP.resultado_cru(ficha, "GetPedidoAC_V8"), agora)
+        EP.guardar_anexos(con, pid, anexos, agora)
+    ligado = _linha(casa, "SELECT matricula_id FROM onr_ep_imoveis WHERE pedido_id=%s AND ordem=1", (pid,))
+    assert ligado["matricula_id"], f"o imóvel do e-Protocolo não achou a matrícula {numero} da casa"
+    casa.pagina("onr_eprotocolo_ficha", pedido_id=int(pid))
+
+
 # ------------------------------------------------------------------ o usucapião
 
 def _autuar_usucapiao(casa, numero: str, **campos) -> int:
@@ -580,7 +634,8 @@ def _livro3(casa) -> None:
 # ------------------------------------------------------------------ a semente
 
 PASSOS = (_acervo, _numeracao, _estruturadas, _prenotacoes, _atos, _pendencias_da_ficha, _certidao, _digitalizacoes,
-          _paginas_da_matricula, _ctp_e_doi, _conferencia, _qualificacao_ia, _retificacao, _onr, _usucapiao, _livro3)
+          _paginas_da_matricula, _ctp_e_doi, _conferencia, _qualificacao_ia, _retificacao, _onr, _eprotocolo, _usucapiao,
+          _livro3)
 
 
 def semear(casa) -> None:

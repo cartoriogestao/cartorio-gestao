@@ -14,7 +14,10 @@ AS DECISÕES DELE (25/10/2026)
     - assina o A3 do OFICIAL, com o PIN no cofre da senha-mestra;
     - entram os pedidos por MATRÍCULA e por PESSOA (positiva = «relação dos
       imóveis atuais»; negativa quando nada consta);
-    - o robô roda às 8h, 11h, 14h e 17h, em dias úteis;
+    - o robô roda às 8h, 11h, 14h e 17h, em dias úteis — TROCADO em
+      24/11/2026 (RI013, C1): de hora em hora no expediente, no máximo,
+      com rodada na abertura e no encerramento (CNN art. 325); e a aprovação
+      pede a rodada na hora, para o envio não esperar a hora seguinte;
     - pedido em «Informar valor dos emolumentos»: o robô calcula pela tabela,
       o escrevente aprova, o robô informa ao ONR;
     - a trava do selo pago aceita a certidão paga no ONR (`ato_selado.
@@ -84,7 +87,12 @@ CREATE TABLE IF NOT EXISTS onr_cert_auto (
 #: O `.p7s` que o PRÓPRIO robô assinou e guardou (revisão de segurança dos PRs
 #: abertos, 26/10/2026, M3): é só ele que vai ao ONR, e não «o que estiver
 #: anexado ao pedido».
-MIGRACOES = (("p7s_anexo_id", "bigint"), ("p7s_sha256", "TEXT"))
+MIGRACOES = (("p7s_anexo_id", "bigint"), ("p7s_sha256", "TEXT"),
+             # A última leitura em que o pedido estava SEM pagamento no ONR
+             # (RI013, 24/11/2026): o prazo da Lei 6.015, art. 19, § 10, corre
+             # do pagamento, e o ONR não diz a hora dele. Ver
+             # `onr_certidoes_prazo.inicio_da_contagem`.
+             ("pagamento_depois_de", "TEXT"))
 
 # ---------------------------------------------------------------- as etapas
 #
@@ -410,6 +418,9 @@ def sincronizar(con, ambiente: str, agora: str) -> dict:
             continue
         if etapa in EM_ANDAMENTO:
             continue
+        if status in ("10", "informar valor dos emolumentos", "11", "aguardando pagamento"):
+            # Ainda sem pagamento: a hora desta leitura é o piso do pagamento.
+            _gravar(bd, p["id"], agora, pagamento_depois_de=agora)
         if status in ("10", "informar valor dos emolumentos"):
             if etapa not in (CUSTAS_A_APROVAR, CUSTAS_APROVADAS):
                 sug = sugerir(con, p)
@@ -722,16 +733,114 @@ def marcar_a_mao(con, pedido_id: int, motivo: str, *, usuario: str, agora: str) 
 
 #: O processo que esta casa leva à central da automação (`automacao_processos.
 #: MODULOS_COM_PROCESSOS`). Nasce DESLIGADO; o «pode agir» liga o envio.
+#:
+#: A AGENDA É DO CNN, ART. 325 (RI013, 24/11/2026): verificar os pedidos «na
+#: abertura e no encerramento do expediente [...] e, pelo menos, a cada
+#: intervalo máximo de uma hora». A de fábrica roda a cada 60 min dentro do
+#: expediente desta casa (`serventia_horario`: das 08h às 14h), com as duas
+#: pontas incluídas. A frequência se muda na tela do processo (Automação); a
+#: rodada confere a agenda gravada (`onr_certidoes_prazo.conferir_agenda`) e
+#: avisa se ela deixar de cumprir o artigo. A de antes (8h, 11h, 14h e 17h)
+#: troca sozinha só onde ninguém a mexeu (`automacao.semear`).
+AGENDA_DE_FABRICA = {"dias": [0, 1, 2, 3, 4], "intervalo_min": 60, "janela": ["08:00", "14:00"]}
+_AGENDA_ATE_RI013 = {"dias": [0, 1, 2, 3, 4], "horarios": ["08:00", "11:00", "14:00", "17:00"]}
+_DESCRICAO_ATE_RI013 = (
+    "Às 8h, 11h, 14h e 17h: traz do ONR os pedidos de certidão e prepara cada um "
+    "(tipo, custas, ou o motivo de ir à mão) em Registro de Imóveis → Certidões do "
+    "ONR. Com «pode agir»: informa as custas aprovadas e ASSINA (A3 do oficial, "
+    "PIN no cofre) e ENVIA as certidões que o escrevente aprovou. Nunca emite: a "
+    "emissão é o clique de aprovação.")
 CATALOGO = (
     {"codigo": "RI_ONR_CERTIDOES", "nome": "ONR — certidões pedidas (preparar e enviar)",
      "setor": "RI", "funcao": "onr_certidoes_auto.rodada", "robo_oficial": "CARGAS_RI", "timeout_s": 900,
-     "agenda": {"dias": [0, 1, 2, 3, 4], "horarios": ["08:00", "11:00", "14:00", "17:00"]},
-     "descricao": "Às 8h, 11h, 14h e 17h: traz do ONR os pedidos de certidão e prepara cada um "
-                  "(tipo, custas, ou o motivo de ir à mão) em Registro de Imóveis → Certidões do "
-                  "ONR. Com «pode agir»: informa as custas aprovadas e ASSINA (A3 do oficial, "
-                  "PIN no cofre) e ENVIA as certidões que o escrevente aprovou. Nunca emite: a "
-                  "emissão é o clique de aprovação."},
+     "agenda": AGENDA_DE_FABRICA,
+     "agendas_antigas": (_AGENDA_ATE_RI013,),
+     "descricoes_antigas": (_DESCRICAO_ATE_RI013,),
+     "descricao": "Em dias úteis, no expediente, no máximo de hora em hora, com uma rodada na "
+                  "abertura e outra no encerramento (CNN art. 325; de fábrica: a cada 60 min, "
+                  "das 08h às 14h): traz do ONR os pedidos de certidão e prepara cada um (tipo, "
+                  "custas, ou o motivo de ir à mão) em Registro de Imóveis → Certidões do ONR, "
+                  "com o relógio do prazo de cada pedido (CNN art. 327: 2 h úteis para o inteiro "
+                  "teor com o número da matrícula). Com «pode agir»: informa as custas aprovadas "
+                  "e ASSINA (A3 do oficial, PIN no cofre) e ENVIA as certidões que o escrevente "
+                  "aprovou — logo depois da aprovação, que pede a rodada na hora. Nunca emite: "
+                  "a emissão é o clique de aprovação."},
 )
+CODIGO_DO_PROCESSO = "RI_ONR_CERTIDOES"
+
+
+# ---------------------------------------------------------------- o prazo (CNN 327)
+
+def envio_automatico(con) -> bool:
+    """O processo está com o «pode agir» ligado (o robô assina e envia)? Só LÊ."""
+    bd = banco(con)
+    if not bd.tem_tabela("au_processos"):
+        return False
+    linha = bd.um("SELECT pode_agir FROM au_processos WHERE codigo=%s", (CODIGO_DO_PROCESSO,))
+    return bool(linha and int(linha["pode_agir"] or 0))
+
+
+def relogios(con, *, agora: datetime, pedidos: list[dict] | None = None) -> dict[int, dict]:
+    """O relógio de prazo de cada pedido em aberto, por `pedido_id`. Só LÊ.
+
+    `pedidos`: as linhas de `onr_cert_pedidos` já lidas pela tela; sem elas,
+    os em aberto (NOVO, PRONTO, ENVIADO)."""
+    import onr_certidoes_prazo as PRAZO
+    bd = banco(con)
+    if pedidos is None:
+        pedidos = [dict(r) for r in bd.ler(
+            "SELECT * FROM onr_cert_pedidos WHERE situacao IN ('NOVO','PRONTO','ENVIADO') "
+            "ORDER BY id")]
+    if not pedidos:
+        return {}
+    exp = PRAZO.expediente_da_casa(con)
+    automatico = envio_automatico(con)
+    preparos = {int(r["pedido_id"]): dict(r) for r in bd.ler("SELECT * FROM onr_cert_auto")}
+    return {int(p["id"]): PRAZO.relogio(dict(p), preparos.get(int(p["id"])), agora=agora,
+                                         exp=exp, envio_automatico=automatico)
+            for p in pedidos}
+
+
+def alertas_de_prazo(con, *, agora: datetime) -> list[dict]:
+    """Os pedidos em aberto com menos de 1 hora de prazo, ou vencidos — o que o
+    painel mostra a quem aprova. Só LÊ. O mais apertado primeiro."""
+    import onr_certidoes_prazo as PRAZO
+    bd = banco(con)
+    pedidos = [dict(r) for r in bd.ler(
+        "SELECT * FROM onr_cert_pedidos WHERE situacao IN ('NOVO','PRONTO','ENVIADO') ORDER BY id")]
+    saida = []
+    for pid, r in relogios(con, agora=agora, pedidos=pedidos).items():
+        if r["situacao"] in PRAZO.AVISAM:
+            p = next(x for x in pedidos if int(x["id"]) == pid)
+            a = preparo(con, pid) or {}
+            saida.append({"pedido_id": pid, "protocolo": p["protocolo"],
+                          "matricula_numero": p.get("matricula_numero"),
+                          "tipo_certidao": p.get("tipo_certidao"),
+                          "etapa": a.get("etapa"), "relogio": r})
+    saida.sort(key=lambda x: x["relogio"]["restante_min"])
+    return saida
+
+
+def pedir_envio_agora(con, *, usuario: str, agora: datetime) -> bool:
+    """Depois da aprovação, a rodada NA HORA, em vez da hora seguinte. ESCREVE.
+
+    POR QUE ASSIM (RI013, 24/11/2026): com a rodada de hora em hora, a
+    certidão aprovada às 09h05 só iria ao ONR às 10h — uma hora das duas do
+    CNN 327 gasta esperando o robô. A aprovação marca o «Rodar agora» do
+    processo (`automacao.pedir_rodada`); o despachante a lança no minuto
+    seguinte, e é a MESMA rodada da agenda: assina e envia só o que foi
+    aprovado, com as conferências de sempre. Só com o «pode agir» ligado —
+    desligado, a rodada não assinaria nada, e o relógio diz que o envio é à
+    mão. Devolve se pediu."""
+    import automacao as AU
+    bd = banco(con)
+    if not bd.tem_tabela("au_processos"):
+        return False
+    p = AU.por_codigo(con, CODIGO_DO_PROCESSO)
+    if not p or not p.get("pode_agir"):
+        return False
+    AU.pedir_rodada(con, int(p["id"]), usuario=str(usuario or "")[:120], agora=agora)
+    return True
 
 
 def _ambiente(ctx) -> str:
@@ -957,10 +1066,21 @@ def rodada(ctx) -> dict:
                             campos["etapa"] = ERRO
                         with ctx.db.transaction() as con:
                             _gravar(banco(con), a["pedido_id"], agora, **campos)
+    import onr_certidoes_prazo as PRAZO
     with ctx.db.connect() as con:
         n = contar(con)
+        apertados = alertas_de_prazo(con, agora=ctx.agora.replace(microsecond=0))
+        exp = PRAZO.expediente_da_casa(con)
     esperando = {e: n.get(e, 0) for e in ESPERAM_GENTE if n.get(e)}
     partes = [f"{q} {NOME_DA_ETAPA[e]}" for e, q in esperando.items()]
+    # O PRAZO DO CNN 327 E A AGENDA DO CNN 325 (RI013, 24/11/2026): o pedido
+    # vencido ou com menos de 1 h, e a agenda que deixou de cumprir o artigo,
+    # entram no relato — e a rodada vira AVISO.
+    for x in apertados:
+        partes.append(f"prazo do {x['protocolo']}: {x['relogio']['texto']}")
+    for problema in PRAZO.conferir_agenda((getattr(ctx, "processo", None) or {}).get("agenda"),
+                                          exp):
+        partes.append(f"a agenda desta rodada não cumpre o CNN art. 325: {problema}")
     if ctx.pode_agir and sem_pdf:
         partes.append(f"{sem_pdf} emitida(s) sem o PDF — «Gerar o PDF de novo» no pedido")
     if not ctx.pode_agir and n.get(A_ASSINAR):

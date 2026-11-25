@@ -294,7 +294,162 @@ def resolver_ocorrencia(con, *, matricula_id: int, protocolo: str,
     return decisao_id
 
 
-def pendentes(con) -> list[dict]:
+# ---------------------------------------------------------------- DEVIDA OU AVISO
+#
+# ORDEM DO OFICIAL, 24/11/2026 (tarefa 486, 1.669 casos sem decisão): «só
+# prepara a minuta de averbação nos casos devidos, e nos demais segue o padrão
+# do sistema e cria apenas um aviso para o escrevente verificar quando abrir a
+# matrícula se corresponde».
+#
+# DEVIDA é a ocorrência que bate PELO DOCUMENTO com quem é DONO HOJE, numa
+# matrícula que não está ENCERRADA. Só ela ganha minuta, e a minuta continua
+# sendo o que sempre foi: texto à espera de quem revisa, confere a ordem na
+# Central e lavra. Matrícula encerrada fica de fora porque a averbação vai na
+# que a sucedeu, e isso o sistema não sabe ligar sozinho.
+#
+# TODO O RESTO É AVISO: o quadro vermelho da ficha, que já existia. Achado por
+# nome é quase sempre homônimo, e dono antigo não tem mais o imóvel. Nenhum dos
+# dois vira decisão em lote: quem abre a matrícula confere se corresponde.
+#
+# MINUTA DESCARTADA NÃO SE REFAZ SOZINHA. Descartar foi decisão de gente
+# (matrícula transferida, unificada); a tela de pendências tem o botão para
+# preparar de novo, uma a uma.
+
+ORIGEM_DA_MINUTA = "CNIB"
+NATUREZA_DA_MINUTA = "Indisponibilidade de bens — CNIB"
+
+
+def donos_de_hoje(con, matricula_id: int, partes: list[dict] | None = None) -> set[int]:
+    """Os ids de `ri_partes` de quem é dono hoje. SÓ LÊ.
+
+    A marca da ficha (`proprietario_ativo`) e, sem ela, a mesma regra que o
+    arquivo do ONR usa (`onr_indicador_xml.donos_presumidos`): os adquirentes do
+    último registro, ou os proprietários da abertura. Uma segunda regra «parecida»
+    diria um dono diferente na mesma ficha.
+    """
+    import onr_indicador_xml as XML
+    bd = banco(con)
+    if partes is None or any("qualificacao" not in p or "id" not in p for p in partes):
+        partes = [dict(p) for p in bd.ler(
+            "SELECT * FROM ri_partes WHERE matricula_id=%s ORDER BY id", (int(matricula_id),))]
+    atos = {int(a["id"]): (str(a["tipo"] or "").upper(), int(a["numero"] or 0))
+            for a in bd.ler("SELECT id, tipo, numero FROM ri_atos WHERE matricula_id=%s",
+                            (int(matricula_id),))}
+    donos, _ = XML.donos_presumidos([dict(p) for p in partes], atos)
+    return {int(p["id"]) for p in donos if p.get("id") is not None}
+
+
+def _so_digitos(v) -> str:
+    return "".join(c for c in str(v or "") if c.isdigit())
+
+
+def marcar(con, matricula: dict, ordens: list[dict]) -> list[dict]:
+    """Diz, em cada ocorrência, se a averbação é DEVIDA e qual minuta ela já tem. SÓ LÊ.
+
+    Acrescenta `devida` (bool), `motivo_do_aviso` (texto curto, quando não é
+    devida) e `minuta` (a mais recente com a chave desta ocorrência, ou None).
+    """
+    if not ordens:
+        return ordens
+    bd = banco(con)
+    mid = int(matricula["id"])
+    partes = [dict(p) for p in bd.ler(
+        "SELECT * FROM ri_partes WHERE matricula_id=%s ORDER BY id", (mid,))]
+    donos = donos_de_hoje(con, mid, partes)
+    docs_dos_donos = {_so_digitos(p.get("documento_numero")) for p in partes
+                      if int(p["id"]) in donos} - {""}
+    encerrada = str(matricula.get("situacao") or "").upper() == "ENCERRADA"
+    minutas = {}
+    for m in bd.ler("""SELECT id, situacao, origem_chave, observacao FROM ri_minutas
+                        WHERE matricula_id=%s AND origem_chave LIKE %s ORDER BY id""",
+                    (mid, "CNIB:%")):
+        minutas[m["origem_chave"]] = dict(m)
+    for o in ordens:
+        doc = _so_digitos(o.get("documento"))
+        if o.get("criterio") != "documento":
+            o["devida"], o["motivo_do_aviso"] = False, "coincidência apenas por nome — conferir possível homônimo"
+        elif encerrada:
+            o["devida"], o["motivo_do_aviso"] = False, "matrícula encerrada: a averbação, se couber, vai na que a sucedeu"
+        elif not doc or doc not in docs_dos_donos:
+            o["devida"], o["motivo_do_aviso"] = False, "o documento é de parte que não é dona hoje: confira se ainda tem direito sobre o imóvel"
+        else:
+            o["devida"], o["motivo_do_aviso"] = True, None
+        o["minuta"] = minutas.get(chave_da_minuta(mid, o))
+    return ordens
+
+
+def preparar_minuta(con, *, matricula_id: int, ordem: dict, agora: str,
+                    usuario: str | None, refazer_descartada: bool = False) -> int | None:
+    """Prepara a minuta de UMA ocorrência devida. ESCREVE. Devolve o id, ou None se já havia.
+
+    Não lavra, não numera, não sela: o número fica para a lavratura, como nas
+    minutas 20 a 35, que foram feitas à mão em outubro.
+    """
+    import ri_minuta as MIN
+    if not ordem.get("devida"):
+        raise CnibError("Esta ocorrência não é de averbação devida: ela fica como aviso na ficha.")
+    atual = ordem.get("minuta")
+    if atual and (atual["situacao"] != MIN.DESCARTADA or not refazer_descartada):
+        return None
+    teor = teor_preparado(ordem, con, matricula_id)
+    return MIN.criar(
+        con, matricula_id=int(matricula_id), tipo="AV", teor=teor, agora=agora,
+        natureza_titulo=NATUREZA_DA_MINUTA, modelo_codigo=CODIGO_DO_MODELO,
+        origem=ORIGEM_DA_MINUTA, origem_chave=chave_da_minuta(matricula_id, ordem),
+        observacao=(f"Preparada pelo sistema: o CPF/CNPJ da ordem CNIB "
+                    f"{(ordem.get('protocolo_cnib') or '').strip()} é o de quem é dono hoje. "
+                    f"Conferir a ordem na Central, a titularidade e os campos antes da lavratura."),
+        usuario=usuario)
+
+
+def ocorrencia(con, *, matricula_id: int, protocolo: str, pessoa_nome: str,
+               pessoa_documento: str) -> dict | None:
+    """Uma ocorrência ainda pendente desta matrícula, já marcada. SÓ LÊ.
+
+    Recalcula pela mesma busca da ficha, em vez de confiar no que veio do
+    formulário: o que se prepara é a ordem que o banco tem.
+    """
+    bd = banco(con)
+    m = bd.um("SELECT id, numero, livro, situacao FROM ri_matriculas WHERE id=%s",
+              (int(matricula_id),))
+    if not m:
+        return None
+    partes = bd.ler("SELECT nome, documento_numero FROM ri_partes WHERE matricula_id=%s ORDER BY id",
+                    (int(matricula_id),))
+    ordens = consultar_cnib(con, [p["documento_numero"] for p in partes],
+                            [p["nome"] for p in partes])
+    alvo = (str(protocolo or "").strip(), str(pessoa_nome or "").strip(),
+            str(pessoa_documento or "").strip())
+    for o in marcar(con, dict(m), filtrar_pendentes(con, int(matricula_id), ordens)):
+        if (str(o.get("protocolo_cnib") or "").strip(), str(o.get("nome") or "").strip(),
+                str(o.get("documento") or "").strip()) == alvo:
+            return o
+    return None
+
+
+def preparar_minutas_devidas(con, *, agora: str, usuario: str | None) -> dict:
+    """Prepara a minuta de toda ocorrência devida que ainda não tem nenhuma. ESCREVE.
+
+    Devolve `{"preparadas": [ids], "ja_tinham": n, "descartadas": n}`. Minuta
+    descartada não se refaz aqui (ver o comentário do bloco).
+    """
+    import ri_minuta as MIN
+    saida = {"preparadas": [], "ja_tinham": 0, "descartadas": 0}
+    for p in pendentes(con, com_teor=False):
+        if not p["devida"]:
+            continue
+        m = p["ordem"].get("minuta")
+        if m:
+            saida["descartadas" if m["situacao"] == MIN.DESCARTADA else "ja_tinham"] += 1
+            continue
+        novo = preparar_minuta(con, matricula_id=p["matricula_id"], ordem=p["ordem"],
+                               agora=agora, usuario=usuario)
+        if novo:
+            saida["preparadas"].append(novo)
+    return saida
+
+
+def pendentes(con, *, com_teor: bool = True) -> list[dict]:
     """As matriculas cujas partes batem com ordem ATIVA, e ainda sem decisao.
 
     A BUSCA E A MESMA DA FICHA — `consultar_cnib`, matricula por matricula.
@@ -331,12 +486,13 @@ def pendentes(con) -> list[dict]:
                 con,
                 [x.get("documento_numero") for x in partes],
                 [x.get("nome") for x in partes])
-        for ordem in filtrar_pendentes(con, m["id"], ordens):
+        for ordem in marcar(con, m, filtrar_pendentes(con, m["id"], ordens)):
             chave = (m["id"], ordem.get("protocolo_cnib"),
                      ordem.get("documento") or "", ordem.get("nome") or "")
             if chave in ja:
                 continue
             achados.append({
+                "devida": ordem["devida"],
                 "matricula_id": m["id"],
                 "matricula_numero": m["numero"],
                 "matricula_livro": m["livro"],
@@ -346,8 +502,9 @@ def pendentes(con) -> list[dict]:
                 # O ALERTA POR DOCUMENTO VEM ANTES DO ALERTA POR NOME: documento
                 # nao tem homonimo, nome tem. Sem essa ordem, os homonimos
                 # afogam o achado que importa. Mesma regra da lista de fraudes.
-                "peso": 0 if ordem.get("criterio") == "documento" else 1,
-                "teor": teor_preparado(ordem, con, m["id"]),
+                # A DEVIDA VEM ANTES DE TUDO: é a que espera minuta ou lavratura.
+                "peso": 0 if ordem["devida"] else (1 if ordem.get("criterio") == "documento" else 2),
+                "teor": teor_preparado(ordem, con, m["id"]) if com_teor else None,
             })
     achados.sort(key=lambda x: (x["peso"], x["matricula_numero"] or ""))
     return achados

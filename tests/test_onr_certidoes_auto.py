@@ -298,7 +298,13 @@ def test_o_processo_entra_na_central_da_automacao():
     sementes = {s["codigo"]: s for s in PROC.todas_as_sementes()}
     s = sementes["RI_ONR_CERTIDOES"]
     assert s["alvo"] == "onr_certidoes_auto:rodada"
-    assert s["agenda"]["horarios"] == ["08:00", "11:00", "14:00", "17:00"]
+    # RI013 (24/11/2026): de hora em hora no expediente, com as duas pontas
+    # (CNN art. 325) — e a agenda de antes listada para a troca sozinha.
+    assert s["agenda"] == {"dias": [0, 1, 2, 3, 4], "intervalo_min": 60,
+                           "janela": ["08:00", "14:00"]}
+    assert {"dias": [0, 1, 2, 3, 4], "horarios": ["08:00", "11:00", "14:00", "17:00"]} \
+        in s["agendas_antigas"]
+    assert "8h, 11h" not in s["descricao"] and "CNN art. 325" in s["descricao"]
 
 
 # ------------------------------------------------------------------ a pessoa (régua larga)
@@ -583,3 +589,97 @@ def test_as_custas_informadas_ficam_no_nome_da_automacao():
     assert AUTO.rotulo_do_robo("Beatriz Exemplo", "custas aprovadas") == \
         "automação (custas aprovadas por Beatriz Exemplo)"
     assert AUTO.rotulo_do_robo("") == "automação"
+
+
+# ------------------------------------------------------------------ o prazo (RI013, CNN 325 e 327)
+
+def _expediente(con, texto="das 08h às 14h"):
+    banco(con).escrever("INSERT INTO settings(key, value) VALUES ('serventia_horario', %s)",
+                        (texto,))
+
+
+def test_a_sincronizacao_anota_a_ultima_leitura_sem_pagamento():
+    con = _con()
+    a = _pedido(con, protocolo="A", status="Informar valor dos emolumentos", custas_em=None)
+    b = _pedido(con, protocolo="B", status="Aguardando pagamento")
+    c = _pedido(con, protocolo="C", status="Em aberto")
+    AUTO.sincronizar(con, "PRODUCAO", AGORA)
+    assert AUTO.preparo(con, a)["pagamento_depois_de"] == AGORA
+    assert AUTO.preparo(con, b)["pagamento_depois_de"] == AGORA
+    assert AUTO.preparo(con, c)["pagamento_depois_de"] is None
+    # pago depois: a anotação fica, e é dela que o prazo corre
+    banco(con).escrever("UPDATE onr_cert_pedidos SET status_onr='Em aberto' WHERE id=%s", (b,))
+    AUTO.sincronizar(con, "PRODUCAO", "2026-10-26T15:00:00")
+    assert AUTO.preparo(con, b)["pagamento_depois_de"] == AGORA
+
+
+def test_o_painel_mostra_so_o_que_esta_apertado():
+    from datetime import datetime
+    con = _con()
+    _expediente(con)
+    apertado = _pedido(con, protocolo="AP")              # inteiro teor, 09:00 de 26/10 (segunda)
+    folgado = _pedido(con, protocolo="FO", por="6")      # por pessoa: 5 dias
+    AUTO.sincronizar(con, "PRODUCAO", AGORA)
+    agora = datetime(2026, 10, 26, 10, 30)
+    r = AUTO.relogios(con, agora=agora)
+    assert r[apertado]["situacao"] == "MENOS_DE_1H" and r[folgado]["situacao"] == "NO_PRAZO"
+    alertas = AUTO.alertas_de_prazo(con, agora=agora)
+    assert [x["protocolo"] for x in alertas] == ["AP"]
+    assert alertas[0]["relogio"]["vence_em"] == "2026-10-26T11:00"
+    assert [x["protocolo"] for x in AUTO.alertas_de_prazo(
+        con, agora=datetime(2026, 10, 26, 9, 30))] == []
+
+
+def test_a_aprovacao_pede_a_rodada_na_hora_so_com_o_pode_agir():
+    from datetime import datetime
+    import automacao as AU
+    con = _con()
+    assert AUTO.pedir_envio_agora(con, usuario="Mario", agora=datetime(2026, 10, 26, 9)) is False
+    AU.semear(con)
+    p = AU.por_codigo(con, AUTO.CODIGO_DO_PROCESSO)
+    assert not p["pode_agir"]
+    assert AUTO.pedir_envio_agora(con, usuario="Mario", agora=datetime(2026, 10, 26, 9)) is False
+    assert not AU.por_codigo(con, AUTO.CODIGO_DO_PROCESSO)["pedido_manual_em"]
+    banco(con).escrever("UPDATE au_processos SET pode_agir=1 WHERE id=%s", (p["id"],))
+    assert AUTO.envio_automatico(con)
+    assert AUTO.pedir_envio_agora(con, usuario="Mario (certidão aprovada)",
+                                  agora=datetime(2026, 10, 26, 9, 5)) is True
+    depois = AU.por_codigo(con, AUTO.CODIGO_DO_PROCESSO)
+    assert depois["pedido_manual_em"].startswith("2026-10-26T09:05")
+    assert depois["pedido_manual_por"] == "Mario (certidão aprovada)"
+
+
+class _SessaoQueSoLe:
+    def entrar(self):
+        pass
+
+    def certidoes_a_emitir(self, **k):
+        return {"XML": ""}
+
+
+class _CtxDaRodada(_CtxFalso):
+    def __init__(self, con, pasta, agenda):
+        from datetime import datetime
+        super().__init__(con, pasta)
+        self.agora = datetime(2026, 10, 26, 10, 30)
+        self.hoje = self.agora.date()
+        self.pode_agir = False
+        self.processo = {"codigo": AUTO.CODIGO_DO_PROCESSO, "agenda": agenda}
+
+
+def test_a_rodada_avisa_o_prazo_apertado_e_a_agenda_fora_do_cnn_325(tmp_path, monkeypatch):
+    """Nada vai ao ONR: a sessão de mentira só devolve a lista vazia."""
+    import onr_wsoficio as WS
+    con = _con()
+    _expediente(con)
+    _pedido(con, protocolo="AP")
+    monkeypatch.setattr(WS, "situacao", lambda *a, **k: {
+        "tem_chave": True, "id_parceiro": "1", "cpf": "0", "email": "x@site-exemplo.invalid"})
+    monkeypatch.setattr(WS, "Sessao", lambda **k: _SessaoQueSoLe())
+    monkeypatch.setattr(OC, "guardar_pedidos", lambda *a, **k: {"novos": 0, "atualizados": 0})
+    r = AUTO.rodada(_CtxDaRodada(con, tmp_path, AUTO.AGENDA_DE_FABRICA))
+    assert r["situacao"] == "AVISO"
+    assert "prazo do AP: vence em 26/10 11:00" in r["relato"]
+    assert "CNN art. 325" not in r["relato"]
+    r = AUTO.rodada(_CtxDaRodada(con, tmp_path, AUTO._AGENDA_ATE_RI013))
+    assert "não cumpre o CNN art. 325" in r["relato"]

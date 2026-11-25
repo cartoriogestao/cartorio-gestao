@@ -326,12 +326,51 @@ def semear(con, agora: datetime | None = None) -> int:
              int(s.get("max_tentativas", 1)), _dump(s.get("canais") or CANAIS_PADRAO),
              robo, agora_txt))
         novos += bd.linhas_afetadas or 0
+        _trocar_agenda_de_fabrica(bd, s, agora_txt)
         if robo:
             bd.escrever(
                 """UPDATE au_processos SET robo_oficial=%s
                     WHERE codigo=%s AND (robo_oficial IS NULL OR TRIM(robo_oficial)='')""",
                 (robo, s["codigo"]))
     return novos
+
+
+def _trocar_agenda_de_fabrica(bd, semente: dict, agora_txt: str) -> bool:
+    """A agenda de fábrica que mudou chega ao processo que já existe. ESCREVE.
+
+    `semear` não mexe no que já está no cadastro — e com razão: a agenda é do
+    oficial. Mas quando a de FÁBRICA muda por norma (RI013, 24/11/2026: as
+    certidões do ONR passam de 4 rodadas por dia para a cada 60 min, CNN art.
+    325), a casa que nunca a mexeu ficaria com a velha para sempre. A semente
+    diz quais agendas de fábrica a de hoje substitui (`agendas_antigas`); a
+    troca só acontece onde o cadastro ainda está EXATAMENTE numa delas. A
+    descrição só troca se também for a de fábrica antiga (`descricoes_antigas`).
+    O `alterado_por` diz que foi a fábrica. Idempotente: trocada, não casa mais.
+    Devolve se trocou."""
+    antigas = semente.get("agendas_antigas") or ()
+    if not antigas:
+        return False
+    linha = bd.um("SELECT id, agenda, descricao FROM au_processos WHERE codigo=%s",
+                  (semente["codigo"],))
+    if not linha:
+        return False
+    try:
+        atual = normalizar_agenda(linha["agenda"])
+        velhas = [normalizar_agenda(a) for a in antigas]
+        nova = normalizar_agenda(semente["agenda"])
+    except AutomacaoError:
+        return False
+    if atual not in velhas or atual == nova:
+        return False
+    descricao = linha["descricao"] or ""
+    if descricao in (semente.get("descricoes_antigas") or ()):
+        descricao = semente.get("descricao") or descricao
+    bd.escrever(
+        """UPDATE au_processos SET agenda=%s, descricao=%s, alterado_por=%s, alterado_em=%s
+            WHERE id=%s AND agenda=%s""",
+        (_dump(nova), descricao, "SISTEMA (agenda de fábrica nova)", agora_txt,
+         int(linha["id"]), linha["agenda"]))
+    return bool(bd.linhas_afetadas)
 
 
 #: Os canais que um processo novo usa. O WhatsApp entra marcado de propósito:

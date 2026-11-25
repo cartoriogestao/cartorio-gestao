@@ -1455,20 +1455,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
           uma leitura de hoje poderia ENVELHECER a base mostrada na ficha — e
           o alerta de copia velha diria o contrario do que aconteceu.
 
-        Quem responde «ate quando» e a ultima leitura que a Central respondeu
-        e este sistema entendeu. Enquanto nao houver leitura nenhuma, vale o
-        retrato do acervo, que e o que a casa tem.
+        **E A LEITURA SOZINHA TAMBEM ENGANOU, EM 23/11/2026.** A copia parou
+        em 12/08/2026 e esta funcao seguiu dizendo «ate hoje», porque leitura
+        vazia contava como lida. Quem responde agora e
+        `cnib_atualizador.data_da_base`: a menor entre o fim da ultima leitura
+        que trouxe ordem e o dia da ordem mais nova da copia.
         """
-        linha = q1("SELECT MAX(data_pedido) d, COUNT(*) n FROM ri_cnib_ordens WHERE ativa=1")
-        base = linha["d"] if linha else None
+        linha = q1("SELECT COUNT(*) n FROM ri_cnib_ordens WHERE ativa=1")
         quantas = linha["n"] if linha else 0
-        marcas = ",".join(["%s"] * len(CNIBATZ.SITUACOES_QUE_ANDAM))
-        leitura = q1(f"""SELECT ate FROM ri_cnib_leituras
-                          WHERE situacao IN ({marcas}) AND terminada_em IS NOT NULL
-                          ORDER BY ate DESC, id DESC LIMIT 1""",
-                     tuple(sorted(CNIBATZ.SITUACOES_QUE_ANDAM)))
-        if leitura and leitura["ate"]:
-            base = leitura["ate"]
+        with db.connect() as con:
+            base = CNIBATZ.data_da_base(con, hoje=date.today())  # noqa: DTZ011 — relogio da casa
         return base, quantas
 
     # Quantos dias de atraso a copia local pode ter antes de a tela mudar de
@@ -1930,7 +1926,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 [p["documento_numero"] for p in partes if p["documento_numero"]],
                 [p["nome"] for p in partes],
             )
-            cnib_pendencias = CNIB.filtrar_pendentes(con, matricula_id, cnib)
+            # `marcar` diz em cada uma se a averbação é devida (minuta) ou só
+            # aviso para conferir — ordem do oficial em 24/11/2026.
+            cnib_pendencias = CNIB.marcar(con, dict(m), CNIB.filtrar_pendentes(con, matricula_id, cnib))
             cnib_decisoes = CNIB.decisoes_da_matricula(con, matricula_id)
         base_data, base_n = cnib_referencia()
 
@@ -3977,6 +3975,43 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             flash("Conferencia registrada com responsavel e motivo. Esta ocorrencia saiu do aviso; minutas vinculadas ainda nao lavradas foram retiradas da fila.", "success")
         return redirect(url_for("ri_ficha", matricula_id=matricula_id) + "#cnib-historico")
 
+    @app.route("/registro-imoveis/cnib/pendentes/preparar", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER")
+    def ri_cnib_preparar_minutas():
+        """Prepara a minuta das averbações DEVIDAS — ordem do oficial em 24/11/2026.
+
+        Sem `matricula_id`: todas as devidas que ainda não têm minuta. Com ele:
+        só aquela ocorrência, e aí a minuta descartada pode ser refeita (é o
+        botão «preparar de novo», decisão de quem clica). Não lavra nem sela.
+        """
+        quem = _usuario_atual()
+        alvo = request.form.get("matricula_id")
+        try:
+            with db.transaction() as con:
+                if not alvo:
+                    feito = CNIB.preparar_minutas_devidas(con, agora=db.now(), usuario=quem)
+                    ids = feito["preparadas"]
+                else:
+                    mid = numero_digitado(alvo)
+                    o = CNIB.ocorrencia(con, matricula_id=mid or 0,
+                                        protocolo=request.form.get("protocolo_cnib"),
+                                        pessoa_nome=request.form.get("pessoa_nome"),
+                                        pessoa_documento=request.form.get("pessoa_documento"))
+                    if o is None:
+                        raise CNIB.CnibError("Esta ocorrência não está mais pendente nesta matrícula.")
+                    novo = CNIB.preparar_minuta(con, matricula_id=mid, ordem=o, agora=db.now(),
+                                                usuario=quem, refazer_descartada=True)
+                    ids = [novo] if novo else []
+        except (CNIB.CnibError, RIMIN.MinutaError) as e:
+            flash(str(e), "danger")
+            return redirect(url_for("ri_cnib_pendentes"))
+        audit("RI_CNIB_MINUTAS_PREPARADAS", "RI_CNIB", None, {"minutas": ids, "uma": bool(alvo)})
+        flash(f"{len(ids)} minuta(s) de averbação preparada(s). Elas esperam revisão e "
+              f"lavratura na ficha de cada matrícula; confira a ordem na Central antes de "
+              f"assinar." if ids else "Nenhuma minuta nova: as devidas já tinham a sua.",
+              "success")
+        return redirect(url_for("ri_cnib_pendentes"))
+
     @app.route("/registro-imoveis/cnib/pendentes", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def ri_cnib_pendentes():
@@ -4030,10 +4065,18 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   "ficou registrado. Ela sai da lista.", "success")
             return redirect(url_for("ri_cnib_pendentes"))
 
+        # O TEOR SÓ SE MONTA PARA A DEVIDA — 24/11/2026. Com 1.669 ocorrências,
+        # montar 1.669 textos de averbação para mostrar ~40 é a tela que não
+        # abre; o aviso vai numa linha só.
         with db.connect() as con:
-            pendentes = CNIB.pendentes(con)
+            pendentes = CNIB.pendentes(con, com_teor=False)
+            for p in pendentes:
+                if p["devida"]:
+                    p["teor"] = CNIB.teor_preparado(p["ordem"], con, p["matricula_id"])
         base_data, base_n = cnib_referencia()
         return render_template("ri_cnib_pendentes.html", pendentes=pendentes,
+                               devidas=[p for p in pendentes if p["devida"]],
+                               avisos=[p for p in pendentes if not p["devida"]],
                                base_data=base_data, base_n=base_n,
                                cnib_idade=cnib_idade(base_data),
                                cnib_dias_para_avisar=CNIB_DIAS_PARA_AVISAR)

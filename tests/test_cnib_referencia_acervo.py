@@ -86,6 +86,7 @@ class ReferenciaAcervoTests(unittest.TestCase):
              patch.object(A,'rotina_ligada',return_value=True), \
              patch.object(A,'ja_leu_hoje',return_value=False), \
              patch.object(A,'esta_pronto',return_value={'pronto':True}), \
+             patch.object(A,'fila_autorizada',return_value=False), \
              patch.object(A,'janela_do_dia',return_value=('2026-10-01','2026-10-04')):
             relogio.today.return_value=date(2026,10,4)
             app.extensions['cnib_uma_vez_por_dia']()

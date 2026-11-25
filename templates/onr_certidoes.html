@@ -2,6 +2,7 @@
 {% block title %}ONR — certidões a emitir{% endblock %}
 {% block heading %}<h1>ONR — certidões pedidas pelo Ofício Eletrônico</h1>{% endblock %}
 {% block content %}
+{% import '_onr_prazo.html' as prazo %}
 
 <section class="card">
   <p>
@@ -36,7 +37,7 @@
 <div class="table-wrap">
 <table>
   <thead><tr><th>Protocolo ONR</th><th>Tipo</th><th>Solicitante</th><th>Matrícula</th>
-    <th>Status no ONR</th><th>Aqui</th><th>Chegou</th></tr></thead>
+    <th>Status no ONR</th><th>Aqui</th><th>Chegou</th><th>Prazo</th></tr></thead>
   <tbody>
   {% for p in lista %}
     <tr>
@@ -47,9 +48,10 @@
       <td>{{ rotulo_do_status(p.status_onr) or '—' }}</td>
       <td>{{ p.situacao|replace('_', ' ')|lower }}</td>
       <td>{{ p.recebido_em[:16]|replace('T', ' ') }}</td>
+      <td>{{ prazo.selo(relogios.get(p.id)) }}</td>
     </tr>
   {% else %}
-    <tr><td colspan="7">Nenhum pedido {{ 'registrado' if todos else 'em aberto' }}. Clique em «Buscar pedidos no ONR».</td></tr>
+    <tr><td colspan="8">Nenhum pedido {{ 'registrado' if todos else 'em aberto' }}. Clique em «Buscar pedidos no ONR».</td></tr>
   {% endfor %}
   </tbody>
 </table>

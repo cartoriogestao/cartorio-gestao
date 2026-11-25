@@ -22,6 +22,7 @@ A SEQUÊNCIA, COM AS TRAVAS NO LUGAR CERTO (revisão do Agente RI, 25/10/2026)
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 from flask import abort, flash, redirect, render_template, request, session, url_for
@@ -48,6 +49,32 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
 
     def agora() -> str:
         return db.now()
+
+    def agora_dt() -> datetime:
+        try:
+            return datetime.fromisoformat(str(agora())[:19])
+        except ValueError:
+            return datetime.now().replace(microsecond=0)
+
+    def _pedir_o_envio(motivo: str) -> bool:
+        """A rodada na hora, depois da aprovação (`AUTO.pedir_envio_agora`).
+        Só pede com o «pode agir» ligado; uma falha aqui não desfaz a
+        aprovação — o envio fica para a rodada da agenda."""
+        try:
+            with db.transaction() as con:
+                return AUTO.pedir_envio_agora(con, usuario=f"{usuario_nome()} ({motivo})",
+                                              agora=agora_dt())
+        except Exception:                                   # noqa: BLE001 — não derruba a tela
+            app.logger.warning("Não deu para pedir a rodada das certidões do ONR.",
+                               exc_info=True)
+            return False
+
+    def _recado_do_envio(pediu: bool) -> str:
+        if pediu:
+            return ("O robô a assina com o A3 do oficial e a envia ao ONR em instantes "
+                    "(a rodada foi pedida agora).")
+        return ("O «pode agir» do robô está desligado: ele não assina nem envia — envie a "
+                "certidão ao ONR à mão, pela ficha do pedido, dentro do prazo.")
 
     def ambiente() -> str:
         valor = str(db.get_setting("onr_certidoes_ambiente", WS.PRODUCAO) or WS.PRODUCAO)
@@ -119,6 +146,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
 
     # ------------------------------------------------------------ as telas
 
+    def _agenda_texto(con) -> str:
+        """A agenda gravada do processo, em português («seg a sex, a cada 60 min
+        das 08:00 às 14:00»), para a tela não repetir horário velho."""
+        import automacao as AU
+        try:
+            p = AU.por_codigo(con, AUTO.CODIGO_DO_PROCESSO)
+        except Exception:                                   # noqa: BLE001 — central ausente
+            p = None
+        return AU.descrever_agenda(p["agenda"]) if p else ""
+
     @app.route("/ri/onr/certidoes/automacao")
     @roles_required(*QUEM)
     def onr_auto_fila():
@@ -128,9 +165,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             lista = AUTO.fila(con)
             contas = AUTO.contar(con)
             selo_pago_ligado = AS.selo_pago_no_onr_ligado(con)
+            relogios = AUTO.relogios(con, agora=agora_dt())
+            agenda_texto = _agenda_texto(con)
         abertas = [a for a in lista if a["etapa"] not in (AUTO.RESPONDIDO, AUTO.FECHADO)]
         return render_template("onr_auto_fila.html", lista=abertas, contas=contas,
-                               selo_pago_ligado=selo_pago_ligado,
+                               selo_pago_ligado=selo_pago_ligado, relogios=relogios,
+                               agenda_texto=agenda_texto,
                                e_admin=str(usuario_papel() or "").upper() == "ADMIN",
                                nome_da_etapa=AUTO.NOME_DA_ETAPA,
                                esperam_gente=AUTO.ESPERAM_GENTE,
@@ -151,6 +191,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 flash(str(erro), "danger")
                 return redirect(url_for("onr_certidao_ficha", pedido_id=pedido_id))
             selo_pago_ligado = AS.selo_pago_no_onr_ligado(con)
+            relogio = AUTO.relogios(con, agora=agora_dt(), pedidos=[p]).get(int(pedido_id))
             dados = json.loads(p.get("dados_json") or "{}")
             certidao = None
             if a.get("certidao_id"):
@@ -186,7 +227,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 previa_erro = type(erro).__name__
         return render_template("onr_auto_pedido.html", p=p, a=a, dados=dados,
                                certidao=certidao, pessoas=pessoas, tipo_ri=tipo_ri,
-                               selo_pago_ligado=selo_pago_ligado,
+                               selo_pago_ligado=selo_pago_ligado, relogio=relogio,
                                pode_gerar_pdf=AUTO.pode_gerar_o_pdf(a, usuario_papel()),
                                previa=previa, previa_erro=previa_erro,
                                onus_painel=onus_painel, m=matricula,
@@ -210,7 +251,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             flash(str(erro), "danger")
             return _voltar(pedido_id)
         audit("ONR_CERTIDAO_CUSTAS_APROVADAS", "onr_cert_pedidos", pedido_id, {"valor": valor})
-        flash(f"Custas de R$ {valor} aprovadas. O robô as informa ao ONR na próxima rodada.", "ok")
+        if _pedir_o_envio("custas aprovadas"):
+            flash(f"Custas de R$ {valor} aprovadas. O robô as informa ao ONR em instantes "
+                  "(a rodada foi pedida agora).", "ok")
+        else:
+            flash(f"Custas de R$ {valor} aprovadas. O «pode agir» do robô está desligado: "
+                  "informe o valor ao ONR à mão.", "ok")
         return _voltar(pedido_id)
 
     @app.route("/ri/onr/certidoes/<int:pedido_id>/automacao/aprovar", methods=["POST"])
@@ -288,8 +334,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                "certidao_id": feito["certidao_id"], "etapa": feito["etapa"]})
         if feito["etapa"] == AUTO.A_ASSINAR:
             if _gerar_pdf(pedido_id, feito["certidao_id"]):
-                flash("Certidão emitida e aprovada. O robô a assina com o A3 do oficial e a "
-                      "envia ao ONR na próxima rodada.", "ok")
+                flash("Certidão emitida e aprovada. "
+                      + _recado_do_envio(_pedir_o_envio("certidão aprovada")), "ok")
         elif feito["etapa"] == AUTO.SEM_SELO:
             flash("A certidão foi gravada, mas o selo não saiu. Use «Selar» nesta tela.", "warning")
         elif feito["etapa"] == AUTO.A_REVISAR:
@@ -316,8 +362,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             etapa = AUTO.voltar_a_assinar_depois_do_selo(con, pedido_id, agora=agora())
         audit("ONR_CERTIDAO_SELAR", "onr_cert_pedidos", pedido_id,
               {"certidao_id": a["certidao_id"], "status_onr": status, "etapa": etapa})
-        if etapa == AUTO.A_ASSINAR:
-            _gerar_pdf(pedido_id, a["certidao_id"])
+        if etapa == AUTO.A_ASSINAR and _gerar_pdf(pedido_id, a["certidao_id"]):
+            flash("Certidão selada. " + _recado_do_envio(_pedir_o_envio("certidão selada")), "ok")
         return _voltar(pedido_id)
 
     @app.route("/ri/onr/certidoes/<int:pedido_id>/automacao/pdf", methods=["POST"])
@@ -334,8 +380,40 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                 # O oficial conferiu e gerou de novo: o pedido volta a esperar o robô.
                 with db.transaction() as con:
                     AUTO._gravar(banco(con), pedido_id, agora(), etapa=AUTO.A_ASSINAR, erro=None)
-            flash("PDF gerado. O robô assina e envia na próxima rodada.", "ok")
+            flash("PDF gerado. " + _recado_do_envio(_pedir_o_envio("PDF gerado de novo")), "ok")
         return _voltar(pedido_id)
+
+    # ------------------------------------------------------------ o painel
+
+    @app.context_processor
+    def _onr_prazos_no_painel() -> dict:
+        """Os pedidos do ONR com menos de 1 hora de prazo, ou vencidos (CNN
+        art. 327), no painel geral de quem pode aprovar — e só no painel. Some
+        quando não há nada apertado; não mostra zero que não mediu."""
+        vazio = {"onr_prazos_no_painel": None}
+        try:
+            if (request.endpoint or "") != "dashboard" or not session.get("user_id"):
+                return vazio
+            if str(usuario_papel() or "").upper() not in QUEM or not _pode_abrir_a_fila():
+                return vazio
+            with db.connect() as con:
+                if not banco(con).tem_tabela("onr_cert_auto"):
+                    return vazio
+                alertas = AUTO.alertas_de_prazo(con, agora=agora_dt())
+        except Exception:                                   # noqa: BLE001 — o painel não cai
+            app.logger.warning("O prazo das certidões do ONR no painel falhou.", exc_info=True)
+            return vazio
+        return {"onr_prazos_no_painel": alertas or None,
+                "rotulo_do_tipo_onr": OC.rotulo_do_tipo}
+
+    def _pode_abrir_a_fila() -> bool:
+        """A mesma régua da tela (papéis da rota, módulo e função de quem está
+        logado), a de `selador_web`. Sem a régua registrada, não mostra."""
+        abre = app.extensions.get("abre_pela_tela")
+        funcao = app.extensions.get("funcao_de_quem_esta_logado")
+        if abre is None or funcao is None:
+            return False
+        return bool(abre("onr_auto_fila", usuario_papel(), funcao()))
 
     @app.route("/ri/onr/certidoes/automacao/selo-pago", methods=["POST"])
     @roles_required("ADMIN")

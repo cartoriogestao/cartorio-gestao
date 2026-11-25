@@ -168,7 +168,28 @@ CAMPOS = {
     "DeleteTituloAT": ("Hash", "IDTitulo"),
     "InsertStatusAT": ("Hash", "IDTitulo", "IDTipoStatus", "DataStatus", "DescricaoStatus"),
     "UpdateStatusAT": ("Hash", "IDStatus", "IDTipoStatus", "DataStatus", "DescricaoStatus"),
+    # E-PROTOCOLO DO RI (manual 4.43, cap. 3.10, p. 94-133) — 24/11/2026, RI013
+    # P1: SÓ AS LEITURAS. A ordem é a do WSDL de produção
+    # (`FONTES_EXTERNAS/onr_wsoficio/producao/eprotocolo.wsdl`, o mesmo arquivo
+    # salvo em 09/10/2026 e baixado de novo em 24/11/2026: SHA-256 igual). Os
+    # `Set*` (prenotar, custas, exigência, averbado, devolvido) ficam de fora até
+    # a P2/P3, com o «pode» do oficial. NÃO É o e-Protocolo do Registro Civil
+    # (`eprotocolo.py`, CRC), que é outro produto.
+    "ListPedidosAC": ("Hash", "MaxRowPerPage", "PageNumber", "Protocolo", "Instituicao",
+                      "IDTipoServico", "IDStatus", "DataSolicitacaoInicial",
+                      "DataSolicitacaoFinal", "NumeroBanco"),
+    "GetPedidoAC_V8": ("Hash", "IDContrato"),
+    "ListAnexosAC": ("Hash", "IDContrato"),
+    "ListBoletosAC": ("Hash", "IDContrato"),
+    "ListCustasAC": ("Hash", "IDContrato"),
+    "GetExtratoXMLAC": ("Hash", "Protocolo"),
 }
+
+#: O tipo do pedido no WSDL quando ele não é `<Metodo>_WSReq`. Medido no WSDL
+#: de produção: o `GetPedidoAC_V8` usa `GetPedidoAC_v8_WSReq`, com «v» minúsculo.
+TIPO_DO_PEDIDO_NO_WSDL = {"LoginUsuarioCertificado": "Login_WSReq",
+                          "ObterXMLSolicitacoes_v6": "ObterXMLSolicitacoesv2_WSReq",
+                          "GetPedidoAC_V8": "GetPedidoAC_v8_WSReq"}
 
 #: Os métodos do Acompanhamento de Títulos que MUDAM COISA NO ONR — e que o
 #: apresentante vê. Só `onr_acompanhamento` os chama, a partir de uma fila de
@@ -205,7 +226,39 @@ SERVICO_DO_METODO = {
     "InsertTituloAT": "acompanhamento", "UpdateTituloAT": "acompanhamento",
     "DeleteTituloAT": "acompanhamento", "InsertStatusAT": "acompanhamento",
     "UpdateStatusAT": "acompanhamento",
+    "ListPedidosAC": "eprotocolo", "GetPedidoAC_V8": "eprotocolo",
+    "ListAnexosAC": "eprotocolo", "ListBoletosAC": "eprotocolo",
+    "ListCustasAC": "eprotocolo", "GetExtratoXMLAC": "eprotocolo",
 }
+
+#: OS CÓDIGOS DO E-PROTOCOLO DO RI — só o manual 4.43 os dá (o WSDL diz `int`).
+#: `IDStatus` (3.10.4 e 3.10.22, p. 98 e 115-116). O 0 só aparece no filtro
+#: da listagem (3.10.3, p. 97); 18, 19 e 100 só na saída.
+STATUS_EPROTOCOLO = {0: "Não concluído", 1: "Em aberto", 2: "Processando", 3: "Prenotado",
+                     4: "Calculado", 5: "Devolvido", 6: "Nota de exigência",
+                     7: "Registrado / averbado", 8: "Reaberto — não concluído",
+                     9: "Aguardando pagamento", 10: "Pagamento efetivado",
+                     18: "Finalizado sem prática do ato", 19: "Cancelamento de prenotação",
+                     100: "Prazo suspenso"}
+#: `TipoServico` da ficha (3.10.22, p. 116) e `IDTipoServico` do FILTRO da
+#: listagem (3.10.3, p. 97). **A SAÍDA da listagem (3.10.4, p. 98) traz outra
+#: tabela** (1 Certidão Digital … 5 EProtocolo, 6 Intimação), que parece copiada
+#: de outro serviço: a primeira chamada real diz qual vale.
+TIPO_SERVICO_EPROTOCOLO = {1: "Registro / averbação", 2: "Exame e cálculo",
+                           3: "Requerimento de cancelamento de hipoteca"}
+TIPO_SERVICO_NA_LISTA_SEGUNDO_O_MANUAL = {1: "Certidão digital", 2: "Matrícula online",
+                                          3: "Consulta eletrônica", 4: "Monitor registral",
+                                          5: "EProtocolo", 6: "Intimação"}
+#: `TipoDocumento` (p. 116): o manual só dá o 1.
+TIPO_DOCUMENTO_EPROTOCOLO = {1: "Escritura pública"}
+#: `TipoCobranca`, `TipoIsencao` e `CertidaoInteiroTeor` (p. 117).
+TIPO_COBRANCA_EPROTOCOLO = {1: "Integral", 2: "Prefeitura", 3: "Isenção total"}
+TIPO_ISENCAO_EPROTOCOLO = {0: "Nenhuma", 1: "Assistência jurídica gratuita"}
+#: As listas de anexos de `ListAnexosAC` (3.10.6, p. 99), na ordem do WSDL.
+GRUPOS_DE_ANEXO_EPROTOCOLO = {"AnexosContrato": "CONTRATO", "AnexosAverbacao": "AVERBACAO",
+                              "AnexosExigencia": "EXIGENCIA"}
+#: Mínimo de linhas por página da listagem (erro 12, p. 98).
+MINIMO_POR_PAGINA_EPROTOCOLO = 10
 
 #: Os status do pedido de certidão (manual 3.6.5) e os tipos de certidão.
 STATUS_CERTIDAO = {1: "Em aberto", 2: "Processando", 3: "Respondido",
@@ -708,6 +761,44 @@ class Sessao:
         return self.chamar("InsertStatusAT", IDTitulo=int(id_titulo),
                            IDTipoStatus=int(tipo_status), DataStatus=data_status,
                            DescricaoStatus=descricao)
+
+    # -- o e-Protocolo do RI (manual 3.10). SÓ LEITURA (RI013 P1, 24/11/2026):
+    #    quem chama é `onr_eprotocolo`, que grava o que chegou. Nada aqui
+    #    prenota, informa custas nem responde.
+    def pedidos_do_eprotocolo(self, *, de: str = "", ate: str = "", status: int = -1,
+                              tipo_servico: int = -1, protocolo: str = "",
+                              pagina: int = 1, por_pagina: int = 50) -> dict:
+        """`ListPedidosAC`. Datas em aaaa-mm-dd (erros 16 e 17); mínimo de 10
+        por página (erro 12). O «-1 = todos» do `IDTipoServico` e do
+        `NumeroBanco` é o que o manual diz do status e do banco — A CONFERIR na
+        primeira chamada para o tipo de serviço."""
+        return self.chamar("ListPedidosAC",
+                           MaxRowPerPage=max(MINIMO_POR_PAGINA_EPROTOCOLO, int(por_pagina)),
+                           PageNumber=int(pagina), Protocolo=str(protocolo or ""),
+                           Instituicao="", IDTipoServico=int(tipo_servico),
+                           IDStatus=int(status), DataSolicitacaoInicial=de,
+                           DataSolicitacaoFinal=ate, NumeroBanco=-1)
+
+    def pedido_do_eprotocolo(self, id_contrato: int) -> dict:
+        """`GetPedidoAC_V8` — a ficha inteira do contrato."""
+        return self.chamar("GetPedidoAC_V8", IDContrato=int(id_contrato))
+
+    def anexos_do_eprotocolo(self, id_contrato: int) -> dict:
+        """`ListAnexosAC` — os anexos de contrato, de averbação e de exigência,
+        cada um com a URL. Baixar o arquivo NÃO é desta etapa."""
+        return self.chamar("ListAnexosAC", IDContrato=int(id_contrato))
+
+    def boletos_do_eprotocolo(self, id_contrato: int) -> dict:
+        """`ListBoletosAC` — os boletos do contrato (para a P3, a baixa no caixa)."""
+        return self.chamar("ListBoletosAC", IDContrato=int(id_contrato))
+
+    def custas_do_eprotocolo(self, id_contrato: int) -> dict:
+        """`ListCustasAC` — as custas informadas e o status delas."""
+        return self.chamar("ListCustasAC", IDContrato=int(id_contrato))
+
+    def extrato_do_eprotocolo(self, protocolo: str) -> dict:
+        """`GetExtratoXMLAC` — a URL do extrato XML (Prov. 228/2026, CNN 210-C)."""
+        return self.chamar("GetExtratoXMLAC", Protocolo=str(protocolo))
 
 
 def _transporte_da_casa(url: str, corpo: bytes, acao: str) -> tuple[int, str]:

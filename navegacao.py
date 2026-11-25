@@ -134,7 +134,10 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
      "icone": "predio", "lavra": True, "secoes": (
          ("Protocolo", (
              _i("Prenotação RI - Livro 1", "ri_protocolo", antigo="Protocolo / prenotação", termos="prenotar titulo exigencia"),
-             _i("Pedidos em andamento", "ri_pedidos"),)),
+             _i("Pedidos em andamento", "ri_pedidos"),
+             _i("ONR: e-Protocolo (títulos remetidos)", "onr_eprotocolo", QUATRO,
+                antigo="ONR — e-Protocolo (títulos remetidos)",
+                termos="eprotocolo titulo eletronico remessa central"),)),
          ("Matrículas", (
              _i("Matrículas", "ri_matriculas", termos="ficha imovel"),)),
          ("Certidões", (
@@ -535,6 +538,7 @@ PAI: dict[str, tuple[str, str]] = {
     "onr_auto_fila": ("RI", "Certidões"),
     "onr_auto_pedido": ("RI", "Certidões"),
     "onr_certidao_ficha": ("RI", "Certidões"),
+    "onr_eprotocolo_ficha": ("RI", "Protocolo"),
     "onr_certidoes_certificado": ("RI", "Certidões"),
     "ri_retificacao": ("RI", "Processos longos"),
     "ri_retificacao_nova": ("RI", "Processos longos"),

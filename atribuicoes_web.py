@@ -4607,6 +4607,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # acervo tem mais de um. Endereco que muda, entrega que nao deu
             # certo, aviso que se refaz.
             avisos = AV.do_titulo(con, titulo_id)
+            # PR007: a intimação sai com a cobrança (Parcela) só com as duas
+            # chaves ligadas — a integração do boleto e a do aviso.
+            import protesto_boleto as _PBOL
+            import protesto_integracoes as _PINTEG
+            cobranca_no_aviso = (
+                _PBOL.ligada_no_aviso(con)
+                and _PINTEG.configuracao(con, _PINTEG.BOLETO)["modo"]
+                != _PINTEG.DESLIGADO)
             for a in avisos:
                 a["tentativas"] = AV.tentativas(con, a["id"])
                 a["comprovantes"] = AV.comprovantes(con, a["id"])
@@ -4773,6 +4781,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                avisos=avisos, fraudes=fraudes,
                                cabe_aviso=(situacao in
                                            AV.SITUACOES_QUE_ACEITAM_AVISO),
+                               cobranca_no_aviso=cobranca_no_aviso,
                                motivos_aviso=AV.motivos_para_escolher(),
                                entregadores=AV.ENTREGADORES,
                                catalogo=catalogo,
@@ -11893,7 +11902,54 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         flash(f"Aviso {r['numero']}/{r['ano']} emitido para "
               f"{r['devedor_nome']}. Imprima pelo botão «Imprimir» na lista "
               f"de avisos da ficha e mande entregar.", "success")
+        _cobranca_do_aviso(r)
         return redirect(volta)
+
+    def _cobranca_do_aviso(r: dict) -> None:
+        """A COBRANÇA QUE VAI COM O AVISO (PR007, 24/11/2026). ESCREVE NO PROVEDOR.
+
+        Depois de o aviso gravado, FORA da transação dele: a rede não segura o
+        banco, e a cobrança que falha não desfaz o aviso — ele sai sem ela, e o
+        balcão lê por quê. Só com as duas chaves ligadas; quem cria cobrança é
+        quem a tela dos boletos deixa (ADMIN e gerente), e os emolumentos se
+        digitam — o valor que o devedor paga não se presume.
+        """
+        import protesto_boleto as PBOL
+        import protesto_integracoes as PINTEG
+        import boleto_api as PBAPI
+        with db.connect() as con:
+            if not PBOL.ligada_no_aviso(con):
+                return
+            if PINTEG.configuracao(con, PINTEG.BOLETO)["modo"] == PINTEG.DESLIGADO:
+                return
+        if _papel_atual() not in ("ADMIN", "MANAGER"):
+            flash("O aviso saiu SEM a cobrança: quem cria a cobrança do devedor é o "
+                  "gerente ou o administrador (Protesto → Boletos).", "warning")
+            return
+        emolumentos = _campo("emolumentos_cobranca")
+        if not emolumentos:
+            flash("O aviso saiu SEM a cobrança: digite os emolumentos e despesas "
+                  "(zero, se for o caso) e emita a cobrança em Protesto → Boletos "
+                  "antes de imprimir.", "warning")
+            return
+        try:
+            c = PBOL.emitir_com_o_aviso(db, int(r["aviso_id"]), emolumentos=emolumentos,
+                                        hoje=hoje(), quem=usuario_nome())
+        except (PBOL.BoletoDominioError, PINTEG.IntegracaoError,
+                PBAPI.BoletoError, AV.AvisoError, PT.ProtestoError) as erro:
+            flash(f"O aviso saiu SEM a cobrança: {erro}", "warning")
+            return
+        audit("PROTESTO_BOLETO_DO_AVISO", "pt_boletos", c["boleto_id"],
+              {"aviso_id": r["aviso_id"], "acao": c["acao"],
+               "ambiente": c["ambiente"], "valor_centavos": c["valor_centavos"],
+               "vencimento": c["vencimento"], "cancelado_id": c.get("cancelado_id")})
+        frase = {"CRIADA": "criada", "REAPROVEITADA": "a mesma do aviso anterior",
+                 "SUBSTITUIDA": "nova; a anterior foi cancelada"}[c["acao"]]
+        flash(f"Cobrança do aviso {frase}: vence em "
+              f"{str(c['vencimento'])[8:10]}/{str(c['vencimento'])[5:7]}/"
+              f"{str(c['vencimento'])[:4]}"
+              + (" (HOMOLOGAÇÃO — não se paga)" if c["ambiente"] != "PRODUCAO" else "")
+              + ". Ela sai impressa no aviso.", "success")
 
     @app.route("/protesto/avisos/<int:aviso_id>/entrega", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -12427,7 +12483,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def _papel_do_protesto(html: str, *, titulo: str,
                            qr_png: bytes | None = None,
                            qr_legenda: str = "",
-                           rodape_html: str = "") -> bytes:
+                           rodape_html: str = "",
+                           qr_de_pagar_png: bytes | None = None) -> bytes:
         """O `.odt` de um papel do protesto com o CABEÇALHO DA CASA.
 
         O mesmo `cabecalho_certidao_completo_odf` das certidões do RI e do
@@ -12463,6 +12520,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                         + (f'<p align="center"><small>{_esc(qr_legenda)}'
                            f'</small></p>' if qr_legenda else "")
                         + html)
+        if qr_de_pagar_png:
+            # O QR DE PAGAR (PR007) mora no corpo do aviso, a parte que fica com
+            # o devedor; o do papel, no canhoto que volta. O lote só lê o QR
+            # `CG-AVISO`, e este outro conta como «outro QR» da folha.
+            imagens["qr-de-pagar.png"] = (qr_de_pagar_png, "image/png")
+            fragmentos = dict(fragmentos or {})
+            fragmentos["@@QRPAGAR@@"] = (
+                '<text:p text:style-name="P-centro">'
+                '<draw:frame draw:style-name="Fr-qr" '
+                'text:anchor-type="as-char" svg:width="3.5cm" '
+                'svg:height="3.5cm"><draw:image '
+                'xlink:href="Pictures/qr-de-pagar.png" xlink:type="simple" '
+                'xlink:show="embed" xlink:actuate="onLoad"/></draw:frame>'
+                '</text:p>')
         return gerar_odt(html_para_odf(html + assinatura + rodape_html,
                                        fragmentos=fragmentos), titulo=titulo,
                          cabecalho_odf=cab_odf, imagens=imagens or None,
@@ -12656,10 +12727,26 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             + "".join(f"<p>{_esc(x)}</p>" for x in canhoto["campos"])
             + f'<p><strong>{_esc(canhoto["tentativas_titulo"])}</strong></p>'
             + "".join(f"<p>{_esc(x)}</p>" for x in canhoto["tentativas"]))
+        # A COBRANÇA NO PAPEL (PR007, 24/11/2026): valor, vencimento, linha
+        # digitável e Pix quando vieram, o link sempre, e o QR para pagar. O QR
+        # do aviso (o do canhoto) não muda: é ele que o lote escaneado lê.
+        import protesto_boleto as PBOL
+        with db.connect() as con:
+            bloco = PBOL.bloco_de_pagamento(con, aviso)
+        corpo = _linhas_em_html(teor)
+        qr_de_pagar = None
+        if bloco:
+            corpo += ("<p></p>" + "".join(
+                f"<p><strong>{_esc(x)}</strong></p>" for x in bloco["linhas"])
+                + ("<p>@@QRPAGAR@@</p>"
+                   f'<p align="center"><small>{_esc(bloco["legenda_do_qr"])}'
+                   "</small></p>" if bloco["qr"] else ""))
+            if bloco["qr"]:
+                qr_de_pagar = PILOTE.png_do_qr(bloco["qr"])
         arquivo = _papel_do_protesto(
-            _linhas_em_html(teor),
+            corpo,
             titulo=f"Aviso {aviso['numero']}/{aviso['ano']}", qr_png=qr,
-            rodape_html=rodape)
+            rodape_html=rodape, qr_de_pagar_png=qr_de_pagar)
         return IMPW.resposta_do_papel(
             arquivo, nome=f"aviso-{aviso['numero']}-{aviso['ano']}",
             get_setting=db.get_setting,

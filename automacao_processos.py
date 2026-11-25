@@ -437,22 +437,104 @@ def verificar_wsoficio(ctx: Contexto) -> dict:
                      f"{dias} dias, nenhum novo desde a última verificação.", achados, estado=estado)
 
 
+def _caso_cnib(p: dict) -> str:
+    """A identidade de um caso: matrícula, ordem e pessoa (a mesma chave de `pendentes`).
+
+    Vai para o `estado` do processo só o resumo (SHA-256), e não o nome e o
+    CPF/CNPJ: a base serve para dizer «já vi», não para guardar outra cópia
+    de quem é atingido.
+    """
+    import hashlib
+    o = p["ordem"]
+    chave = (f"{int(p['matricula_id'])}:{o.get('protocolo_cnib') or ''}:"
+             f"{o.get('documento') or ''}:{o.get('nome') or ''}")
+    return hashlib.sha256(chave.encode("utf-8")).hexdigest()[:20]
+
+
 def verificar_cnib(ctx: Contexto) -> dict:
-    """Matrículas com parte que bate com ordem ativa da CNIB e ainda sem decisão."""
+    """Caso NOVO da CNIB abre tarefa; os já conhecidos, não.
+
+    ORDENS DO OFICIAL:
+    - 24/11/2026 (tarefa 486): minuta só no caso devido (o CPF/CNPJ da ordem é
+      o de quem é dono hoje); o resto fica como aviso na ficha da matrícula,
+      para o escrevente conferir ao abri-la.
+    - 25/11/2026 (tarefa 704, que repetia a 486): «é só se continuar esses
+      1669 docs. se tiver qualquer outro doc novo, é para abrir tarefa de
+      rotina». Os casos que já estavam na lista ficam como BASE (`estado`), e
+      só caso fora dela põe a rodada em AVISO, e por isso abre tarefa. Os
+      conhecidos seguem nas tarefas do plano e na ficha.
+
+    A BASE É GRAVADA NA PRIMEIRA RODADA desta versão, com o que estiver
+    pendente naquele dia, e não cresce sozinha: caso novo continua novo até ser
+    decidido ou lavrado, quando sai da lista. Sem isso, a tarefa aberta num dia
+    fecharia sozinha no seguinte («normalizou») sem ninguém ter olhado.
+
+    Com `pode_agir`, prepara a minuta do caso devido que ainda não tem nenhuma
+    (não lavra, não sela). Desligado, só conta.
+    """
     import ri_cnib
+    import ri_minuta as MIN
+    acoes = []
     with ctx.db.connect() as con:
         if not banco(con).tem_tabela("ri_cnib_decisoes"):
             return _nao_mediu("as pendências da CNIB", "a tabela ri_cnib_decisoes não existe")
-        pendentes = ri_cnib.pendentes(con)
-    achados = [{"matricula": p.get("matricula_numero"), "criterio": p.get("criterio")}
-               for p in pendentes[:200]]
-    if pendentes:
-        por_doc = sum(1 for p in pendentes if p.get("criterio") == "documento")
-        return resultado(SCH.AVISO,
-                         f"CNIB: {len(pendentes)} caso(s) sem decisão ({por_doc} pelo documento, "
-                         f"{len(pendentes) - por_doc} pelo nome — homônimo é comum). Decida em "
-                         "Registro de Imóveis → CNIB.", achados)
-    return resultado(SCH.OK, "CNIB: nenhuma ordem ativa sem decisão nas matrículas.")
+    if ctx.pode_agir:
+        with ctx.db.transaction() as con:
+            feito = ri_cnib.preparar_minutas_devidas(con, agora=ctx.agora.isoformat(timespec="seconds"),
+                                                      usuario="AUTOMACAO")
+        if feito["preparadas"]:
+            acoes.append({"acao": "preparou minutas de averbação devida",
+                          "minutas": feito["preparadas"]})
+    with ctx.db.connect() as con:
+        pendentes = ri_cnib.pendentes(con, com_teor=False)
+    situacao = lambda p: (p["ordem"].get("minuta") or {}).get("situacao")
+
+    def quadro(casos: list[dict]) -> str:
+        devidas = [p for p in casos if p["devida"]]
+        texto = f"{len(devidas)} averbação(ões) devida(s)"
+        if devidas:
+            prontas = sum(1 for p in devidas if situacao(p) == MIN.A_REVISAR)
+            descartadas = sum(1 for p in devidas if situacao(p) == MIN.DESCARTADA)
+            partes = [f"{prontas} com minuta pronta"]
+            if len(devidas) - prontas - descartadas:
+                partes.append(f"{len(devidas) - prontas - descartadas} sem minuta")
+            if descartadas:
+                partes.append(f"{descartadas} com a minuta descartada")
+            texto += f" ({', '.join(partes)})"
+        return texto + f" e {len(casos) - len(devidas)} aviso(s) para conferir na ficha"
+
+    base = ctx.estado.get("conhecidos")
+    estado = None
+    if not isinstance(base, list):
+        base = sorted({_caso_cnib(p) for p in pendentes})
+        estado = {"conhecidos": base, "base_em": ctx.agora.isoformat(timespec="seconds"),
+                  "base_tamanho": len(base)}
+    conhecidos = set(base)
+    novos = [p for p in pendentes if _caso_cnib(p) not in conhecidos]
+    velhos = [p for p in pendentes if _caso_cnib(p) in conhecidos]
+    base_em = str((estado or ctx.estado).get("base_em") or "")[:10]
+    sobre_os_velhos = (f"Dos {len(conhecidos)} já conhecidos em {base_em}, {len(velhos)} seguem "
+                       f"pendentes — {quadro(velhos)}; esses não abrem tarefa (Registro de "
+                       "Imóveis → CNIB e ficha da matrícula).")
+    if estado is not None:
+        r = resultado(SCH.OK, f"CNIB: base gravada com os {len(base)} caso(s) pendentes hoje, por "
+                      "ordem do oficial de 25/11/2026; daqui em diante, só caso novo abre tarefa. "
+                      f"{sobre_os_velhos}", estado=estado)
+    elif novos:
+        achados = [{"matricula": p.get("matricula_numero"), "protocolo": p["ordem"].get("protocolo_cnib"),
+                    "criterio": p.get("criterio"), "devida": p["devida"],
+                    "minuta": (p["ordem"].get("minuta") or {}).get("id"),
+                    "situacao_da_minuta": situacao(p)} for p in novos[:200]]
+        r = resultado(SCH.AVISO,
+                      f"CNIB: {len(novos)} caso(s) novo(s) desde {base_em}: {quadro(novos)}. Devida "
+                      "é quando o documento da ordem é o do dono de hoje: lavre ou decida; nos "
+                      "avisos, confira na ficha se corresponde e grave a decisão em Registro de "
+                      f"Imóveis → CNIB. {sobre_os_velhos}", achados)
+    else:
+        r = resultado(SCH.OK, f"CNIB: nenhum caso novo desde {base_em}. {sobre_os_velhos}")
+    if acoes:
+        r["acoes"] = acoes
+    return r
 
 
 # ------------------------------------------------------------------ RCPN
@@ -921,8 +1003,9 @@ SEMENTES: tuple[dict, ...] = (
     {"codigo": "RI_CNIB", "nome": "CNIB — ordens sem decisão", "setor": "RI",
      "alvo": "automacao_processos:verificar_cnib", "robo_oficial": "RI", "timeout_s": 900,
      "agenda": {"dias": _UTEIS, "horarios": ["07:45"]},
-     "descricao": "Matrículas com parte que bate com ordem ativa de indisponibilidade e ainda sem "
-                  "decisão do cartório."},
+     "descricao": "Caso novo da CNIB (fora dos já conhecidos na 1ª rodada) abre tarefa; com "
+                  "«pode agir», prepara a minuta da averbação devida (documento da ordem = dono de "
+                  "hoje). O resto fica como aviso na ficha da matrícula."},
     {"codigo": "RI_CNIB_MINUTAS", "nome": "CNIB — minutas diárias (rotina de fora)", "setor": "RI",
      "alvo": "automacao_processos:verificar_log", "robo_oficial": "RI", "timeout_s": 60,
      "parametros": {"chave_config": SCH.CHAVE_CNIB_LOG, "nome": "as minutas do CNIB", "horas": 26,
@@ -1013,7 +1096,9 @@ MODULOS_COM_PROCESSOS = ("despesas_automacao", "onr_certidoes_auto", "andamento_
                          # as custas de retirada e cancelamento à CRA (18/11/2026)
                          "protesto_cra_custas",
                          # o aviso diário da NFS-e, só leitura (23/11/2026)
-                         "nfse_aviso")
+                         "nfse_aviso",
+                         # a entrada do e-Protocolo do RI pelo ONR, só leitura (RI013 P1, 24/11/2026)
+                         "onr_eprotocolo")
 
 #: A agenda sugerida por quem escreveu o processo, para quando o catálogo
 #: dele não trouxer uma. O processo nasce DESLIGADO do mesmo jeito.
@@ -1060,6 +1145,11 @@ def sementes_de_outros_modulos() -> list[dict]:
                 # limite de idade do teste de restauração). Sem eles a semente
                 # nascia com `{}` e o processo dependia só do padrão do código.
                 "parametros": dict(item.get("parametros") or {}),
+                # As agendas e descrições de fábrica que a de hoje substituiu
+                # (RI013, 24/11/2026): `automacao.semear` troca só onde o
+                # cadastro ainda está com uma delas — o que o oficial mexeu fica.
+                "agendas_antigas": tuple(item.get("agendas_antigas") or ()),
+                "descricoes_antigas": tuple(item.get("descricoes_antigas") or ()),
             })
     return saida
 

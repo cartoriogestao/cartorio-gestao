@@ -94,6 +94,42 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     "menor."), "warning"
         return frase, "success"
 
+    # A rotina de fundo diz quem é e a mando de quem age (26/10/2026).
+    identidade = {"agente": "atualizador automático do CNIB",
+                  "a_mando_de": IDR.PELO_RESPONSAVEL}
+
+    def _registrar_do_sistema(detalhes):
+        db.log(None, "SISTEMA", "CNIB_LEITURA", "CNIB", None, detalhes,
+               **identidade)
+
+    def _pasta_da_fila():
+        """Onde a página da fila espera entre a Central e o banco."""
+        return db.db_path.parent / ATZ.PASTA_DA_GUARDA
+
+    def _rodada_da_fila(*, automatica: bool, usuario, registrar):
+        """Uma rodada da fila, com o mesmo registro da leitura por janela."""
+        try:
+            resumo = ATZ.ler_a_fila(db, hoje=date.today(),  # noqa: DTZ011 — relógio da casa
+                                    pasta=_pasta_da_fila(), usuario=usuario,
+                                    automatica=automatica)
+        except ATZ.CnibAtualizadorError as erro:
+            registrar({"fila": True, "situacao": ATZ.ERRO, "erro": str(erro)[:400]})
+            return
+        registrar(dict(resumo, fila=True))
+
+    def _rodada_em_fundo(*, automatica: bool, usuario, registrar) -> None:
+        def trabalhar():
+            try:
+                _rodada_da_fila(automatica=automatica, usuario=usuario,
+                                registrar=registrar)
+            except Exception as erro:  # noqa: BLE001 — linha de fundo não derruba nada
+                try:
+                    registrar({"fila": True, "situacao": ATZ.ERRO,
+                               "erro": str(erro)[:400]})
+                except Exception:   # noqa: BLE001,S110
+                    pass
+        threading.Thread(target=trabalhar, name="cnib-fila", daemon=True).start()
+
     # --------------------------------------------------------------- a tela
 
     @app.route("/registro-imoveis/cnib/central")
@@ -112,6 +148,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             leu_hoje = ATZ.ja_leu_hoje(con, hoje=hoje)
             rotina = ATZ.rotina_ligada(con)
             cpf = ATZ.cpf_de_quem_consulta(con)
+            fila = ATZ.fila_autorizada(con)
+            data_base = ATZ.data_da_base(con, hoje=hoje)
 
         faltam = [p for p in pedacos if not p["feita"]]
         return render_template(
@@ -119,6 +157,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             ultima=ultima, historico=historico, de=de, ate=ate,
             pedacos=pedacos, faltam=faltam, leu_hoje=leu_hoje,
             rotina=rotina, cpf=cpf, hoje=hoje.isoformat(),
+            fila=fila, data_base=data_base,
+            guardadas=len(ATZ.paginas_guardadas(_pasta_da_fila())),
             tem_acervo=_acervo().exists(),
             tem_credencial=API.tem_credencial(), fmt_date=fmt_date)
 
@@ -162,6 +202,54 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             de=de, ate=ate, automatica=False, usuario=usuario_id(),
             registrar=lambda d: audit("CNIB_LEITURA", "CNIB", None, d))
         flash(frase, tom)
+        return redirect(url_for("cnib_central"))
+
+    # ------------------------------------------------------------- a fila
+
+    @app.route("/registro-imoveis/cnib/central/fila/autorizacao", methods=["POST"])
+    @login_required
+    @roles_required("ADMIN")
+    def cnib_fila_autorizacao():
+        """Liga ou desliga a leitura da fila. **Só o ADMIN, e com o «ciente».**
+
+        Ligar exige marcar a frase que diz o que acontece: o que vier sai da
+        fila da serventia na Central, e não volta. Desligar não exige nada.
+        """
+        ligar = request.form.get("ligar") == "1"
+        if ligar and request.form.get("ciente") != "1":
+            flash("Para ligar, marque que está ciente de que a leitura tira "
+                  "as ordens da fila da serventia na Central.", "danger")
+            return redirect(url_for("cnib_central"))
+        db.set_settings({ATZ.CHAVE_DA_FILA: "1" if ligar else "0"})
+        audit("CNIB_FILA_AUTORIZACAO", "CNIB", None, {"ligada": ligar})
+        flash("Leitura da fila ligada. A rotina diária passa a ler a fila."
+              if ligar else "Leitura da fila desligada. A rotina volta a ler "
+              "por janela, sem consumir.", "success" if ligar else "info")
+        return redirect(url_for("cnib_central"))
+
+    @app.route("/registro-imoveis/cnib/central/fila/ler", methods=["POST"])
+    @login_required
+    @roles_required("ADMIN")
+    def cnib_fila_ler():
+        """Uma rodada da fila agora, em segundo plano. O resultado vai para a lista."""
+        with db.connect() as con:
+            pronto = ATZ.esta_pronto(con)
+            fila = ATZ.fila_autorizada(con)
+        if not fila:
+            flash("A leitura da fila está desligada.", "danger")
+            return redirect(url_for("cnib_central"))
+        if not pronto["pronto"]:
+            for frase in pronto["falta"]:
+                flash(frase, "danger")
+            return redirect(url_for("cnib_central"))
+        # O PEDIDO VAI NA AUDITORIA AGORA; O RESULTADO, NO REGISTRO DO SISTEMA.
+        # A rodada roda numa linha de fundo, sem `request`, e `audit()` lê o
+        # usuário logado (ver `_uma_ida`).
+        audit("CNIB_FILA_RODADA", "CNIB", None, {"pedida": True})
+        _rodada_em_fundo(automatica=False, usuario=usuario_id(),
+                         registrar=_registrar_do_sistema)
+        flash("A rodada da fila começou em segundo plano. Ela leva alguns "
+              "minutos; o resultado aparece em «As últimas leituras».", "info")
         return redirect(url_for("cnib_central"))
 
     # --------------------------------------------- a consulta por documento
@@ -314,6 +402,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         atraso de 2023 é outro trabalho, deliberado, que anda mês a mês com
         alguém olhando. Rotina que sozinha varresse três anos de fila seria a
         máquina decidindo o tamanho do que pede à Central.
+
+        **COM A FILA AUTORIZADA PELO OFICIAL (23/11/2026)**, ela lê uma rodada
+        da fila em vez da janela. A rodada tem teto próprio
+        (`cnib_api.MAXIMO_DE_PAGINAS_DA_FILA`), e quem decidiu consumir a fila
+        foi gente, na tela.
         """
         hoje = date.today()   # noqa: DTZ011 — relógio da casa
         verificado = app.extensions.get("cnib_verificado")
@@ -328,19 +421,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                     return
                 if not ATZ.esta_pronto(con)["pronto"]:
                     return
+                fila = ATZ.fila_autorizada(con) is True
                 de, ate = ATZ.janela_do_dia(con, hoje=hoje)
         except Exception:   # noqa: BLE001 — ver abaixo
             # Tela não cai por causa de rotina de fundo. Se o banco não
             # responde, quem tem de gritar é a tela que o usuário abriu.
             return
 
-        # A rotina de fundo diz quem é e a mando de quem age (26/10/2026).
-        identidade = {"agente": "atualizador automático do CNIB",
-                      "a_mando_de": IDR.PELO_RESPONSAVEL}
+        # COM A FILA AUTORIZADA, A ROTINA LÊ A FILA, uma rodada por dia, e não
+        # a janela. As duas no mesmo dia seriam duas idas para o mesmo fim, e a
+        # janela com `True` é justamente a que parou de trazer ordem nova.
+        if fila:
+            _rodada_em_fundo(automatica=True, usuario=None,
+                             registrar=_registrar_do_sistema)
+            return
 
-        def registrar(detalhes):
-            db.log(None, "SISTEMA", "CNIB_LEITURA", "CNIB", None, detalhes,
-                   **identidade)
+        registrar = _registrar_do_sistema
 
         def trabalhar():
             try:

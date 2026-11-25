@@ -87,6 +87,15 @@ PRAZO_PROXIMO_DIAS_UTEIS = 2
 #: A rodada do gestor mais velha que isto (em dias úteis) não vale como medição.
 RODADA_TOLERADA_DIAS_UTEIS = 1
 
+#: ROTINA × DÉBITO PASSADO (24/11/2026, o oficial: «vou tentar separar o que é
+#: rotina atual do que é erro e débito passado [...] vamos dar sempre prioridade
+#: na rotina»). O achado visto pela primeira vez há até isto (em dias úteis) é da
+#: rotina — o trabalho desta semana; o mais antigo é débito. A idade não muda a
+#: cor oficial da área: é uma segunda leitura, a da prioridade.
+ROTINA_DIAS_UTEIS = 5
+ROTINA, DEBITO = "ROTINA", "DEBITO"
+ROTULO_DA_IDADE = {ROTINA: "Rotina", DEBITO: "Débito passado"}
+
 #: O setor do achado → a área. Os de qualificação caem na mesma atribuição.
 AREA_DO_SETOR = {
     "RI": "RI",
@@ -132,6 +141,18 @@ def _dia(texto) -> date | None:
         return date(int(bruto[:4]), int(bruto[5:7]), int(bruto[8:10]))
     except (ValueError, IndexError):
         return None
+
+
+def idade_do_achado(primeiro_visto, hoje: date) -> str:
+    """ROTINA ou DEBITO, pela data em que o gestor viu o achado. Só calcula.
+
+    Data que não se lê não manda o achado para o fundo da fila: fica na
+    rotina, que é a parte que se olha primeiro.
+    """
+    desde = _dia(primeiro_visto)
+    if desde is None or dias_uteis_entre(desde, hoje) <= ROTINA_DIAS_UTEIS:
+        return ROTINA
+    return DEBITO
 
 
 def cor_da_area(c: dict) -> str:
@@ -187,13 +208,17 @@ def _rodada(con, hoje: date) -> dict:
     return {"ultima_rodada": quando, "medido": True, "motivo": None}
 
 
-def medir(con, hoje: date | None = None) -> dict:
+def medir(con, hoje: date | None = None, *, so_rotina: bool = False) -> dict:
     """O semáforo da casa. SÓ LÊ.
 
     Devolve `{"gestor": {...}, "areas": {codigo: {cor, contagens}},
     "resumo": {cor: quantas áreas}}` — só códigos, datas e números. A área
     OUTROS só aparece quando tem achado. Tabela que não existe é exceção:
     quem chama decide como mostrar o «não mediu», e nunca como zero.
+
+    `so_rotina=True` mede com a MESMA régua só os achados da rotina
+    (`idade_do_achado`): a cor que a área teria sem o débito passado. A cor
+    oficial — a do painel e do retrato — é a de `so_rotina=False`.
     """
     hoje = hoje or date.today()
     rodada = _rodada(con, hoje)
@@ -201,6 +226,8 @@ def medir(con, hoje: date | None = None) -> dict:
     for r in banco(con).ler(
             """SELECT regra, gravidade, setor, prazo, primeiro_visto_em
                  FROM ge_achados WHERE resolvido_em IS NULL ORDER BY id"""):
+        if so_rotina and idade_do_achado(r["primeiro_visto_em"], hoje) != ROTINA:
+            continue
         area = area_do_achado(r["setor"], r["regra"])
         if area not in contagens:
             contagens[area] = dict.fromkeys(CONTADORES, 0)

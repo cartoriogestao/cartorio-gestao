@@ -404,6 +404,15 @@
     <label>CEP <input name="cep"></label>
     <label>Cidade <input name="cidade"></label>
     <label>UF <input name="uf" maxlength="2" style="width:5em"></label>
+    {% if cobranca_no_aviso %}
+    <label style="grid-column:1/-1">Emolumentos e despesas da cobrança (R$)
+      <input name="emolumentos_cobranca" inputmode="decimal" size="10"
+             placeholder="digite — zero, se for o caso">
+      <small>O aviso sai com a cobrança da Parcela Express (um link com Pix,
+      boleto e cartão), vencendo no prazo que o aviso imprime. Em branco, o
+      aviso sai sem ela. Aviso reemitido com o mesmo valor usa a mesma
+      cobrança; com outro valor, a anterior é cancelada.</small></label>
+    {% endif %}
     <div class="actions"><button class="button">Emitir aviso</button></div>
   </form>
   {% else %}

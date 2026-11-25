@@ -72,15 +72,21 @@
 
 {% if a_cancelar %}
 <section class="cartao">
-  <h2>Boletos vivos de título já resolvido</h2>
-  <p class="small muted">O título foi pago no balcão, desistido ou encerrado, e
-    o boleto continua aberto no banco: cancele antes que o devedor pague duas
-    vezes.</p>
+  <h2>Cobranças vivas que não valem mais</h2>
+  <p class="small muted">O título foi pago no balcão, desistido, protestado,
+    encerrado ou sustado, e a cobrança continua aberta no banco: cancele antes
+    que o devedor pague o que não se pode receber.</p>
   <ul>
   {% for b in a_cancelar %}
-    <li>{{ b.nosso_numero }} — título <a href="{{ url_for('protesto_titulo', titulo_id=b.titulo_id) }}">{{ b.numero_titulo }}</a> ({{ b.situacao_do_titulo }})</li>
+    <li>{{ b.nosso_numero }} — título <a href="{{ url_for('protesto_titulo', titulo_id=b.titulo_id) }}">{{ b.numero_titulo }}</a> ({{ b.porque or b.situacao_do_titulo }})</li>
   {% endfor %}
   </ul>
+  {% if pode_enviar and cfg.modo != 'DESLIGADO' %}
+  <form method="post" action="{{ url_for('protesto_boletos_cancelar_encerrados') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button" type="submit">Cancelar no banco todas estas</button>
+  </form>
+  {% endif %}
 </section>
 {% endif %}
 

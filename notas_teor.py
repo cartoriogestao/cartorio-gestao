@@ -419,6 +419,15 @@ def sem_bloco_de_assinaturas(teor: str | None) -> str:
     return texto
 
 
+def sem_marca_de_assinaturas(teor: str | None) -> str:
+    """O teor sem a marca interna, e com o bloco de assinaturas. Só corta.
+
+    É o que a prévia da ficha mostra (G002, 23/11/2026): a tela mostrava a
+    marca, e a impressão da ficha a levava ao papel. Corta ANTES de limpar o
+    script: tirada depois, a marca no meio de «java…script:» reabriria o link.
+    """
+    return (teor or "").replace(MARCA_ASSINATURAS, "")
+
 
 def montar(tipo: str, partes: list, poderes: str | None,
            data_extenso: str, cidade: str = "", uf: str = "MA",

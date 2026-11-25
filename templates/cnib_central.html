@@ -18,10 +18,15 @@
       {{ espelho.ativas }} ativas, {{ espelho.da_central }} vindas da Central</span>
   </div>
   <div style="padding:14px">
+    {% if data_base %}
+      <p><strong>A cópia local responde até {{ fmt_date(data_base) }}.</strong>
+        É a data que a ficha e a consulta mostram: a menor entre o fim da última
+        leitura que trouxe ordem e o dia da ordem mais nova da cópia.</p>
+    {% endif %}
     {% if ultima %}
-      <p><strong>Última janela concluída até {{ fmt_date(ultima.ate) }}</strong>
-        &mdash; foi até onde a Central respondeu e este sistema entendeu
-        (leitura de {{ fmt_date(ultima.terminada_em) }}).</p>
+      <p>Última leitura que trouxe ordem: até {{ fmt_date(ultima.ate) }}
+        (leitura de {{ fmt_date(ultima.terminada_em) }}). Leitura que volta
+        vazia fica na lista abaixo, mas não conta como lida.</p>
       {% if faltam %}
       <p><strong>A recuperação ainda tem {{ faltam|length }} meses pendentes.</strong></p>
       {% else %}
@@ -32,10 +37,10 @@
         Tudo o que está aqui veio do acervo do sistema antigo, e é um retrato de
         {{ fmt_date(espelho.retrato_do_acervo) }}.</p>
     {% endif %}
-    <p class="small muted">A data acima <strong>não é</strong> a da ordem mais
-      recente. A janela da Central filtra pela data da <em>atividade</em>: uma
-      ordem pedida em 2012 chega hoje quando é hoje que ela é cancelada. Quem
-      olhasse a data do pedido veria a cópia envelhecer a cada leitura.</p>
+    <p class="small muted">A janela da Central filtra pela data da
+      <em>atividade</em>: uma ordem pedida em 2012 chega hoje quando é hoje que
+      ela é cancelada. Por isso a leitura sozinha não diz até quando a cópia
+      vale, e a ordem mais nova também não; a data acima usa as duas.</p>
   </div>
 </section>
 
@@ -65,12 +70,61 @@
       <button class="primary">Buscar agora</button>
     </form>
     <p class="small muted">A janela já vem uma semana atrás do fim da última
-      leitura, de propósito: a resposta vazia da Central <strong>não prova que
-      não há ordem</strong> &mdash; a mesma resposta já veio para dias que
-      tinham ordens, e horas depois elas apareceram. Reler é barato; não ler é
-      perder.</p>
-    <p class="small muted">A leitura <strong>não consome a fila</strong> da
-      serventia. Essa é a única forma que este sistema sabe pedir.</p>
+      leitura que trouxe ordem, até no máximo um mês, de propósito: a resposta
+      vazia da Central <strong>não prova que não há ordem</strong> &mdash; a
+      mesma resposta já veio para dias que tinham ordens, e horas depois elas
+      apareceram. Reler é barato; não ler é perder.</p>
+    <p class="small muted">A busca por janela <strong>não consome a fila</strong>
+      da serventia. Desde 12/08/2026 ela não traz ordem nova: tudo indica que
+      ela só devolve o que já foi visualizado.</p>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <span>Ler a fila da serventia</span>
+    <span class="small {% if fila %}danger{% else %}muted{% endif %}">
+      {{ 'ligada' if fila else 'desligada' }}</span>
+  </div>
+  <div style="padding:14px">
+    <p>A fila é onde ficam as ordens que a serventia ainda não visualizou.
+      <strong>Ler a fila tira dela, na Central, o que vier, e isso não se
+      desfaz.</strong> Cada página fica guardada no disco e gravada aqui antes
+      de se pedir a próxima. Uma rodada lê até
+      40.000 ordens; com a fila ligada, a
+      rotina diária lê uma rodada por dia em vez da janela.</p>
+    <p class="small muted">Antes de ligar, confirme com o ONR o que o campo
+      <code>ordens_visualizadas</code> faz e se ler a fila tem efeito de ciência
+      para a serventia.</p>
+    {% if guardadas %}
+      <p class="danger"><strong>{{ guardadas }} página(s) da fila vieram da
+        Central e ainda não entraram no banco.</strong> A próxima rodada grava
+        essas páginas antes de pedir mais.</p>
+    {% endif %}
+    {% if user.role == 'ADMIN' %}
+      {% if fila %}
+      <form method="post" action="{{ url_for('cnib_fila_ler') }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="primary">Ler uma rodada da fila agora</button>
+      </form>
+      <form method="post" action="{{ url_for('cnib_fila_autorizacao') }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="ligar" value="0">
+        <button>Desligar a leitura da fila</button>
+      </form>
+      {% else %}
+      <form method="post" action="{{ url_for('cnib_fila_autorizacao') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="ligar" value="1">
+        <label><input type="checkbox" name="ciente" value="1">
+          Estou ciente de que a leitura tira as ordens da fila da serventia na
+          Central, e que isso não se desfaz.</label>
+        <button>Ligar a leitura da fila</button>
+      </form>
+      {% endif %}
+    {% else %}
+      <p class="small">Só o oficial liga a leitura da fila.</p>
+    {% endif %}
   </div>
 </section>
 

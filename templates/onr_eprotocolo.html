@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+{% block title %}ONR — e-Protocolo do RI{% endblock %}
+{% block heading %}<h1>ONR — títulos remetidos pelo e-Protocolo</h1>{% endblock %}
+{% block content %}
+{% set nivel_badge = {'perigo': 'critica', 'atencao': 'alta', 'info': 'media'} %}
+
+<section class="panel">
+  <p>Os títulos que o apresentante remeteu a esta serventia pelo e-Protocolo do ONR
+    (Ofício Eletrônico, <code>eprotocolo.asmx</code>), <strong>na ordem da remessa</strong>
+    (CNN 326). Esta tela <strong>só lê</strong>: a prenotação continua sendo feita em
+    <a href="{{ url_for('ri_protocolo') }}">Prenotação RI - Livro 1</a>, e nada daqui é
+    enviado ao ONR.</p>
+  <p class="small muted">Ambiente: <strong>{{ ambiente|lower }}</strong> ({{ endereco }}).
+    Processo da central: <strong>{{ processo.codigo }}</strong> —
+    {% if resumo.processo_ligado %}ligado{% else %}desligado (quem liga é o oficial, na
+    {% if user.role in ['ADMIN', 'MANAGER'] %}<a href="{{ url_for('automacao_lista') }}">central de automação</a>{% else %}central de automação{% endif %}){% endif %};
+    a cada {{ processo.agenda.intervalo_min }} min nos dias úteis, das
+    {{ processo.agenda.janela[0] }} às {{ processo.agenda.janela[1] }}.</p>
+  <p>Última leitura bem-sucedida:
+    {% if resumo.ultima_boa %}<strong>{{ resumo.ultima_boa.terminada_em[:16]|replace('T', ' ') }}</strong>
+      ({{ resumo.ultima_boa.listados }} na lista, {{ resumo.ultima_boa.novos }} novo(s){% if resumo.ultima_boa.situacao == 'PARCIAL' %}, com ficha que falhou{% endif %})
+    {% else %}<strong>nenhuma ainda</strong>{% endif %}.
+    {% if resumo.ultima_falhou %}<span class="danger">A última tentativa falhou
+      ({{ resumo.ultima.terminada_em[:16]|replace('T', ' ') }}): {{ resumo.ultima.erro }}</span>{% endif %}
+    {% if resumo.atrasada %}<span class="badge critica">mais de uma hora sem leitura no expediente (CNN 325)</span>{% endif %}
+  </p>
+  {% if not credencial.tem_chave %}
+  <p class="warning">Falta a credencial do Ofício Eletrônico (wsoficio.cred) neste ambiente.</p>
+  {% endif %}
+  {% if user.role == 'ADMIN' %}
+  <form method="post" action="{{ url_for('onr_eprotocolo_ler') }}" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Pedidos dos últimos
+      <input type="number" name="dias" value="30" min="1" max="180" style="width:5em"> dias</label>
+    <button class="button primary" type="submit">Ler agora no ONR (só leitura)</button>
+  </form>
+  {% endif %}
+  <p>
+  {% if todos %}<a class="button" href="{{ url_for('onr_eprotocolo') }}">Só os em aberto</a>
+  {% else %}<a class="button" href="{{ url_for('onr_eprotocolo', todos=1) }}">Ver todos, inclusive os fechados no ONR</a>{% endif %}
+  </p>
+</section>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Ordem</th><th>Remessa</th><th>Protocolo ONR</th><th>Serviço</th><th>Apresentante</th>
+    <th>Matrícula</th><th>Status no ONR</th><th>Avisos</th></tr></thead>
+  <tbody>
+  {% for p in lista %}
+    <tr {% if p.alertas|selectattr('nivel', 'equalto', 'perigo')|list %}class="danger"{% endif %}>
+      <td>{% if p.posicao %}<strong>{{ p.posicao }}º</strong>{% else %}<span class="small muted">{{ p.situacao|replace('_', ' ')|lower }}</span>{% endif %}</td>
+      <td>{{ (p.data_remessa or p.data_solicitacao or '—')|replace('T', ' ') }}
+        {% if not p.data_remessa %}<br><span class="small muted">(solicitação; ficha não lida)</span>{% endif %}</td>
+      <td><a href="{{ url_for('onr_eprotocolo_ficha', pedido_id=p.id) }}">{{ p.protocolo or ('contrato ' ~ p.id_contrato) }}</a></td>
+      <td>{{ p.tipo_servico and rotulo_do_tipo_servico(p.tipo_servico) or rotulo_do_tipo_servico(p.id_tipo_servico) or '—' }}</td>
+      <td>{{ p.apresentante_nome or p.solicitante or p.instituicao or '—' }}</td>
+      <td>{% for im in p.imoveis %}{% if im.matricula_id %}<a href="{{ url_for('ri_ficha', matricula_id=im.matricula_id) }}">{{ im.matricula_texto }}</a>{% else %}{{ im.matricula_texto or '—' }}{% endif %}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</td>
+      <td>{{ rotulo_do_status(p.id_status) or '—' }}</td>
+      <td>{% for a in p.alertas %}<span class="badge {{ nivel_badge[a.nivel] }}" title="{{ a.texto }}">{{ a.tipo|replace('_', ' ')|lower }}</span> {% else %}—{% endfor %}
+        {% if p.erro_ficha %}<br><span class="small danger">ficha: {{ p.erro_ficha }}</span>{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="8">Nenhum título {{ 'registrado' if todos else 'em aberto' }}.
+      {% if not resumo.ultima_boa %}O e-Protocolo ainda não foi lido.{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="small muted">«Ordem» é a posição na fila dos que esperam prenotação, pela data da remessa e,
+  no mesmo dia, pelo número do contrato no ONR. Os avisos se calculam na hora, das prenotações e do
+  protocolo geral do RI: <strong>contraditório</strong> não bloqueia nada nesta etapa — é para conferir
+  a prioridade antes de prenotar. A regra da casa (decisão do oficial, 24/11/2026): entre o título de
+  balcão e o eletrônico, vale a <strong>hora da prenotação</strong>; entre os eletrônicos, prenota-se na
+  ordem da remessa.</p>
+{% endblock %}

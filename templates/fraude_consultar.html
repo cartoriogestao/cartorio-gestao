@@ -27,6 +27,37 @@
   </form>
 </section>
 
+{# O ATO DE OUTRA SERVENTIA — 24/11/2026: o traslado que chega ao balcão. #}
+<section class="panel">
+  <div class="panel-head"><span>O ato de outra serventia que foi apresentado</span></div>
+  <form method="get" class="form" style="padding:14px">
+    <label style="grid-column:1/-1">Serventia
+      <input name="ato_serventia" value="{{ ato.serventia }}"
+             placeholder="Como está no traslado"></label>
+    <label>CNS <input name="ato_cns" value="{{ ato.cns }}"></label>
+    <label>Cidade <input name="ato_cidade" value="{{ ato.cidade }}"></label>
+    <label>UF <input name="ato_uf" value="{{ ato.uf }}" maxlength="2"></label>
+    <label>Livro <input name="ato_livro" value="{{ ato.livro }}" required></label>
+    <label>Folha(s) <input name="ato_folha" value="{{ ato.folha }}"></label>
+    <label>Nº de ordem / termo <input name="ato_ordem" value="{{ ato.ordem }}"></label>
+    <div class="actions"><button class="button primary">Consultar o ato</button></div>
+  </form>
+</section>
+
+{% if procurou_ato %}
+  {% if not achados_ato %}
+  <div class="flash success">
+    <strong>Nada na lista de atenção</strong> para o livro {{ ato.livro }}
+    {%- if ato.folha %}, folha {{ ato.folha }}{% endif %}
+    {%- if ato.ordem %}, ordem {{ ato.ordem }}{% endif %}.
+  </div>
+  {% else %}
+    {% from '_fraude.html' import alerta as alerta_fraude %}
+    {{ alerta_fraude(achados_ato, csrf_token, 'balcão — consulta de ato', '',
+                     request.full_path) }}
+  {% endif %}
+{% endif %}
+
 {% if procurou %}
   {% if not achados %}
   <div class="flash success">

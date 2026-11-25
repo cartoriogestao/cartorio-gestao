@@ -68,6 +68,8 @@
      `[data-busca-ato]`, que hoje é a tela do protocolo do caixa; nas outras
      não faz nada. #}
   <script defer src="{{ url_for('static', filename='busca_ato.js') }}"></script>
+  {# O sinal verde/vermelho do selo na tela do ato (P008): só age onde há `[data-selo-sinal]`. #}
+  <script defer src="{{ url_for('static', filename='selo_sinal.js') }}?v={{ VERSION }}"></script>
   {# Navegacao progressiva: busca, acordeao e menu compacto no celular. O
      <details> continua sendo a base, portanto nenhum link depende do script. #}
   <script defer src="{{ url_for('static', filename='navegacao.js') }}?v={{ VERSION }}"></script>
@@ -297,6 +299,7 @@
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Processos que levam meses</div>
         <a href="{{ url_for('usucapiao_processos') }}">Usucapião extrajudicial</a>
         <a href="{{ url_for('ri_retificacoes') }}">Retificação de área</a>
+        <a href="{{ url_for('ri_intimacoes') }}">Intimação fiduciária</a>
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Livro 3 — Registro Auxiliar</div>
         <a href="{{ url_for('livro3_registros') }}">Registros do Livro 3</a>
         {# MINUTA ESQUECIDA NUM REGISTRO QUE NINGUEM ABRE nao aparece em lugar
@@ -315,6 +318,7 @@
         <a href="{{ url_for('ri_indicador_real') }}">Indicador Real</a>
         <a href="{{ url_for('ri_indicador_pessoal') }}">Indicador Pessoal</a>
         <a href="{{ url_for('ri_georref_pendentes') }}">Georreferenciamento — a conferir</a>
+        <a href="{{ url_for('ri_geo') }}">Mapa do ONR — polígonos</a>
         <a href="{{ url_for('ri_cnib') }}">CNIB — indisponibilidade</a>
         {# O ONR E A CENTRAL DO REGISTRO DE IMOVEIS, e ele faz duas coisas
            diferentes: recebe o **indicador real** (o indice que o pais consulta
@@ -342,6 +346,7 @@
           de fora: esta tela GRAVA na ficha, e ele nao pratica ato.
         #}
         {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('ri_onr_enderecos') }}">ONR — endereços a conferir</a>{% endif %}
+        <a href="{{ url_for('ri_fila_fichas') }}">Fichas — fila de conferência (Livros 4 e 5)</a>
         <a href="{{ url_for('ri_cnib_pendentes') }}">CNIB — o que espera seu okay</a>
         {# A COPIA LOCAL DA CNIB TEM DE TER UM LUGAR ONDE SE OLHA DE QUANDO ELA
            E. Sem esta porta, o atualizador seria mais uma peca pronta que
@@ -375,6 +380,7 @@
         <a href="{{ url_for('ri_selos') }}">Selos e emolumentos</a>{% endif %}
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('ri_onr') }}">Exportação ONR</a>
         <a href="{{ url_for('onr_ir') }}">Indicador Real — o arquivo inteiro</a>
+        {% if user.role == 'ADMIN' %}<a href="{{ url_for('onr_ir_lotes') }}">Indicador Real: lotes para o portal</a>{% endif %}
         {#
           A CARGA DO NEXT CLOUD SAS FICA AO LADO DA EXPORTACAO, e nao numa
           secao nova: as duas mandam a mesma coisa ao mesmo destino — o que

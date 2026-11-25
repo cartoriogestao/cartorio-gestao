@@ -78,7 +78,7 @@
     {# O protocolo que paga o selo da negativa (16.24.1) — 22/10/2026,
        trava do selo pago: a escrevente confirma qual paga. #}
     {% set _ps_neg = protocolos_do_selo_ri('ri_certidoes', '16.24.1') %}
-    <div class="span2">{{ protocolo_do_selo(_ps_neg.candidatos, _ps_neg.pedidos, atendendo=_ps_neg.atendendo) }}</div>
+    <div class="span2">{{ protocolo_do_selo(_ps_neg.candidatos, _ps_neg.pedidos, atendendo=_ps_neg.atendendo, tabela='ri_certidoes') }}</div>
     <input type="hidden" name="busca" value="{{ busca }}">
     <input type="hidden" name="bairro" value="{{ bairro }}">
     <input type="hidden" name="tipo_ru" value="{{ tipo }}">

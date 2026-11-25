@@ -72,7 +72,7 @@ APP_NAME = "Gestão Integrada da Serventia"
 # servidor avisou «quem respondeu está na versão 3.6.137, e a instalada é
 # 3.6.138» sobre uma atualização que tinha funcionado (504 de 505 arquivos
 # batendo byte a byte). `tests/test_os_dois_carimbos_da_versao.py` guarda isso.
-VERSION = "3.7.21"
+VERSION = "3.7.22"
 # 3.6.286 - 06/10/2026 Release do sandbox para o oficial: centrais (fila/log/trava), A3, editor/motor de modelos, produtividade, selo robo, F10-F12 do RI, SIRC (cancelados)
 # 3.6.285 - CENPROT: POST /token com form usuario/senha (x-www-form-urlencoded)
 # 3.6.284 - Projetos lista: coluna Atualizado (DD/MM/AA - HH:MM, fuso local)
@@ -3597,6 +3597,10 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     # A CONSOLIDAÇÃO FIDUCIÁRIA, O SOBRESTAMENTO E A DOI DO RTD (01/11/2026).
     import rg_fiduciaria_web
     rg_fiduciaria_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+    # A INTIMAÇÃO DO DEVEDOR FIDUCIANTE NO RI (RI013-I1, 24/11/2026): Lei 9.514, art. 26;
+    # TJMA 721 a 726. A ficha da prenotação aponta para ela pelo global do Jinja.
+    import ri_intimacao_fiduciaria_web
+    ri_intimacao_fiduciaria_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
     # OS ATOS DO LG04 (19/10/2026): a notificação extrajudicial e a autenticação
     # de livros do RCPJ/RTD voltam para `rcpj_rtd_registro`, que nasce acima;
     # a pública forma e a comunicação ao DETRAN são do balcão das Notas.
@@ -3700,6 +3704,8 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     # baixarem o programa precisam do botao».
     import onr_ir_inteiro_web
     onr_ir_inteiro_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+    import onr_ir_lotes_web
+    onr_ir_lotes_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
     import ri_onr_web
     ri_onr_web.registrar_rotas(app, db, login_required, roles_required, audit,
@@ -3720,6 +3726,11 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     # A BASE DO MAPA DO ONR — o CSV que o QGIS junta ao polígono (LF02).
     import ri_mapa_onr
     ri_mapa_onr.registrar_rotas(app, db, login_required, roles_required, audit)
+
+    # OS POLIGONOS DO MAPA (RI011, S9): guardar a geometria ligada a matricula, medir no elipsoide, conferir e
+    # gerar o .gpkg / Shapefile do ONR. O sistema gera o arquivo; nao envia.
+    import ri_geo_web
+    ri_geo_web.registrar_rotas(app, db, login_required, roles_required, audit)
 
     # A APOSTILA DE HAIA (LG03) — pedido, documento, emissão no CNJ, selo,
     # cobrança e controle. Chega DESLIGADA (`modulos_ligados`, NINGUEM).
@@ -3766,6 +3777,10 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     import onr_endereco_web
     onr_endereco_web.registrar_rotas(app, db, login_required, roles_required,
                                      audit, fmt_date)
+
+    # A FILA DE CONFERENCIA DAS FICHAS: a maquina sugere, e so uma pessoa grava.
+    import ri_fila_fichas_web
+    ri_fila_fichas_web.registrar_rotas(app, db, login_required, roles_required, audit)
 
     # A CENTRAL DE CERTIDOES DO ON-RCPN — a fila dos sete modulos e a
     # certidao eletronica. Depois de `atribuicoes_web`, que e quem tem a

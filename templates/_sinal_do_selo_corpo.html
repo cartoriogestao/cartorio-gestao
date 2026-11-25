@@ -1,0 +1,25 @@
+{# O que `/selo/sinal` devolve: o sinal pronto (ver `selo_sinal.py`). #}
+{% if sinal %}
+<div class="selo-sinal-corpo selo-sinal--{{ sinal.cor }}" data-cor="{{ sinal.cor }}">
+  <p class="selo-sinal-titulo"><span class="selo-sinal-luz" aria-hidden="true"></span>
+    <strong>{{ sinal.titulo }}</strong></p>
+  <ul class="selo-sinal-linhas">
+    {% for linha in sinal.linhas %}<li>{{ linha }}</li>{% endfor %}
+    {% for aviso in sinal.avisos %}{% if aviso not in sinal.linhas %}<li class="muted">{{ aviso }}</li>{% endif %}{% endfor %}
+  </ul>
+  {% if sinal.botoes %}
+  <p class="selo-sinal-botoes">
+    {% for b in sinal.botoes %}
+    <a class="button small" target="_blank" rel="noopener"
+       href="{{ url_for('caixa_protocolo', protocolo_id=b.protocolo_id) if b.protocolo_id else b.url }}">{{ b.texto }}</a>
+    {% endfor %}
+    <span class="small muted">abre em outra aba; ao voltar, o sinal se refaz.</span>
+  </p>
+  {% endif %}
+</div>
+{% else %}
+<div class="selo-sinal-corpo" data-cor="">
+  <p class="small muted">Não deu para conferir o selo agora. Se faltar algo, o
+    quadro «Para selar este ato falta» aparece depois do clique.</p>
+</div>
+{% endif %}

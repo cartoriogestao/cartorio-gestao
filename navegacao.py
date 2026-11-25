@@ -61,10 +61,15 @@ ICONES: dict[str, str] = {
 
 
 def _i(rotulo: str, endpoint: str, papeis: tuple[str, ...] | None = TODOS, *,
-       quando: str = "", antigo: str = "", termos: str = "", **args: Any) -> dict:
-    """Uma entrada. `antigo` é o nome no menu de hoje: a busca acha pelos dois."""
+       quando: str = "", antigo: str = "", termos: str = "", atalho: bool = False,
+       **args: Any) -> dict:
+    """Uma entrada. `antigo` é o nome no menu de hoje: a busca acha pelos dois.
+
+    `atalho=True` é a segunda porta DECLARADA para uma tela que mora noutra aba (veja
+    `ATALHOS`): ela só abre a tela; o menu, as migalhas e a busca continuam com a dona.
+    """
     return {"rotulo": rotulo, "endpoint": endpoint, "papeis": papeis, "quando": quando,
-            "antigo": antigo, "termos": termos, "args": args}
+            "antigo": antigo, "termos": termos, "atalho": atalho, "args": args}
 
 
 # A ORDEM DOS MÓDULOS É A DO MOVIMENTO, medido em selos de 90 dias: Registro Civil
@@ -87,6 +92,13 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
          # gerente passou a entrar junto com o administrador.
          ("Projetos", (
              _i("Projetos", "dev_projetos_lista", AM, termos="desenvolvimento andamento"),)),
+         # A CHECKLIST DO DIA GANHOU UM ATALHO AQUI (25/11/2026), por pedido do oficial:
+         # «coloque o modulo de conferencia por area na aba de trabalho» / «atalho nela» /
+         # «mantendo no painel». É ATALHO, e não mudança: a tela continua morando em
+         # Gestão › Checklist do dia (menu, migalhas e busca), os cartões do painel
+         # continuam levando a ela, e o endereço e os papéis são os mesmos. Veja `ATALHOS`.
+         ("Checklist do dia", (
+             _i("Checklist do dia (por área)", "gestor_checklist", AMA, atalho=True),)),
      )},
     {"chave": "NOTAS", "curto": "Notas", "nome": "Tabelionato de Notas", "cor": "NOTAS",
      "icone": "pena", "lavra": True, "secoes": (
@@ -151,6 +163,7 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
          ("Processos longos", (
              _i("Usucapião extrajudicial", "usucapiao_processos"),
              _i("Retificação de área", "ri_retificacoes"),
+             _i("Intimação fiduciária", "ri_intimacoes", termos="alienacao fiduciaria purga mora devedor fiduciante consolidacao"),
              _i("O que o Código de Normas exige", "usucapiao_codigo_de_normas", antigo="Usucapião — o que o Código de Normas exige"),)),
          ("Livro 3", (
              _i("Registros", "livro3_registros", antigo="Registros do Livro 3", termos="registro auxiliar"),
@@ -163,15 +176,20 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("Indicador Real", "ri_indicador_real"),
              _i("Indicador Pessoal", "ri_indicador_pessoal"),
              _i("Georreferenciamento a conferir", "ri_georref_pendentes", antigo="Georreferenciamento — a conferir",
-                termos="mosaico sigri sig-ri poligono 343-f perimetro"),)),
+                termos="mosaico sigri sig-ri poligono 343-f perimetro"),
+             _i("Mapa do ONR: polígonos", "ri_geo", antigo="Mapa do ONR — polígonos",
+                termos="georreferenciamento poligono gpkg shapefile sigef sirgas qgis mosaico"),)),
          ("Centrais e obrigações", (
              _i("DOI", "ri_doi", AMA, antigo="DOI — Receita Federal", termos="receita federal declaracao"),
              _i("CTP", "ri_ctp", AMA, antigo="CTP — prefeituras", termos="prefeitura sefin"),
              _i("ONR: índice real e editais", "ri_onr_painel", antigo="ONR — índice real e editais"),
              _i("ONR: painel de conformidade", "ri_onr_conformidade", AMA, antigo="ONR — painel de conformidade", termos="provimento 143 195 itn 003 adpf 743 cronograma corregedoria"),
              _i("ONR: endereços a conferir", "ri_onr_enderecos", AMU, antigo="ONR — endereços a conferir"),
+             _i("Fichas: fila de conferência", "ri_fila_fichas", antigo="Fichas — fila de conferência (Livros 4 e 5)",
+                termos="indicador real pessoal livro 4 livro 5 cpf cnpj prontidao"),
              _i("Exportação ONR", "ri_onr", AM),
              _i("Indicador Real: o arquivo inteiro", "onr_ir", AM, antigo="Indicador Real — o arquivo inteiro", termos="xml acervo onr"),
+             _i("Indicador Real: lotes para o portal", "onr_ir_lotes", A, termos="livro 4 json oficio eletronico importar"),
              _i("Carga do Next Cloud SAS", "ri_onr_next_cloud", AM),
              _i("CNIB", "ri_cnib", antigo="CNIB — indisponibilidade", termos="indisponibilidade"),
              _i("CNIB: o que espera seu okay", "ri_cnib_pendentes", antigo="CNIB — o que espera seu okay"),
@@ -489,12 +507,27 @@ ENTRADAS_NOVAS: frozenset[tuple[str, tuple]] = frozenset({
     ("notas_atos", (("familia", "atas"),)),
 })
 
+# AS SEGUNDAS PORTAS DE PROPÓSITO, E O MOTIVO DE CADA UMA. A regra da casa é uma porta por
+# sala (`tests/test_menu_sem_duas_portas.py`, relatos #12 e #32): duas entradas para o mesmo
+# endereço fazem o operador escolher no escuro. Quando o oficial pede a mesma tela noutra aba,
+# a entrada leva `atalho=True` e o motivo fica escrito aqui — e o atalho não disputa o lugar
+# da tela: `localizar` prefere a dona, e a busca não o repete. Endereço repetido sem estar
+# nesta lista continua recusado (`tests/test_checklist_atalho_trabalho.py`).
+ATALHOS: dict[str, str] = {
+    "gestor_checklist":
+        "Pedido do oficial em 25/11/2026: «coloque o modulo de conferencia por area na aba "
+        "de trabalho» / «atalho nela» / «mantendo no painel». A checklist mora em Gestão › "
+        "Checklist do dia, e os cartões do semáforo no painel geral continuam levando a ela; "
+        "em Trabalho fica só o atalho, para quem confere as áreas no dia a dia.",
+}
+
 # A FICHA DE UM ATO NÃO TEM ENTRADA PRÓPRIA: ela pertence à seção da lista de onde se
 # chega nela. Sem isto a tela abriria com o menu fechado — o defeito que `modulos.py`
 # existe para impedir.
 PAI: dict[str, tuple[str, str]] = {
     "caixa_protocolos": ("CAIXA", "Protocolo geral"),
     "ri_qualificacao_ia_nota": ("RI", "Protocolo"),
+    "ri_geo_ver": ("RI", "Consulta"),
     "at_ficha": ("TRABALHO", "Atendimentos"),
     "tr_aula": ("TRABALHO", "Treinamento"),
     "tr_normas": ("TRABALHO", "Treinamento"),
@@ -541,6 +574,8 @@ PAI: dict[str, tuple[str, str]] = {
     "onr_eprotocolo_ficha": ("RI", "Protocolo"),
     "onr_certidoes_certificado": ("RI", "Certidões"),
     "ri_retificacao": ("RI", "Processos longos"),
+    "ri_intimacao": ("RI", "Processos longos"),
+    "ri_intimacao_nova": ("RI", "Processos longos"),
     "ri_retificacao_nova": ("RI", "Processos longos"),
     "ri_retificacao_normas": ("RI", "Processos longos"),
     "ri_onr_edital": ("RI", "Processos longos"),
@@ -562,6 +597,11 @@ PAI: dict[str, tuple[str, str]] = {
     "ri_onr_endereco": ("RI", "Centrais e obrigações"),
     "ri_onr_indicador": ("RI", "Centrais e obrigações"),
     "onr_ir_conferir": ("RI", "Centrais e obrigações"),
+    # A FILA DE CONFERÊNCIA DAS FICHAS (RI009, #499): a ficha de um item e a auditoria da
+    # fila abrem dentro da seção da lista (25/11/2026, junção da 3.7.22).
+    "ri_fila_ficha": ("RI", "Centrais e obrigações"),
+    "ri_fila_auditoria": ("RI", "Centrais e obrigações"),
+    "onr_ir_lotes_conferir": ("RI", "Centrais e obrigações"),
     "ri_expurgar_ato": ("RI", "Acervo e modelos"),
     "ri_fichas_do_disco": ("RI", "Acervo e modelos"),
     "ri_transcricoes_lote_ver": ("RI", "Acervo e modelos"),
@@ -883,6 +923,8 @@ def localizar(endpoint: str, args: dict, papel: str, flags: dict,
     """Em que módulo e seção a tela está, e qual entrada a representa."""
     candidatos = [e for e in entradas(papel, flags)
                   if e["endpoint"] == endpoint and _bate(e, args)]
+    # O ATALHO SÓ ABRE A TELA: ela continua no lugar da dona (`ATALHOS`).
+    candidatos = [e for e in candidatos if not e.get("atalho")] or candidatos
     if candidatos:
         melhor = max(candidatos, key=lambda e: len(e["args"]))
         return melhor["modulo"], melhor["secao"], melhor
@@ -945,6 +987,8 @@ def montar(endpoint: str, args: dict, papel: str, gerar_url: Callable[..., str],
                     continue
                 visiveis.append({"rotulo": item["rotulo"], "url": url,
                                  "atual": onde_item is not None and item is _original(onde_item)})
+                if item.get("atalho"):
+                    continue    # a busca acha a tela pela dona: não se repete o resultado
                 indice.append({"r": item["rotulo"], "s": f'{m["curto"]} › {nome}', "u": url, "k": "ir",
                                "t": sem_acento(" ".join((item["rotulo"], nome, m["nome"], item["antigo"], item["termos"])))})
             if not visiveis:

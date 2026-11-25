@@ -1,0 +1,161 @@
+{% extends 'base.html' %}
+{% block title %}Mapa do ONR — polígonos{% endblock %}
+{% block heading %}<h1>Mapa do ONR — polígonos</h1>{% endblock %}
+{% block content %}
+<div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a>
+  {% if user.role in ['ADMIN', 'MANAGER'] %}<a class="button" href="{{ url_for('ri_onr') }}">Exportação ONR</a>{% endif %}</div>
+
+<div class="notice">
+  O Mapa do ONR recebe, por imóvel, o <strong>polígono</strong> e quatro atributos (matrícula, CNS, proprietário e área em
+  hectares). Aqui o sistema <strong>guarda o polígono ligado à matrícula, com a origem</strong>, mede a área no
+  elipsoide do SIRGAS 2000, confere o desenho e gera o arquivo. Tolerâncias e regras estão em
+  <a href="#arquivo">«O arquivo do ONR»</a>.
+</div>
+<div class="notice warning">
+  <strong>O sistema gera o arquivo; não envia.</strong> Quem o leva à intranet do ONR é o oficial. Nada daqui entra no
+  Mapa nem em portal.
+</div>
+{% if not biblioteca %}
+<div class="notice danger">
+  A biblioteca de geodésia (<code>geographiclib</code>) não está instalada nesta máquina: as áreas e as conferências
+  não podem ser calculadas. Ela vem no pacote do sistema — numa instalação antiga, aplique a atualização completa ou
+  rode <code>pip install -r requirements.txt</code> no Python do sistema.
+</div>
+{% endif %}
+
+<section class="cards">
+  <div class="stat"><strong>{{ vigentes|length }}</strong><small>polígonos vigentes</small></div>
+  <div class="stat"><strong>{{ pendentes|length }}</strong><small>pendentes de adoção</small></div>
+  <div class="stat"><strong>{{ conferencia.vao if conferencia else '—' }}</strong><small>iriam ao arquivo</small></div>
+  <div class="stat"><strong>{{ conferencia.ficam if conferencia else '—' }}</strong><small>ficariam de fora</small></div>
+</section>
+
+{% if desenho %}
+<section class="panel">
+  <div class="panel-head"><span>O mosaico guardado</span><span class="small muted">só o perímetro dos polígonos vigentes; sem imagem de fundo</span></div>
+  <div style="padding:12px">{{ desenho|safe }}</div>
+</section>
+{% endif %}
+
+{% if pode_gravar %}
+<section class="panel" id="importar">
+  <div class="panel-head"><span>Importar um arquivo</span>
+    <span class="small muted">GeoPackage (.gpkg), Shapefile (.zip com .shp, .dbf e .prj), GeoJSON ou a parcela do SIGEF</span></div>
+  <form method="post" action="{{ url_for('ri_geo_importar') }}" enctype="multipart/form-data" class="form-grid" style="padding:12px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="span2">Arquivo <input type="file" name="arquivo" required accept=".gpkg,.zip,.geojson,.json"></label>
+    <label>Camada <small>(só se o arquivo tiver mais de uma)</small><input name="camada" maxlength="120" autocomplete="off"></label>
+    <label>Sistema de coordenadas <small>(só se o arquivo não disser)</small>
+      <select name="epsg">
+        <option value="">— o que o arquivo diz</option>
+        <option value="4674">SIRGAS 2000 (EPSG:4674)</option>
+        {% for z in range(18, 25) %}<option value="{{ 31977 + z - 17 }}">SIRGAS 2000 / UTM {{ z }}S (EPSG:{{ 31977 + z - 17 }})</option>{% endfor %}
+        <option value="4326">WGS 84 (EPSG:4326) — com aviso</option>
+      </select></label>
+    <label class="span2"><input type="checkbox" name="e_sigef" value="1"> É a parcela baixada do SIGEF (certificada pelo INCRA)</label>
+    <label>De que levantamento <small>(ART/TRT, código SIGEF, data…)</small><input name="levantamento" maxlength="300" autocomplete="off"></label>
+    <label>Quem desenhou <small>(responsável técnico)</small><input name="responsavel_tecnico" maxlength="200" autocomplete="off"></label>
+    <div class="span2"><button class="button primary">Importar</button>
+      <small class="muted">Entra como PENDENTE. O sistema não adota nada sozinho: o atributo do arquivo só sugere a matrícula.
+      Arquivo em SAD 69 ou Córrego Alegre é recusado (converta no QGIS para SIRGAS 2000).</small></div>
+  </form>
+</section>
+{% endif %}
+
+{% macro achados(linha) %}
+  {% for a in linha.lista_de_achados %}<div class="small {{ 'danger' if a.nivel == 'ERRO' else 'muted' }}">{{ '✖' if a.nivel == 'ERRO' else '•' }} {{ a.texto }}</div>{% endfor %}
+{% endmacro %}
+
+<section class="panel" id="pendentes">
+  <div class="panel-head"><span>Pendentes de adoção</span>
+    {% if pode_gravar and pendentes %}<form method="post" action="{{ url_for('ri_geo_adotar_sugestoes') }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button">Adotar as sugestões sem erro</button></form>{% endif %}</div>
+  <div style="padding:12px">
+  {% if not pendentes %}<p class="muted">Nada pendente.</p>{% else %}
+  <table class="table">
+    <thead><tr><th>#</th><th>Origem</th><th>Matrícula sugerida</th><th>Área geodésica</th><th>Conferência</th><th></th></tr></thead>
+    <tbody>{% for g in pendentes %}
+      <tr>
+        <td><a href="{{ url_for('ri_geo_ver', geometria_id=g.id) }}">{{ g.id }}</a></td>
+        <td class="small">{{ rotulo_da_origem.get(g.origem, g.origem) }}<br>{{ g.arquivo_nome or '' }}{% if g.matricula_declarada %}<br>arquivo diz: {{ g.matricula_declarada }}{% endif %}</td>
+        <td>{{ g.rotulo or '—' }}</td>
+        <td>{{ '{:,.4f}'.format(g.areas.geodesica_ha).replace(',', 'X').replace('.', ',').replace('X', '.') }} ha</td>
+        <td>{{ achados(g) }}</td>
+        <td>{% if pode_gravar and not g.com_erro %}
+          <form method="post" action="{{ url_for('ri_geo_adotar', geometria_id=g.id) }}" class="stack">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input name="matricula" value="{{ g.rotulo or g.matricula_declarada or '' }}" size="9" placeholder="matrícula" required>
+            <button class="button">Adotar</button></form>{% endif %}</td>
+      </tr>{% endfor %}</tbody>
+  </table>{% endif %}
+  </div>
+</section>
+
+<section class="panel" id="vigentes">
+  <div class="panel-head"><span>Polígonos vigentes</span><span class="small muted">a área geodésica ao lado da registrada na ficha</span></div>
+  <div style="padding:12px">
+  {% if not vigentes %}<p class="muted">Nenhum polígono vigente ainda. Importe um arquivo e adote.</p>{% else %}
+  <table class="table">
+    <thead><tr><th>Matrícula</th><th>Origem</th><th>Geodésica (ha)</th><th>Registrada (ha)</th><th>Diferença</th><th>Conferência</th></tr></thead>
+    <tbody>{% for g in vigentes %}
+      <tr>
+        <td><a href="{{ url_for('ri_geo_ver', geometria_id=g.id) }}">{{ g.rotulo }}</a></td>
+        <td class="small">{{ rotulo_da_origem.get(g.origem, g.origem) }}{% if g.sigef_codigo %}<br>SIGEF {{ g.sigef_codigo }}{% endif %}{% if g.responsavel_tecnico %}<br>{{ g.responsavel_tecnico }}{% endif %}</td>
+        <td>{{ '%.4f'|format(g.areas.geodesica_ha) }}</td>
+        <td>{{ '%.4f'|format(g.areas.registrada_ha) if g.areas.registrada_ha is not none else '—' }}</td>
+        <td class="{{ 'danger' if g.areas.bate == False else '' }}">
+          {% if g.areas.diferenca_pct is not none %}{{ '%+.2f'|format(g.areas.diferenca_pct) }}%{% if g.areas.bate == False %} — não bate{% endif %}{% else %}—{% endif %}</td>
+        <td>{{ achados(g) }}</td>
+      </tr>{% endfor %}</tbody>
+  </table>{% endif %}
+  </div>
+</section>
+
+<section class="panel" id="arquivo">
+  <div class="panel-head"><span>O arquivo do ONR</span><span class="small muted">MATRICULA · CNS · PROPRIETAR · AREA_HA</span></div>
+  <div style="padding:12px">
+    <p><strong>Qual área vai em AREA_HA?</strong> A decisão é do oficial. O plugin de referência manda a registrada
+      quando a ficha a tem; o ONR descreve a geodésica. {% if not cfg.regra_da_area %}<span class="danger">Ainda não foi escolhida: sem a
+      escolha, o arquivo não se gera.</span>{% endif %}</p>
+    {% if pode_gerar %}
+    <form method="post" action="{{ url_for('ri_geo_regra_da_area') }}" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="span2">{% for valor, texto in regras.items() %}
+        <label style="display:block"><input type="radio" name="regra" value="{{ valor }}" {% if cfg.regra_da_area == valor %}checked{% endif %} required> {{ texto }}</label>{% endfor %}</div>
+      <label>Tolerância de fechamento (m) <input name="tolerancia_fechamento_m" value="{{ cfg.tolerancia_fechamento_m }}" size="6"></label>
+      <label>Sobreposição que importa (m²) <input name="tolerancia_sobreposicao_m2" value="{{ cfg.tolerancia_sobreposicao_m2 }}" size="6"></label>
+      <label>Divergência de área que «não bate» (%) <input name="divergencia_area_pct" value="{{ cfg.divergencia_area_pct }}" size="6"></label>
+      <div class="span2"><button class="button">Gravar a escolha</button>
+        <small class="muted">As três tolerâncias são <strong>valores de trabalho desta casa</strong>, e não as do ONR (que as
+        remete a um manual técnico que a casa não tem).</small></div>
+    </form>
+    {% elif cfg.regra_da_area %}<p>Regra escolhida: {{ regras[cfg.regra_da_area] }}.</p>{% endif %}
+
+    {% if conferencia %}
+    <h3>Conferência antes do arquivo</h3>
+    <table class="table"><thead><tr><th>Matrícula</th><th>No arquivo?</th><th>O que a conferência achou</th></tr></thead><tbody>
+      {% for i in conferencia.itens %}<tr><td>{{ i.matricula or '—' }}</td><td>{{ 'sim' if i.vai else 'NÃO' }}</td>
+        <td>{% for a in i.achados %}<div class="small {{ 'danger' if a.nivel == 'ERRO' else 'muted' }}">{{ '✖' if a.nivel == 'ERRO' else '•' }} {{ a.texto }}</div>{% else %}<span class="muted">sem achados</span>{% endfor %}</td></tr>{% endfor %}
+    </tbody></table>
+    {% endif %}
+
+    {% if pode_gerar %}
+    <p>
+      <a class="button primary" href="{{ url_for('ri_geo_baixar_gpkg') }}">Baixar o GeoPackage (.gpkg)</a>
+      <a class="button" href="{{ url_for('ri_geo_baixar_shapefile') }}">Baixar o Shapefile (.zip)</a>
+      <small class="muted">Só o ADMIN baixa: o arquivo leva o nome de cada proprietário, e a baixa fica na auditoria.</small></p>
+    {% else %}<p class="muted small">O arquivo é gerado pelo oficial (perfil ADMIN).</p>{% endif %}
+  </div>
+</section>
+
+{% if historico %}
+<details class="panel">
+  <summary><strong>Histórico</strong> — substituídos e descartados ({{ historico|length }})</summary>
+  <div style="padding:12px"><table class="table"><thead><tr><th>#</th><th>Matrícula</th><th>Situação</th><th>Origem</th><th>Motivo</th></tr></thead><tbody>
+    {% for g in historico %}<tr><td><a href="{{ url_for('ri_geo_ver', geometria_id=g.id) }}">{{ g.id }}</a></td><td>{{ g.rotulo or '—' }}</td>
+      <td>{{ g.situacao }}</td><td class="small">{{ rotulo_da_origem.get(g.origem, g.origem) }} · {{ g.arquivo_nome or '' }}</td>
+      <td class="small">{{ g.descartada_motivo or ('substituído pelo #' ~ g.substituida_por if g.substituida_por else '') }}</td></tr>{% endfor %}
+  </tbody></table></div>
+</details>
+{% endif %}
+{% endblock %}

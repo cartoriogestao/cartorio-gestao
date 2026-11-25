@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+{% block title %}Indicador Real: lotes para o portal{% endblock %}
+{% block heading %}<h1>Indicador Real: lotes para o portal</h1>{% endblock %}
+{% block content %}
+
+<p class="notice">
+  Gera o arquivo JSON do Livro 4 para o oficial importar no Ofício Eletrônico, em
+  <strong>Cartórios → Envio de Indicador Real</strong>. <strong>Este sistema não envia nada e não muda nenhuma ficha.</strong>
+  A matrícula só conta como entregue depois que o portal mostrar <strong>Importado</strong> e isso for registrado aqui.
+</p>
+
+{% if faltam %}<p class="notice warning">Falta na configuração: {{ faltam|join('; ') }}.</p>{% endif %}
+
+<section class="cards">
+  <div class="stat"><strong>{{ entregues }}</strong><small>matrículas com «Importado» registrado</small></div>
+  <div class="stat"><strong>{{ historico|length }}</strong><small>lotes no histórico</small></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Montar o lote</span><small>conferir não grava nada</small></div>
+  <form method="post" action="{{ url_for('onr_ir_lotes_conferir') }}" style="padding:14px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="filters">
+      <label>Da matrícula <input name="de" inputmode="numeric" value="{{ f.de if f.de is not none else '' }}"></label>
+      <label>Até a matrícula <input name="ate" inputmode="numeric" value="{{ f.ate if f.ate is not none else '' }}"></label>
+      <label>Tamanho do lote <input name="limite" type="number" min="1" max="{{ lote_maximo }}" value="{{ f.limite }}"></label>
+    </div>
+    <fieldset style="margin-top:10px">
+      <legend>Classes que entram</legend>
+      <label><input type="checkbox" name="classes" value="PRONTA" {% if 'PRONTA' in f.classes %}checked{% endif %}> {{ nome_classe.PRONTA }}: a ficha já diz tudo</label><br>
+      <label><input type="checkbox" name="classes" value="TEOR" {% if 'TEOR' in f.classes %}checked{% endif %}> {{ nome_classe.TEOR }}: confira uma amostra antes</label><br>
+      <label><input type="checkbox" name="classes" value="REGRA" {% if 'REGRA' in f.classes %}checked{% endif %}> {{ nome_classe.REGRA }}: exige a opção abaixo</label>
+    </fieldset>
+    <fieldset style="margin-top:10px">
+      <legend>Decisões do titular (desligadas por padrão)</legend>
+      <label><input type="checkbox" name="incluir_acervo" value="1" {% if f.incluir_acervo %}checked{% endif %}>
+        Incluir as fichas <strong>ACERVO</strong>, herdadas do sistema anterior</label><br>
+      <label><input type="checkbox" name="aceitar_regra" value="1" {% if f.aceitar_regra %}checked{% endif %}>
+        Aceitar a <strong>regra da casa</strong> para o que a ficha e o teor não dizem. Esses valores vão ao índice nacional</label>
+    </fieldset>
+    <div class="actions" style="margin-top:12px">
+      <button class="button" type="submit">Conferir o que sairia</button>
+      {% if r and r.vao %}<button class="button primary" formaction="{{ url_for('onr_ir_lotes_gerar') }}">Gerar o lote com {{ r.vao|length }} matrícula(s)</button>{% endif %}
+    </div>
+  </form>
+
+  {% if r %}
+  <div class="cards" style="padding:0 14px 14px">
+    <div class="stat"><strong>{{ r.vao|length }}</strong><small>vão no arquivo</small></div>
+    <div class="stat"><strong>{{ r.recusadas|length }}</strong><small>recusadas</small></div>
+    <div class="stat"><strong>{{ r.acervo_de_fora }}</strong><small>delas por serem ACERVO</small></div>
+    <div class="stat"><strong>{{ r.fora_da_selecao }}</strong><small>de classe não marcada</small></div>
+    <div class="stat"><strong>{{ r.para_o_proximo }}</strong><small>para o próximo lote</small></div>
+  </div>
+  <p class="small muted" style="padding:0 14px">Na faixa: {{ r.na_faixa }} ficha(s) vigente(s).
+    {% for c, n in r.por_classe.items() %}{{ nome_classe[c] }}: {{ n }}{% if not loop.last %} · {% endif %}{% endfor %}.</p>
+  {% if r.recusadas %}
+  <details style="padding:0 14px 14px">
+    <summary>Recusadas, com o motivo: {{ r.recusadas|length }}{% if r.recusadas|length > limite_tela %} (a tela mostra {{ limite_tela }}; o lote gerado guarda todas em CSV){% endif %}</summary>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Matrícula</th><th>Classe</th><th>Motivo</th></tr></thead>
+      <tbody>{% for x in r.recusadas[:limite_tela] %}
+        <tr><td><a href="{{ url_for('ri_ficha', matricula_id=x.id) }}">{{ x.numero }}</a></td>
+            <td class="small">{{ nome_classe[x.classe] }}</td>
+            <td class="small">{% for m in x.motivos %}<div>{{ m }}</div>{% endfor %}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+  </details>
+  {% endif %}
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><span>Histórico dos arquivos</span><small>o resultado é o que o portal mostrou</small></div>
+  {% if historico %}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Lote</th><th>Situação</th><th>Arquivo e hash</th><th>Matrículas</th><th>Gerado</th><th>Registrar o que o portal mostrou</th></tr></thead>
+    <tbody>{% for l in historico %}
+      <tr>
+        <td>{{ l.id }}</td>
+        <td>{{ nome_situacao[l.situacao] }}
+          {% for e in eventos.get(l.id, []) %}<div class="small muted">{{ fmt_date(e.visto_em or e.em) }}: {{ nome_situacao[e.para] }}{% if e.observacao %} ({{ e.observacao }}){% endif %}</div>{% endfor %}</td>
+        <td class="small"><a href="{{ url_for('onr_ir_lote_arquivo', lote_id=l.id) }}">{{ l.arquivo }}</a>
+          <div class="muted" style="word-break:break-all">SHA-256 {{ l.sha256 }}</div></td>
+        <td>{{ l.registros }}<div class="small"><a href="{{ url_for('onr_ir_lote_recusadas', lote_id=l.id) }}">{{ l.recusadas }} recusadas (.csv)</a></div></td>
+        <td class="small">{{ fmt_date(l.gerado_em) }}<div class="muted">{{ l.gerado_por }}</div></td>
+        <td>
+          {% if transicoes[l.situacao] %}
+          <form method="post" action="{{ url_for('onr_ir_lote_resultado', lote_id=l.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <select name="situacao" required aria-label="Resultado do lote {{ l.id }}">
+              <option value="">Escolha…</option>
+              {% for s in ['PROCESSANDO', 'IMPORTADO', 'NAO_IMPORTADO', 'DESCARTADO'] if s in transicoes[l.situacao] %}<option value="{{ s }}">{{ nome_situacao[s] }}</option>{% endfor %}
+            </select>
+            <input type="date" name="visto_em" aria-label="Data vista no portal">
+            <input name="observacao" placeholder="Observação" aria-label="Observação">
+            <button class="button" type="submit">Registrar</button>
+          </form>
+          {% else %}<span class="small muted">Sem próximo passo.</span>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}
+  <p class="small muted" style="padding:14px">Nenhum lote gerado ainda.</p>
+  {% endif %}
+</section>
+{% endblock %}

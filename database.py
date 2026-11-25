@@ -80,7 +80,9 @@ from rc_schema import init_rc_schema
 from rg_schema import init_rg_schema
 from ri_onr_central_schema import init_ri_onr_central_schema
 from onr_conformidade_schema import init_onr_conformidade_schema
+from ri_intimacao_fiduciaria import init_ri_intimacao_schema
 from ri_mapa_onr import init_mapa_onr_schema
+from ri_geo import init_geo_schema
 from ri_georref import init_georref_schema
 from apostila import init_apostila_schema
 from livro_diario import init_livro_diario_schema
@@ -94,6 +96,7 @@ from ouvidoria import init_ouvidoria_schema
 from correcoes_de_oficio import init_correcoes_de_oficio_schema
 from centrais_schema import init_centrais_schema
 from onr_endereco_schema import init_ri_onr_endereco_schema
+from ri_fila_fichas_schema import init_ri_fila_fichas_schema
 import senhas as SEN
 from ri_schema import init_ri_schema
 from security import hash_password, validate_password_strength, verify_password
@@ -849,10 +852,16 @@ class Database:
         # O PAINEL DE CONFORMIDADE DO ONR (RI010, 23/11/2026): o declarado, a importação
         # informada e as pendências. Só guardam o que a pessoa digitou.
         init_onr_conformidade_schema(con)
+        # A INTIMACAO FIDUCIARIA DO RI (RI013-I1, 24/11/2026) aponta para
+        # `ri_protocolos`, `ri_matriculas` e `ri_atos`: vem depois do RI.
+        init_ri_intimacao_schema(con)
         # A BASE DO MAPA DO ONR (LF02, 19/10/2026) — a VIEW que o plugin do
         # QGIS le e o de-para da area, refeito a cada subida. Depois do RI,
         # porque a VIEW le `ri_matriculas` e `ri_partes`.
         init_mapa_onr_schema(con)
+        # OS POLIGONOS DO MAPA (RI011, S9): a geometria ligada a matricula, com a origem. Depois do RI (chave
+        # estrangeira em `ri_matriculas`).
+        init_geo_schema(con)
         # A CONFERENCIA DO GEORREFERENCIAMENTO NO ATO (RI011, art. 343-F, II do CNN): quem conferiu o mosaico,
         # quando e o que declarou. Depois do RI — aponta para `ri_matriculas`.
         init_georref_schema(con)
@@ -894,6 +903,8 @@ class Database:
         # A FILA DA CONFERENCIA DO ENDERECO vem logo depois, e pelo mesmo
         # motivo: ela aponta para `ri_matriculas`, que acabou de existir.
         init_ri_onr_endereco_schema(con)
+        # A FILA DE CONFERENCIA DAS FICHAS (Livros 4 e 5): aponta para `ri_matriculas`.
+        init_ri_fila_fichas_schema(con)
         # A retificacao de area aponta para as MESMAS duas tabelas, e pelo
         # mesmo motivo: ela termina numa averbacao e numa matricula nova.
         init_rt_schema(con)

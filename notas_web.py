@@ -5616,6 +5616,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 {"nome": x.get("nome"), "documento": x.get("documento"),
                  "papel_no_ato": (x.get("qualificacao") or "parte")}
                 for x in map(dict, partes)])
+            # E SOBRE OS ATOS DE OUTRA SERVENTIA QUE ESTE ATO CITA (24/11/2026):
+            # a procuração de terceiro (o instrumento de cada representação) e
+            # o ato anterior. A circular que suspende procuração só por livro e
+            # folha não tem nome de parte para bater acima.
+            fraudes = fraudes + FR.atos_citados_no_ato_de_notas(_c, a, partes)
         # DE QUE LADO CADA PARTE ESTA, E QUANTO SE SUGERE PARA ELA.
         #
         #   A regua e a mesma que monta a declaracao — `lados_das_partes` —, e

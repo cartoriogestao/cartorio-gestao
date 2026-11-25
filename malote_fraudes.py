@@ -33,6 +33,15 @@ QUEM DECIDE QUEM ENTRA
     tarefa. A revisão continua dele, só que depois: na tela de fraudes, onde
     inativar exige motivo. A proposta fica gravada do mesmo jeito, com
     `revisado_por` dizendo que foi a IA — a procedência não se perde.
+
+O ATO, E NÃO SÓ A PESSOA — 24/11/2026
+    Uma circular de outro estado suspendeu procurações identificadas só por
+    serventia, livro, folha e ordem, sem o nome das partes. Sem pessoa, o aviso
+    ia para expediente e era arquivado como ciência; o traslado podia aparecer
+    no balcão sem alerta nenhum. Agora a IA devolve também os ATOS
+    identificados, e cada um entra na lista como alerta de ato
+    (`fraude.incluir_ato`, papel `ATO`), pela mesma proposta e com a mesma
+    referência. Aviso sem pessoa E sem ato continua expediente («só ciência»).
 """
 from __future__ import annotations
 
@@ -51,6 +60,12 @@ import identidade_do_robo as IDR
 
 QUEM = "AGENTE MALOTE"
 PAPEIS = ("VITIMA", "ENVOLVIDO", "DOCUMENTO")
+#: O alerta de ATO de outra serventia (24/11/2026). Na proposta, `nome` leva a
+#  descrição do ato («Procuração — serventia, livro, folha») e `documento` fica
+#  vazio: é o que mantém o UNIQUE da tabela valendo, um ato por linha.
+PAPEL_ATO = "ATO"
+CAMPOS_DO_ATO = ("ato_natureza", "ato_serventia", "ato_cns", "ato_cidade", "ato_uf",
+                 "ato_livro", "ato_folha", "ato_ordem", "ato_data")
 SITUACOES = ("PROPOSTO", "APROVADO", "DESCARTADO", "APLICADO")
 
 SCHEMA = """
@@ -95,8 +110,37 @@ def _criar(con, ddl: str) -> None:
     con.commit()
 
 
+def _colunas_do_ato(con) -> None:
+    """As colunas do ato na proposta (24/11/2026). Aditivo, no padrão da casa."""
+    bd = banco(con)
+    for coluna in CAMPOS_DO_ATO:
+        if not bd.tem_coluna("mt_alertas_propostos", coluna):
+            bd.escrever(f"ALTER TABLE mt_alertas_propostos ADD COLUMN {coluna} TEXT")
+    con.commit()
+
+
 def init_schema(con: sqlite3.Connection) -> None:
     _criar(con, SCHEMA)
+    _colunas_do_ato(con)
+
+
+def ato_incompleto(p: dict) -> str | None:
+    """Por que este ato não identifica nada, ou None. A régua é a de
+    `fraude.incluir_ato`: livro, folha ou ordem, e de onde é o ato."""
+    import fraude
+    if not fraude.livro_normalizado(p.get("ato_livro")):
+        return "sem o livro"
+    if not (str(p.get("ato_folha") or "").strip() or fraude.ordem_normalizada(p.get("ato_ordem"))):
+        return "sem a folha nem o número de ordem"
+    if not (str(p.get("ato_serventia") or "").strip() or str(p.get("ato_cns") or "").strip()
+            or str(p.get("ato_cidade") or "").strip()):
+        return "sem a serventia, o CNS ou a cidade"
+    return None
+
+
+def descrever_ato(p: dict) -> str:
+    import fraude
+    return fraude.descrever_ato(p)
 
 
 def referencia(p: dict) -> dict:
@@ -139,25 +183,41 @@ def carregar(con: sqlite3.Connection, propostas: list[dict], agora: str | None =
         p = dict(p)
         p["nome"] = " ".join(str(p.get("nome") or "").split())
         p["documento"] = "".join(ch for ch in str(p.get("documento") or "") if ch.isdigit())
-        if p.get("papel") not in PAPEIS:
+        if p.get("papel") == PAPEL_ATO:
+            falta = ato_incompleto(p)
+            if falta:
+                raise PropostaError(f"Ato proposto {falta}: não identifica o ato.")
+            p["nome"], p["documento"] = descrever_ato(p), ""
+        elif p.get("papel") not in PAPEIS:
             raise PropostaError(f"Papel desconhecido em «{p.get('nome')}»: {p.get('papel')!r}.")
         if not (p.get("nome") or p.get("documento")):
             raise PropostaError("Proposta sem nome nem documento.")
-        bd.escrever(
-            """INSERT INTO mt_alertas_propostos (nome, documento, papel, trecho,
-                   codigo_malote, documento_malote, assunto, remetente, enviado_em, processos,
-                   arquivo, resumo, situacao, criado_em)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'PROPOSTO', %s)
-               ON CONFLICT DO NOTHING""",
-            (p.get("nome"), p.get("documento"), p["papel"], p.get("trecho"), p.get("codigo_malote"),
-             p.get("documento_malote"), p.get("assunto"), p.get("remetente"), p.get("enviado_em"),
-             p.get("processos"), p.get("arquivo"), p.get("resumo"), agora))
+        _inserir_proposta(bd, p, situacao="PROPOSTO", revisado_por=None, revisado_em=None,
+                          agora=agora)
         if bd.linhas_afetadas:
             novas += 1
         else:
             repetidas += 1
     con.commit()
     return {"novas": novas, "repetidas": repetidas}
+
+
+def _inserir_proposta(bd, p: dict, *, situacao: str, revisado_por, revisado_em, agora: str) -> None:
+    """A linha da proposta, com o ato quando é de ato. `ON CONFLICT DO NOTHING`:
+    a mesma pessoa (ou o mesmo ato) do mesmo aviso não entra duas vezes."""
+    bd.escrever(
+        f"""INSERT INTO mt_alertas_propostos (nome, documento, papel, trecho,
+               codigo_malote, documento_malote, assunto, remetente, enviado_em, processos,
+               arquivo, resumo, situacao, revisado_por, revisado_em, criado_em,
+               {", ".join(CAMPOS_DO_ATO)})
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                   {",".join(["%s"] * len(CAMPOS_DO_ATO))})
+           ON CONFLICT DO NOTHING""",
+        (p.get("nome"), p.get("documento"), p["papel"], p.get("trecho"), p.get("codigo_malote"),
+         p.get("documento_malote"), p.get("assunto"), p.get("remetente"), p.get("enviado_em"),
+         p.get("processos"), p.get("arquivo"), p.get("resumo"), situacao, revisado_por,
+         revisado_em, agora, *[(str(p.get(c)).strip() or None) if p.get(c) is not None else None
+                               for c in CAMPOS_DO_ATO]))
 
 
 def revisar(con: sqlite3.Connection, ids: list[int], *, aprovar: bool, revisor: str,
@@ -188,6 +248,8 @@ def _aplicar_uma(con: sqlite3.Connection, p: dict, *, usuario: str, agora: str) 
     ref = referencia(p)
     if p.get("revisado_por") == REVISOR_DA_IA:
         ref["observacao"] = MARCA_DA_IA + ("\n" + ref["observacao"] if ref["observacao"] else "")
+    if p["papel"] == PAPEL_ATO:
+        return _aplicar_ato(con, p, ref, usuario=usuario, agora=agora)
     existente = banco(con).um(
         """SELECT id FROM fr_alertas WHERE situacao = 'ATIVO' AND origem = %s AND papel = %s
              AND ((%s::text <> '' AND documento = %s) OR (%s::text <> '' AND nome_norm = %s))
@@ -204,6 +266,36 @@ def _aplicar_uma(con: sqlite3.Connection, p: dict, *, usuario: str, agora: str) 
         novo = True
     banco(con).escrever("UPDATE mt_alertas_propostos SET situacao = 'APLICADO', alerta_id = %s WHERE id = %s",
                 (alerta_id, p["id"]))
+    return alerta_id, novo
+
+
+def _aplicar_ato(con, p: dict, ref: dict, *, usuario: str, agora: str) -> tuple[int, bool]:
+    """O ato proposto na lista, pela porta da casa (`fraude.incluir_ato`). O
+    mesmo aviso e o mesmo ato (serventia, livro, folha, ordem) não viram dois
+    alertas."""
+    import fraude
+    folhas = fraude.folhas_normalizadas(p.get("ato_folha")) if str(p.get("ato_folha") or "").strip() else []
+    existente = banco(con).um(
+        """SELECT id FROM fr_alertas WHERE situacao = 'ATIVO' AND origem = %s AND papel = %s
+             AND ato_livro_norm = %s AND coalesce(ato_folhas_norm, '') = %s
+             AND coalesce(ato_ordem_norm, '') = %s AND coalesce(ato_serventia_norm, '') = %s
+             AND coalesce(ato_cns, '') = %s
+             ORDER BY id LIMIT 1""",
+        (ref["origem"], PAPEL_ATO, fraude.livro_normalizado(p.get("ato_livro")),
+         fraude._folhas_texto(folhas) or "", fraude.ordem_normalizada(p.get("ato_ordem")) or "",
+         fraude._comparavel(p.get("ato_serventia")), fraude.so_digitos(p.get("ato_cns")) or ""))
+    if existente:
+        alerta_id, novo = int(existente["id"]), False
+    else:
+        alerta_id = fraude.incluir_ato(
+            con, origem=ref["origem"], agora=agora, livro=p.get("ato_livro"), folha=p.get("ato_folha"),
+            ordem=p.get("ato_ordem"), serventia=p.get("ato_serventia"), cns=p.get("ato_cns"),
+            cidade=p.get("ato_cidade"), uf=p.get("ato_uf"), natureza=p.get("ato_natureza"),
+            data=p.get("ato_data"), origem_data=ref["origem_data"], origem_orgao=ref["origem_orgao"],
+            observacao=ref["observacao"], usuario=usuario)["alerta_id"]
+        novo = True
+    banco(con).escrever("UPDATE mt_alertas_propostos SET situacao = 'APLICADO', alerta_id = %s WHERE id = %s",
+                        (alerta_id, p["id"]))
     return alerta_id, novo
 
 
@@ -264,7 +356,14 @@ def aplicar(con: sqlite3.Connection, *, usuario: str, agora: str | None = None) 
 #   têm uma destas raízes no assunto ou no texto. Sem nenhuma, a IA nem é chamada
 #   — o expediente segue o caminho de sempre, e a conta não sobe por circular.
 PALAVRAS_DE_FRAUDE = re.compile(
-    r"fraud|golpe|falsifica|falsidade|falsos?\b|falsas?\b|estelionat|contrafe|inid[oô]ne",
+    r"fraud|golpe|falsifica|falsidade|falsos?\b|falsas?\b|estelionat|contrafe|inid[oô]ne"
+    # A SUSPENSÃO DO ATO (24/11/2026): a circular que suspende procurações só por
+    # livro e folha pode não dizer «fraude» em lugar nenhum. A porta é estreita de
+    # propósito — suspender, bloquear ou anular PERTO de procuração, escritura,
+    # substabelecimento ou ato notarial —, para a circular de prazo não ir à IA.
+    r"|(?:suspens|suspend|bloquei|anula|invalida)\w*\W+(?:\w+\W+){0,6}?"
+    r"(?:procura[çc]|escritura|substabelec|atos?\s+notar)"
+    r"|procura[çc]\w*\W+(?:\w+\W+){0,6}?(?:suspens|bloquead|anulad|cancelad)",
     re.I)
 #: Banco e instituição financeira não entram (ordem de 13/10/2026).
 _E_BANCO = re.compile(
@@ -296,6 +395,13 @@ Responda SÓ com um objeto JSON, sem texto em volta:
     {"nome": "nome completo, como está no texto", "documento": "marca do CPF/CNPJ, ou vazio",
      "papel": "VITIMA" | "ENVOLVIDO" | "DOCUMENTO",
      "trecho": "a frase do texto que liga a pessoa ao caso, até 200 caracteres"}
+  ],
+  "atos": [
+    {"natureza": "procuração, substabelecimento, escritura…", "serventia": "nome da serventia \
+de origem, como está no texto", "cns": "CNS, se houver", "cidade": "cidade da serventia", \
+"uf": "UF", "livro": "livro", "folha": "folha(s)", "ordem": "número de ordem, termo ou protocolo", \
+"data": "data do ato, AAAA-MM-DD, se houver", \
+"trecho": "a frase do texto que identifica o ato, até 200 caracteres"}
   ]
 }
 
@@ -314,7 +420,14 @@ encaminha a comunicação (juiz, corregedor, coordenador, delegado, servidor do 
 tribunal); advogado que só representa a vítima; a serventia ou o órgão público \
 como instituição.
 - Cada pessoa uma vez, cada uma no seu item (nunca duas pessoas no mesmo "nome"). \
-Não invente: documento que o texto não traz fica vazio."""
+Não invente: documento que o texto não traz fica vazio.
+- Também é aviso_de_fraude=true a comunicação que SUSPENDE, BLOQUEIA, ANULA ou \
+declara falso ou fraudado um ATO notarial ou registral IDENTIFICADO (serventia, livro, \
+folha, número de ordem), mesmo sem o nome das partes. Cada ato identificado vai em \
+"atos", um por item; ato sem livro, ou sem folha e sem ordem, não vai. As pessoas \
+que o texto citar continuam em "pessoas".
+- "atos" fica vazio quando o texto não identifica ato nenhum. Não invente livro, \
+folha, ordem nem serventia: o que o texto não traz fica vazio."""
 
 #: Abaixo disto o PDF é imagem digitalizada, e a IA interna (que lê texto) não
 #   tem o que ler. Medido no ensaio de 13/10/2026: o ofício do aviso 81020265824993
@@ -380,6 +493,7 @@ CREATE TABLE IF NOT EXISTS mt_fraude_leituras (
 
 def init_schema_ia(con: sqlite3.Connection) -> None:
     _criar(con, SCHEMA + SCHEMA_LEITURAS)
+    _colunas_do_ato(con)
 
 
 def texto_dos_arquivos(arquivos, limite: int = LIMITE_DO_TEXTO) -> str:
@@ -536,6 +650,56 @@ def pessoas_validas(pessoas: list, texto: str | None = None) -> tuple[list[dict]
     return boas, fora
 
 
+def atos_validos(atos: list, texto: str | None = None) -> tuple[list[dict], list[str]]:
+    """Os ATOS que a IA devolveu (24/11/2026), passados pela régua da casa.
+
+    O ato entra ATIVO, sem revisão antes, e quem escreve o PDF é de fora: com o
+    texto do PDF (`texto`, o original), o livro e a folha (ou a ordem) têm de
+    estar escritos nele, e a serventia também (pelo CNS, pela cidade ou pelo
+    nome) — a mesma régua do CPF de `pessoas_validas`. Um livro inventado
+    acenderia o alerta para o ato de outra pessoa."""
+    import fraude
+    boas, fora, vistas = [], [], set()
+    base = f" {fraude._comparavel(texto)} " if texto is not None else ""
+    for a in atos or []:
+        if not isinstance(a, dict):
+            continue
+        p = {f"ato_{c}": " ".join(str(a.get(c) or "").split()) or None
+             for c in ("natureza", "serventia", "cns", "cidade", "uf", "livro", "folha", "ordem", "data")}
+        rotulo = descrever_ato(p)
+        falta = ato_incompleto(p)
+        if falta:
+            fora.append(f"«{rotulo}»: ato {falta} — não identifica o ato")
+            continue
+        if texto is not None:
+            livro = "".join(ch for ch in str(p["ato_livro"]) if ch.isdigit())
+            folha = "".join(ch for ch in str(p["ato_folha"] or "") if ch.isdigit())[:5]
+            ordem = "".join(ch for ch in str(p["ato_ordem"] or "") if ch.isdigit())
+            if livro and not documento_esta_no_texto(livro, texto):
+                fora.append(f"«{rotulo}»: o livro não está no texto do PDF")
+                continue
+            if not ((folha and documento_esta_no_texto(folha, texto))
+                    or (ordem and documento_esta_no_texto(ordem, texto))):
+                fora.append(f"«{rotulo}»: a folha e a ordem não estão no texto do PDF")
+                continue
+            cns = "".join(ch for ch in str(p["ato_cns"] or "") if ch.isdigit())
+            if cns and not documento_esta_no_texto(cns, texto):
+                fora.append(f"«{rotulo}»: o CNS não está no texto do PDF — entrou sem ele")
+                p["ato_cns"] = cns = None
+            lugar = [fraude._comparavel(p[c]) for c in ("ato_cidade", "ato_serventia") if p[c]]
+            if not (cns or any(x and f" {x} " in base for x in lugar)):
+                fora.append(f"«{rotulo}»: a serventia e a cidade não estão no texto do PDF")
+                continue
+        chave = (fraude.livro_normalizado(p["ato_livro"]), p["ato_folha"], p["ato_ordem"],
+                 fraude._comparavel(p["ato_serventia"]))
+        if chave in vistas:
+            continue
+        vistas.add(chave)
+        p["trecho"] = " ".join(str(a.get("trecho") or "").split())[:300]
+        boas.append(p)
+    return boas, fora
+
+
 def ler_aviso(pasta_dados: Path, texto: str, *, conversar=None, provedor: str | None = None,
               usuario: str = "", referencia: str = "") -> dict:
     """Pergunta à IA interna se é aviso de fraude e quem são as pessoas.
@@ -556,9 +720,10 @@ def ler_aviso(pasta_dados: Path, texto: str, *, conversar=None, provedor: str | 
                          usuario=usuario, referencia=referencia, mascarado=True)
     r = GE.desmascarar(_ler_json(resposta.get("texto") or ""), originais)
     boas, fora = pessoas_validas(r.get("pessoas") or [], texto)
+    atos, fora_atos = atos_validos(r.get("atos") if isinstance(r.get("atos"), list) else [], texto)
     return {"aviso": bool(r["aviso_de_fraude"]), "resumo": str(r.get("resumo") or "")[:600],
             "processos": [str(x) for x in (r.get("processos") or []) if str(x).strip()],
-            "pessoas": boas, "fora": fora, "provedor": provedor,
+            "pessoas": boas, "atos": atos, "fora": fora + fora_atos, "provedor": provedor,
             "modelo": resposta.get("modelo"), "entrada": resposta.get("entrada"),
             "saida": resposta.get("saida")}
 
@@ -609,15 +774,21 @@ def tratar_grupo(con: sqlite3.Connection, g, pasta_dados: Path, raiz_arquivos: P
         return {"caminho": "PENDENTE", "motivo": f"a IA interna não leu o aviso ({frase}); fica na pasta",
                 "leu": True}
     _registrar_leitura(con, grupo=g.nome, codigo=capa.get("codigo"), texto=cabeca, agora=agora, lida=lida)
-    if not lida["aviso"] or not lida["pessoas"]:
+    atos = lida.get("atos") or []
+    if not lida["aviso"] or not (lida["pessoas"] or atos):
         # AVISO SEM NOME NO TEXTO: no ensaio de 13/10/2026 o aviso de Tubarão/SC
         # tinha as três pessoas só nas IMAGENS coladas no PDF (o BO e o contrato
         # fotografado); o texto não traz nenhuma. Vira expediente, como combinado,
         # e o expediente diz o porquê para quem for conferir.
+        #
+        # SEM PESSOA, MAS COM O ATO IDENTIFICADO, NÃO CHEGA AQUI (24/11/2026): a
+        # circular que suspende a procuração do livro tal, folha tal, vira alerta
+        # de ato logo abaixo. Aqui fica só o aviso sem pessoa E sem ato.
         return {"caminho": "EXPEDIENTE", "motivo": (
                     "a IA leu: não é aviso de caso concreto" if not lida["aviso"] else
-                    "a IA leu: é aviso de fraude, mas o texto não traz nome de pessoa (podem estar em "
-                    "imagem dentro do PDF) — conferir e incluir à mão na tela de fraudes"),
+                    "a IA leu: é aviso de fraude, mas o texto não traz nome de pessoa nem ato "
+                    "identificado (livro e folha) — podem estar em imagem dentro do PDF; conferir e "
+                    "incluir à mão na tela de fraudes"),
                 "fora": lida["fora"], "leu": True}
 
     # O CÓDIGO DOS ANEXOS VAI JUNTO (forma da lista de 13/10/2026): é por ele que
@@ -644,17 +815,12 @@ def tratar_grupo(con: sqlite3.Connection, g, pasta_dados: Path, raiz_arquivos: P
         # A MESMA TRAVA DE `aplicar`: os dois procuram o alerta em `fr_alertas`
         # e o incluem (`_aplicar_uma`); com chaves diferentes não se esperavam.
         bd.travar("fr_alertas.aplicar_do_malote")
-        for pessoa in lida["pessoas"]:
-            p = dict(base, **pessoa)
-            bd.escrever(
-                """INSERT INTO mt_alertas_propostos (nome, documento, papel, trecho,
-                       codigo_malote, documento_malote, assunto, remetente, enviado_em, processos,
-                       arquivo, resumo, situacao, revisado_por, revisado_em, criado_em)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'APROVADO', %s, %s, %s)
-                   ON CONFLICT DO NOTHING""",
-                (p["nome"], p["documento"], p["papel"], p["trecho"], p["codigo_malote"],
-                 p["documento_malote"], p["assunto"], p["remetente"], p["enviado_em"], p["processos"],
-                 p["arquivo"], p["resumo"], REVISOR_DA_IA, agora, agora))
+        itens = list(lida["pessoas"]) + [
+            dict(ato, nome=descrever_ato(ato), documento="", papel=PAPEL_ATO) for ato in atos]
+        for item in itens:
+            p = dict(base, **item)
+            _inserir_proposta(bd, p, situacao="APROVADO", revisado_por=REVISOR_DA_IA,
+                              revisado_em=agora, agora=agora)
             linha = bd.um(
                 """SELECT * FROM mt_alertas_propostos WHERE codigo_malote IS NOT DISTINCT FROM %s
                      AND nome = %s AND documento = %s AND papel = %s ORDER BY id LIMIT 1""",
@@ -662,7 +828,10 @@ def tratar_grupo(con: sqlite3.Connection, g, pasta_dados: Path, raiz_arquivos: P
             alerta_id, novo = _aplicar_uma(con, linha, usuario=usuario, agora=agora)
             (incluidos if novo else ja_havia).append({"alerta_id": alerta_id, "nome": p["nome"],
                                                       "papel": p["papel"]})
-        nota = (f"aviso de fraude: {len(incluidos)} pessoa(s) na lista de fraudes"
+        n_atos = sum(1 for x in incluidos if x["papel"] == PAPEL_ATO)
+        nota = (f"aviso de fraude: {len(incluidos) - n_atos} pessoa(s)"
+                + (f" e {n_atos} ato(s) de outra serventia" if n_atos else "")
+                + " na lista de fraudes"
                 + (f", {len(ja_havia)} já estavam" if ja_havia else "")
                 + f"; sem expediente (ordem de 13/10/2026). PDF em {destino}")
         for c, p in zip(copiados, g.arquivos):
@@ -714,15 +883,18 @@ def entradas_pela_ia(con, desde: str) -> list[dict]:
     bd = banco(con)
     if not (bd.tem_tabela("mt_alertas_propostos") and bd.tem_tabela("fr_alertas")):
         return []
-    return bd.ler(
-        """SELECT DISTINCT a.id, a.nome, a.documento, a.papel, a.origem, a.criado_em
-             FROM mt_alertas_propostos p JOIN fr_alertas a ON a.id = p.alerta_id
+    linhas = bd.ler(
+        """SELECT DISTINCT a.* FROM mt_alertas_propostos p JOIN fr_alertas a ON a.id = p.alerta_id
             WHERE p.revisado_por = %s AND p.revisado_em >= %s
               AND a.criado_em = p.revisado_em AND a.situacao = 'ATIVO'
             ORDER BY a.criado_em, a.id""", (REVISOR_DA_IA, desde))
+    # O ATO NÃO TEM NOME (24/11/2026): na lista do oficial ele aparece pela
+    # descrição — serventia, livro, folha —, e não como «?».
+    return [dict(r, nome=descrever_ato(r)) if r["papel"] == PAPEL_ATO else dict(r) for r in linhas]
 
 
-_ROTULO = {"VITIMA": "vítima", "ENVOLVIDO": "envolvido(a)", "DOCUMENTO": "nome em documento fraudado"}
+_ROTULO = {"VITIMA": "vítima", "ENVOLVIDO": "envolvido(a)", "DOCUMENTO": "nome em documento fraudado",
+           PAPEL_ATO: "ato de outra serventia suspenso ou fraudado"}
 
 
 def pagina_de_revisao(propostas: list[dict], titulo: str = "Alertas de fraude vindos do malote") -> str:

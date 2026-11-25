@@ -1,0 +1,197 @@
+{% extends 'base.html' %}
+{#
+  A FICHA DA INTIMAÇÃO FIDUCIÁRIA (RI013-I1). No layout novo, em fases; no antigo, a página inteira.
+  A tela só oferece o que `ri_intimacao_fiduciaria.acoes_possiveis` diz que cabe, e o domínio cobra de novo.
+#}
+{% block heading %}<h1>Intimação fiduciária n. {{ i.rotulo }}</h1>{% endblock %}
+{% block content %}
+{% include '_serventia.html' %}
+{% from '_fases.html' import abre_ficha, regua, travas_e_barras %}
+{% set f = abas if layout_novo else none %}
+{% set do_oficial = user.role in ['ADMIN','MANAGER'] %}
+{% set opera = user.role in ['ADMIN','MANAGER','USER'] %}
+{% set rota = url_for('ri_intimacao_acao', intimacao_id=i.id) %}
+{% macro quando(rotulo='Data') %}<label>{{ rotulo }} <input type="date" name="dia" value="{{ hoje }}" required></label>{% endmacro %}
+{% macro abre(acao) %}<form method="post" action="{{ rota }}" class="form" style="padding:10px 14px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="acao" value="{{ acao }}">{% endmacro %}
+{% if f %}{{ abre_ficha(VERSION) }}{{ regua(f, 'intimacao-' ~ i.id, 'Fases deste procedimento') }}{% endif %}
+
+<div class="actions">
+  <a class="button" href="{{ url_for('ri_intimacoes') }}">&larr; Procedimentos</a>
+  <a class="button" href="{{ url_for('ri_protocolo_ver', protocolo_id=i.protocolo_id) }}">Prenotação n. {{ i.protocolo_numero }}</a>
+  <a class="button" href="{{ url_for('ri_ficha', matricula_id=i.matricula_id) }}">Matrícula {{ i.matricula_numero }}</a>
+</div>
+
+<div class="notice">
+  <strong>{{ i.situacao_rotulo }}.</strong>
+  {% if i.prazo_ate %}{{ i.prazo_rotulo }}: {% if i.prazo_ate < hoje %}<strong>venceu em {{ fmt_date(i.prazo_ate) }}</strong>{% else %}até {{ fmt_date(i.prazo_ate) }}{% endif %}.{% endif %}
+  {% if i.situacao not in ['ENCERRADO_PURGACAO','ENCERRADO_NAO_PURGACAO','RECUSADO','DESISTENCIA','CANCELADO_JUDICIAL'] %}
+  A prenotação está {% if i.prazo_suspenso_motivo == 'INTIMACAO_FIDUCIARIA' %}suspensa e não vence{% else %}<strong>sem a suspensão deste procedimento</strong>{% endif %}; ela consta nas certidões da matrícula até a certidão final (TJMA 723, § 3º).
+  {% endif %}
+</div>
+
+<section class="panel" data-fase="requerimento">
+  <div class="panel-head"><span>Requerimento</span><small>TJMA 721 e 722</small></div>
+  <table class="table">
+    <tr><th>Origem</th><td>{{ ORIGENS[i.origem] }}{% if i.protocolo_central %}, protocolo {{ i.protocolo_central }}{% endif %}{% if i.data_remessa %}, remessa em {{ fmt_date(i.data_remessa) }}{% endif %}</td>
+        <th>Prenotação</th><td>{{ i.protocolo_numero }}, em {{ fmt_date(i.data_prenotacao) }}</td></tr>
+    <tr><th>Credor</th><td>{{ i.credor_nome }} {{ i.credor_documento or '' }}<br><small>{{ i.credor_contato or '' }}</small></td>
+        <th>Assina</th><td>{{ i.representante_nome or '—' }}{% if i.origem == 'CENTRAL_ONR' %}<br><small>Representação dispensada (TJMA 722, § 4º)</small>{% endif %}</td></tr>
+    <tr><th>Contrato</th><td>{{ i.contrato or '—' }}{% if i.habitacional %} — habitacional{% endif %}</td>
+        <th>Avalistas e fiadores</th><td>{{ 'a pedido expresso do credor' if i.avalistas_a_pedido else 'não pedidos (TJMA 722, § 5º)' }}</td></tr>
+    <tr><th>Demonstrativo</th><td>{{ reais(i.demonstrativo_centavos) or '—' }}{% if i.demonstrativo_data %} em {{ fmt_date(i.demonstrativo_data) }}{% endif %}</td>
+        <th>Projeção</th><td>{% for p in i.projecao_lista %}até {{ fmt_date(p.vencimento) }}: {{ reais(p.centavos) }}<br>{% else %}—{% endfor %}</td></tr>
+    {% if i.prestacoes_lista %}<tr><th>Prestações vencidas</th><td colspan="3">{% for p in i.prestacoes_lista %}{{ fmt_date(p.vencimento) }}: {{ reais(p.centavos) }}{% if not loop.last %}; {% endif %}{% endfor %}</td></tr>{% endif %}
+    {% if i.exigencia %}<tr><th>Exigência</th><td colspan="3">{{ i.exigencia }}</td></tr>{% endif %}
+  </table>
+  <p class="small" style="padding:0 14px">{{ nao_se_qualifica }}</p>
+  {% if 'qualificar' in acoes and do_oficial %}
+  {{ abre('qualificar') }}
+    <fieldset><legend>O que o requerimento traz</legend>
+      {% for r in requisitos %}<label style="display:block"><input type="checkbox" name="itens" value="{{ r.chave }}"{% if r.chave in i.requisitos_ok %} checked{% endif %}> <strong>{{ r.artigo }}.</strong> {{ r.texto }}</label>{% endfor %}
+    </fieldset>
+    <label>Resultado <select name="resultado" required><option value="POSITIVA">Positiva: começam as intimações</option><option value="EXIGENCIA">Exigência ao credor</option><option value="NEGATIVA">Negativa: recusa o requerimento</option></select></label>
+    <label>Exigência ou fundamento <textarea name="motivo" rows="2"></textarea></label>
+    {{ quando() }}<button class="button primary">Registrar a qualificação</button></form>
+  {% elif 'qualificar' in acoes %}<p style="padding:14px">A qualificação é ato do oficial.</p>{% endif %}
+</section>
+
+<section class="panel" data-fase="intimacoes">
+  <div class="panel-head"><span>Quem será intimado</span><small>TJMA 724; Lei 9.514, art. 26, §§ 3º a 4º-C</small></div>
+  <p style="padding:10px 14px 0">Cada devedor, cônjuge e proprietário diverso do devedor é intimado individualmente (TJMA 724, § 3º).
+  Não encontrado nos endereços do credor, procura-se no domicílio do contrato e no endereço do imóvel, que o sistema traz do acervo (§ 5º).
+  Meio padrão desta casa: <strong>{{ MEIOS[config.ri_intimacao_meio_padrao] }}</strong>.</p>
+  {% for x in intimandos %}
+  <article class="panel" style="margin:10px 14px">
+    <div class="panel-head"><span>{{ x.nome }}{% if x.documento %} — {{ x.documento }}{% endif %}</span><small>{{ x.papel_rotulo }} · {{ x.situacao_rotulo }}{% if x.intimado_em %} em {{ fmt_date(x.intimado_em) }}{% endif %}</small></div>
+    {% if x.pessoa_juridica %}<p style="padding:6px 14px 0">Pessoa jurídica, na pessoa de: <strong>{{ x.representante or 'representante não informado' }}</strong> (TJMA 724, § 4º).</p>{% endif %}
+    {% if x.email %}<p style="padding:6px 14px 0">E-mail do contrato: {{ x.email }}{% if x.email_enviado_em %} — intimação enviada em {{ fmt_date(x.email_enviado_em) }}{% endif %} (art. 26, § 4º-B).</p>{% endif %}
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>Endereço</th><th>De onde veio</th><th>Tentativas</th></tr></thead>
+      <tbody>{% for e in x.enderecos %}<tr><td>{{ e.endereco }}</td><td>{{ ORIGENS_DO_ENDERECO.get(e.origem, e.origem) }}<br><small>{{ e.fonte or '' }}</small></td>
+        <td>{% for d in x.diligencias if d.endereco_id == e.id %}{{ fmt_date(d.dia) }} — {{ MEIOS[d.meio].split(' (')[0] }}: {{ RESULTADOS[d.resultado].rotulo }}{% if d.tentativas_carteiro %} ({{ d.tentativas_carteiro }} tentativa(s) do carteiro){% endif %}{% if d.quem_recebeu %}; recebeu {{ d.quem_recebeu }}{% endif %}{% if d.rastreio %}; objeto {{ d.rastreio }}{% endif %}<br>{% else %}—{% endfor %}</td></tr>
+      {% else %}<tr><td colspan="3">Nenhum endereço.</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% if x.publicacoes %}<p style="padding:6px 14px 0">Edital: {% for p in x.publicacoes %}{{ fmt_date(p.dia) }} ({{ p.veiculo }}){% if not loop.last %}; {% endif %}{% endfor %}.</p>{% endif %}
+    {% if x.sem_endereco_no_acervo %}<p style="padding:6px 14px 0">Acervo sem endereço: {{ x.sem_endereco_no_acervo }}</p>{% endif %}
+    {% if x.situacao not in JA_INTIMADO %}
+      {% if 'diligencia' in acoes and opera and x.enderecos and x.situacao != 'EDITAL_EM_CURSO' %}
+      <details style="margin:6px 14px"><summary>Lançar uma tentativa</summary>
+        {{ abre('diligencia') }}<input type="hidden" name="intimando_id" value="{{ x.id }}">
+          <label>Endereço <select name="endereco_id" required>{% for e in x.enderecos %}<option value="{{ e.id }}">{{ e.endereco }}</option>{% endfor %}</select></label>
+          <label>Meio <select name="meio" required>{% for c, r in MEIOS.items() %}<option value="{{ c }}"{% if c == config.ri_intimacao_meio_padrao %} selected{% endif %}>{{ r }}</option>{% endfor %}</select></label>
+          <label>Resultado <select name="resultado" required>{% for c, r in RESULTADOS.items() %}<option value="{{ c }}">{{ r.rotulo }} — {{ r.meios|join(', ')|lower }}</option>{% endfor %}</select></label>
+          {{ quando('Data da tentativa') }}
+          <label>Hora <input type="time" name="hora"></label>
+          <label>Quem recebeu <input name="quem_recebeu"></label>
+          <label>Tentativas do carteiro <span class="muted">— só no correio</span><input name="tentativas_carteiro" inputmode="numeric"></label>
+          <label>Objeto dos Correios <span class="muted">— o AR digital ainda não está ligado</span><input name="rastreio"></label>
+          <label>O que foi certificado <textarea name="detalhe" rows="2"></textarea></label>
+          <button class="button primary">Lançar</button></form>
+      </details>
+      {% endif %}
+      {% if 'endereco' in acoes and opera %}
+      <details style="margin:6px 14px"><summary>Mais um endereço, ou o acervo sem endereço</summary>
+        {{ abre('endereco') }}<input type="hidden" name="intimando_id" value="{{ x.id }}">
+          <label>De onde veio <select name="origem">{% for c, r in ORIGENS_DO_ENDERECO.items() %}<option value="{{ c }}">{{ r }}</option>{% endfor %}</select></label>
+          <label>Endereço <input name="endereco" required></label>
+          <button class="button">Acrescentar</button></form>
+        {{ abre('acervo_sem_endereco') }}<input type="hidden" name="intimando_id" value="{{ x.id }}">
+          <label>Por que o acervo não traz o endereço do contrato ou do imóvel <textarea name="motivo" rows="2"></textarea></label>
+          <button class="button">Registrar</button></form>
+        {{ abre('corrigir') }}<input type="hidden" name="intimando_id" value="{{ x.id }}">
+          <label>Representante legal <input name="representante" value="{{ x.representante or '' }}"></label>
+          <label>E-mail do contrato <input name="email" value="{{ x.email or '' }}"></label>
+          <label>CPF ou CNPJ <input name="documento" value="{{ x.documento or '' }}"></label>
+          <button class="button">Corrigir</button></form>
+        {% if not x.diligencias %}{{ abre('retirar') }}<input type="hidden" name="intimando_id" value="{{ x.id }}">
+          <label>Tirar da lista, por engano: por quê <input name="motivo"></label><button class="button">Tirar</button></form>{% endif %}
+      </details>
+      {% endif %}
+      {% if 'email' in acoes and opera and x.email and not x.email_enviado_em %}
+      {{ abre('email') }}<input type="hidden" name="intimando_id" value="{{ x.id }}">{{ quando('Intimação enviada ao e-mail em') }}<button class="button">Registrar o envio (art. 26, § 4º-B)</button></form>
+      {% endif %}
+      {% if 'edital' in acoes %}
+      <div style="padding:6px 14px">
+        {% if x.faltas_edital and not x.publicacoes %}<p class="small"><strong>Edital ainda não cabe:</strong> {{ x.faltas_edital|join(' ') }}</p>
+        {% elif do_oficial %}
+        {{ abre('edital') }}<input type="hidden" name="intimando_id" value="{{ x.id }}">
+          {{ quando('Publicado em') }}<label>Jornal ou meio <input name="veiculo" required></label>
+          <button class="button">Lançar a {{ x.publicacoes|length + 1 }}ª publicação do edital</button></form>
+        <a class="button small" href="{{ url_for('ri_intimacao_peca', intimacao_id=i.id, qual='EDITAL', intimando=x.id) }}">Texto do edital</a>
+        {% else %}<p class="small">O edital é promovido pelo oficial.</p>{% endif %}
+      </div>
+      {% endif %}
+    {% endif %}
+    {% if 'INTIMACAO' in pecas %}<p style="padding:6px 14px"><a class="button small" href="{{ url_for('ri_intimacao_peca', intimacao_id=i.id, qual='INTIMACAO', intimando=x.id) }}">Carta de intimação</a></p>{% endif %}
+  </article>
+  {% else %}<p style="padding:14px">Ninguém na lista ainda.</p>{% endfor %}
+
+  {% if 'intimando' in acoes and opera %}
+  {% if sugeridos %}<p style="padding:6px 14px 0"><strong>Proprietários atuais na matrícula que não estão na lista:</strong> {% for s in sugeridos %}{{ s.nome }}{% if s.documento %} ({{ s.documento }}){% endif %}{% if not loop.last %}; {% endif %}{% endfor %}. Sendo diversos do devedor, também se intimam (TJMA 724, § 4º).</p>{% endif %}
+  <details style="margin:10px 14px"><summary>Pôr mais uma pessoa na lista</summary>
+    {{ abre('intimando') }}
+      <label>Nome <input name="nome" required></label>
+      <label>Papel <select name="papel">{% for c, r in PAPEIS.items() %}<option value="{{ c }}">{{ r }}</option>{% endfor %}</select></label>
+      <label>CPF ou CNPJ <input name="documento"></label>
+      <label>Participação no contrato <input name="participacao"></label>
+      <label>E-mail do contrato <input name="email" type="email"></label>
+      <label><input type="checkbox" name="pessoa_juridica" value="1"> Pessoa jurídica</label>
+      <label>Representante legal <input name="representante"></label>
+      <label>Endereços indicados pelo credor <span class="muted">— um por linha; o do contrato e o do imóvel vêm do acervo</span><textarea name="enderecos" rows="3"></textarea></label>
+      <button class="button primary">Pôr na lista</button></form>
+  </details>
+  {% endif %}
+</section>
+
+<section class="panel" data-fase="prazo">
+  <div class="panel-head"><span>Prazo e purga</span><small>Lei 9.514, art. 26, §§ 1º, 5º e 6º; TJMA 723, § 1º, e 725</small></div>
+  <p style="padding:10px 14px 0">O prazo é de 15 dias, contado da intimação do último intimado (TJMA 723, § 1º); por edital, da última publicação (art. 26, § 4º).
+  {% if i.purga_dia %}<br><strong>Purga:</strong> {{ reais(i.purga_centavos) }} em {{ fmt_date(i.purga_dia) }} ({{ FORMAS_DA_PURGA.get(i.purga_forma, i.purga_forma) }}){% if i.purga_comprovante %}, comprovante {{ i.purga_comprovante }}{% endif %}.
+  Conta: {{ i.purga_conta or 'não configurada' }}. Avisar o credor até {{ fmt_date(i.credor_avisar_ate) }}{% if i.credor_avisado_em %} — avisado em {{ fmt_date(i.credor_avisado_em) }}{% endif %}.
+  {% if i.repasse_dia %}<br><strong>Repasse:</strong> {{ reais(i.repasse_centavos) }} em {{ fmt_date(i.repasse_dia) }}{% if i.repasse_despesas_centavos %}, deduzidas despesas de {{ reais(i.repasse_despesas_centavos) }}{% endif %} ({{ FORMAS_DO_REPASSE.get(i.repasse_forma, i.repasse_forma) }}).{% endif %}{% endif %}</p>
+  {% if 'purgar' in acoes and opera %}
+  {{ abre('purgar') }}
+    {{ quando('Pago em') }}<label>Valor recebido <input name="valor" required placeholder="0,00"></label>
+    <label>Forma <select name="forma">{% for c, r in FORMAS_DA_PURGA.items() %}<option value="{{ c }}">{{ r }}</option>{% endfor %}</select></label>
+    <label>Comprovante <input name="comprovante"></label>
+    {% if not config.ri_intimacao_conta_purga %}<p class="small"><strong>A conta da purga não está configurada</strong> (decisão do titular, no painel).</p>{% endif %}
+    <button class="button primary">Lançar a purga</button></form>
+  {% endif %}
+  {% if 'avisar_credor' in acoes and opera %}{{ abre('avisar_credor') }}{{ quando('Credor avisado em') }}<button class="button">Registrar o aviso ao credor (TJMA 725)</button></form>{% endif %}
+  {% if 'repassar' in acoes and opera %}
+  {{ abre('repassar') }}
+    {{ quando('Repassado em') }}<label>Valor entregue <input name="valor" required></label>
+    <label>Despesas deduzidas (art. 26, § 6º) <input name="despesas"></label>
+    <label>Como <select name="forma">{% for c, r in FORMAS_DO_REPASSE.items() %}<option value="{{ c }}"{% if c == config.ri_intimacao_repasse %} selected{% endif %}>{{ r }}</option>{% endfor %}</select></label>
+    <label>Comprovante <input name="comprovante"></label>
+    <button class="button">Lançar o repasse</button></form>
+  {% endif %}
+  {% if 'RECIBO' in pecas %}<p style="padding:6px 14px"><a class="button small" href="{{ url_for('ri_intimacao_peca', intimacao_id=i.id, qual='RECIBO') }}">Recibo ao devedor</a></p>{% endif %}
+</section>
+
+<section class="panel" data-fase="encerramento">
+  <div class="panel-head"><span>Certidão</span><small>TJMA 723 e 726</small></div>
+  <p style="padding:10px 14px 0">A certidão de purgação ou de não purgação conclui o procedimento e encerra a prenotação (TJMA 723).
+  A de não purgação instrui a consolidação, que entra como título novo (TJMA 726).</p>
+  {% if marcos %}<p style="padding:6px 14px 0">O credor pede a consolidação até <strong>{{ fmt_date(marcos.pedir_ate) }}</strong> (726, § 2º){% if marcos.averbar_desde %}; no habitacional, a averbação só a partir de <strong>{{ fmt_date(marcos.averbar_desde) }}</strong> (726, § 1º){% endif %}.</p>{% endif %}
+  {% if do_oficial and 'certidao_purgacao' in acoes %}{{ abre('certidao_purgacao') }}{{ quando('Data da certidão') }}<button class="button primary">Emitir a certidão de purgação</button></form>{% endif %}
+  {% if do_oficial and 'certidao_nao_purgacao' in acoes %}{{ abre('certidao_nao_purgacao') }}{{ quando('Data da certidão') }}<button class="button primary">Emitir a certidão de não purgação</button></form>{% endif %}
+  {% for c, r in pecas.items() if c.startswith('CERTIDAO_') %}<p style="padding:6px 14px"><a class="button small" href="{{ url_for('ri_intimacao_peca', intimacao_id=i.id, qual=c) }}">{{ r }}</a></p>{% endfor %}
+  {% if do_oficial and 'encerrar' in acoes %}
+  <details style="margin:6px 14px"><summary>Desistência do credor ou ordem judicial</summary>
+    {{ abre('encerrar') }}
+      <label>Motivo <select name="motivo"><option value="DESISTENCIA">Desistência do credor</option><option value="CANCELADO_JUDICIAL">Ordem judicial</option></select></label>
+      <label>Fundamento <textarea name="texto" rows="2" required></textarea></label>
+      {{ quando() }}<button class="button">Encerrar e cancelar a prenotação</button></form>
+  </details>
+  {% endif %}
+</section>
+
+<section class="panel{% if f %} cg-depois{% endif %}" data-fase="historico">
+  <div class="panel-head"><span>Linha do tempo</span><small>não se apaga nem se edita</small></div>
+  <div class="table-wrap"><table class="table"><tbody>
+    {% for e in eventos %}<tr><td>{{ fmt_date(e.dia) }}</td><td>{{ e.texto }}</td><td><small>{{ e.criado_por or '' }}</small></td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% if f %}{{ travas_e_barras(f) }}</div>{% endif %}
+{% endblock %}

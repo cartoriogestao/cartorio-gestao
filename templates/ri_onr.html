@@ -4,7 +4,8 @@
 <div class="actions"><a class="button" href="{{ url_for('ri_matriculas') }}">&larr; Registro de Imóveis</a>
   {# O MAPA DO ONR (revisão de telas, 30/10/2026): o manual mandava baixar por
      este endereço, e nenhum clique chegava nele. Só o ADMIN: `QUEM_BAIXA`. #}
-  {% if user.role == 'ADMIN' %}<a class="button" href="{{ url_for('ri_mapa_onr_csv') }}">Baixar o mapa do ONR (.csv)</a>{% endif %}</div>
+  {% if user.role == 'ADMIN' %}<a class="button" href="{{ url_for('ri_mapa_onr_csv') }}">Baixar o mapa do ONR (.csv)</a>{% endif %}
+  <a class="button" href="{{ url_for('ri_geo') }}">Mapa do ONR — polígonos</a></div>
 
 <div class="notice">
   O formato destes arquivos foi levantado <strong>dos envios que esta serventia já fez</strong>,
@@ -53,15 +54,11 @@
         Indicador Pessoal (.XML)</button>
       <div class="small muted">{{ vinculos|length }} registro(s) — formato BANCOLIGHT</div>
     </form>
-    <form method="post">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="hidden" name="inicio" value="{{ inicio }}">
-      <input type="hidden" name="fim" value="{{ fim }}">
-      <input type="hidden" name="tipo" value="REAL">
-      <button class="primary" {% if not matriculas %}disabled{% endif %}>
-        Indicador Real (.json)</button>
-      <div class="small muted">{{ matriculas|length }} matrícula(s) — formato novo do ONR</div>
-    </form>
+    <div>
+      {% if user.role == 'ADMIN' %}<a class="button primary" href="{{ url_for('onr_ir_lotes') }}">Indicador Real (.json): lotes</a>
+      {% else %}<span class="muted">Indicador Real (.json)</span>{% endif %}
+      <div class="small muted">Sai em lotes validados, para o oficial importar no Ofício Eletrônico.</div>
+    </div>
     {# O INDICADOR REAL EM XML (revisão de telas, 30/10/2026): o conteúdo é o que iria
        pela API, no modelo de arquivo do manual do ONR. Só vai a ficha completa. #}
     <form method="post">

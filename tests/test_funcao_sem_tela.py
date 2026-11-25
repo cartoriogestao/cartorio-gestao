@@ -172,7 +172,7 @@ JA_SABIDAS: frozenset[str] = frozenset({
     # passou a chama-la para montar a matricula do Livro D que vai ao
     # e-Proclamas. **Nome que deixou de ser orfao sai da lista**, senao ela so
     # cresce e o varredor vira enfeite.
-    "conferir_ato", "conferir_declaracao",
+    "conferir_declaracao",
     # `conferir_remessa` FICA (30/10/2026): `protesto_remessa._conferir_lote`
     # confere título a título pela mesma `CRA.conferir_titulo`, e a tela de conferir
     # a remessa mostra a falta de cada um. Uma segunda conta diria a mesma coisa.
@@ -518,6 +518,9 @@ ACHADAS_EM_12_10_2026: dict[str, str] = {
     # linha de comando, para o oficial conferir antes de gravar.
     "chaves_que_faltam": "protesto_cenprot — " + _TOOLS + " (chaves_cenprot_que_faltam.py)",
     "gravar_chaves_que_faltam": "protesto_cenprot — " + _TOOLS + " (chaves_cenprot_que_faltam.py --gravar)",
+    # 25/11/2026 (PR006): trocar a chave pela que a Central já usa é decisão do
+    # oficial sobre uma lista conferida — de propósito sem tela.
+    "trocar_pela_chave_da_central": "protesto_cenprot — " + _TOOLS + " (trocar_chave_pela_da_central.py)",
     "definir_chave": "modelos_editor — " + _TESTE,
     "fonte_mapa": "modelos_editor_serventia — " + _TESTE,
     "folha_da_certidao": "papel_seguranca — " + _TESTE + " (1ª via, 09/10)",

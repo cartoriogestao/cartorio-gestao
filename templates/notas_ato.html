@@ -1095,7 +1095,7 @@
          clique leva (revisão, item do selo, arquivamento) se preenche antes.
          #}
       {# O PROTOCOLO PAGO — 22/10/2026: o escrevente escolhe aqui, e o selo procura o item nele. #}
-      {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('nt_atos') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo) }}</div>
+      {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('nt_atos') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo, tabela='nt_atos') }}</div>
       <div class="span2"><button class="primary" name="acao" value="lancar"
              {% if not a.teor %}disabled title="Escreva o teor antes de lançar"
              {% elif arquivamento and arquivamento.obrigatorio and not arquivamento.confirmado %}disabled title="Confirme as folhas do arquivamento antes de lançar"{% endif %}>Lançar no livro</button></div>
@@ -1472,7 +1472,7 @@
                placeholder="ex.: compra e venda"></label>
       <label class="span2"><input type="checkbox" name="confirmo_mesmo_valor" value="1">
         É outro imóvel, com o mesmo valor de um selo já pedido</label>
-      {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s2 = seletor_do_selo('nt_atos') %}<div class="span2">{{ protocolo_do_selo(_s2.candidatos, _s2.pedidos, atendendo=_s2.atendendo) }}</div>
+      {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s2 = seletor_do_selo('nt_atos') %}<div class="span2">{{ protocolo_do_selo(_s2.candidatos, _s2.pedidos, atendendo=_s2.atendendo, tabela='nt_atos') }}</div>
       <div class="span2"><button class="primary" name="acao" value="selar_extra">Pedir o selo adicional ao aparelho</button></div>
     </form>
   </details>

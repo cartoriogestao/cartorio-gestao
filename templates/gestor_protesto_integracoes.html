@@ -6,8 +6,10 @@
   O AR digital dos Correios e o boleto do devedor <strong>nascem
   desligados</strong>. Ligue primeiro em <strong>homologação</strong>: ela fala
   com o serviço falso desta casa, sem rede, e nada do que voltar vale no livro.
-  A <strong>produção</strong> só se liga com o transporte do contrato escrito —
-  e hoje ele não existe para nenhum dos dois (falta o contrato).
+  A <strong>produção</strong> só se liga com o transporte do contrato escrito.
+  Para o boleto do devedor há a <strong>Parcela Express</strong> (a conta do
+  caixa): em homologação ela fala com o <strong>sandbox</strong> da Parcela, e
+  a credencial é a da Cobrança → Configuração.
 </p>
 <p class="small muted">
   A credencial (o par do contrato) <strong>não se digita aqui</strong>: ela vai
@@ -61,4 +63,19 @@
   {% endfor %}
 </section>
 {% endfor %}
+
+<section class="cartao">
+  <h2>A intimação com a cobrança</h2>
+  <p>Agora: <strong>{{ 'o aviso sai com a cobrança' if cobranca_no_aviso else 'o aviso sai sem cobrança' }}</strong></p>
+  <p class="small muted">Ligada, a emissão do aviso na ficha do título cria a
+    cobrança do devedor no provedor do boleto acima (a Parcela Express: um link
+    com Pix, boleto e cartão), vencendo no prazo que o aviso imprime, e o papel
+    sai com o valor, o link e o QR para pagar. Precisa também do boleto ligado.
+    Ligue primeiro com o boleto em homologação (o sandbox da Parcela).</p>
+  <form method="post" action="{{ url_for('gestor_protesto_cobranca_no_aviso') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="ligar" value="{{ '0' if cobranca_no_aviso else '1' }}">
+    <button class="button" type="submit">{{ 'Desligar' if cobranca_no_aviso else 'Ligar' }}</button>
+  </form>
+</section>
 {% endblock %}

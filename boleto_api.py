@@ -9,7 +9,8 @@ Este módulo não monta código de barras nenhum. **Quem gera a linha digitável
 o código de barras e o PIX é o BANCO**, na cobrança registrada; daqui sai o
 pedido e volta o que ele devolveu.
 
-**O PROVEDOR É CONFIGURÁVEL, E HOJE SÓ HÁ O FALSO.** Cada banco tem a sua API
+**O PROVEDOR É CONFIGURÁVEL.** (Desde 24/11/2026 há também a Parcela
+Express, em `protesto_boleto_parcela`; o texto abaixo é o de 19/10/2026.) Cada banco tem a sua API
 de cobrança (e o seu manual, e a sua homologação); qual será o desta casa é
 decisão do oficial, e em 19/10/2026 não há convênio. `BancoDoContrato` é a vaga
 dele: recusa tudo dizendo o que falta. `BancoFalso` é a homologação: registra,
@@ -274,4 +275,17 @@ PROVEDORES: dict[str, dict[str, Any]] = {
     "BANCO": {"nome": "Banco do convênio de cobrança (a escolher)",
               "falso": False, "pronto": False, "falta": FALTA_DO_CONTRATO,
               "fabrica": lambda ambiente, pasta: BancoDoContrato(ambiente, pasta)},
+    # A PARCELA EXPRESS (PR007, 24/11/2026): a conta que o caixa já usa, por um
+    # link só com Pix, boleto e cartão (`protesto_boleto_parcela`). Na
+    # homologação fala com o SANDBOX da Parcela; na produção, com a produção —
+    # e a integração nasce DESLIGADA (`protesto_integracoes`).
+    "PARCELA": {"nome": "Parcela Express (link com Pix, boleto e cartão)",
+                "falso": False, "pronto": True, "falta": "",
+                "fabrica": lambda ambiente, pasta: _parcela(ambiente, pasta)},
 }
+
+
+def _parcela(ambiente: Any, pasta: Any):
+    """O transporte da Parcela, importado só quando escolhido."""
+    import protesto_boleto_parcela as PBP
+    return PBP.fabrica(ambiente, pasta)

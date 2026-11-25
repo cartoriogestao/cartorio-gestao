@@ -1,6 +1,7 @@
 """Atendimentos e escola de operação nas rotas autenticadas da instalação."""
 from __future__ import annotations
 
+import papeis as PAP
 from flask import abort, flash, redirect, render_template, request, session, url_for
 from werkzeug.routing import BuildError
 
@@ -83,7 +84,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date):
         try:
             with db.connect() as con:
                 dados = FL.ficha(con, protocolo_id)
-                users = banco(con).ler("SELECT id,full_name FROM users WHERE active=1 AND role IN ('ADMIN','MANAGER','USER') ORDER BY full_name") if papel() in ("ADMIN","MANAGER") else []
+                users = banco(con).ler("SELECT id,full_name FROM users WHERE active=1 AND role IN ('ADMIN','TI','MANAGER','USER') ORDER BY full_name") if papel() in ("ADMIN","MANAGER") else []
                 eventos = banco(con).ler("""SELECT ts,action,username_snapshot FROM audit_logs
                     WHERE (entity_type IN ('ATENDIMENTO','CX_PROTOCOLO','PROTOCOLO') AND entity_id=%s)
                        OR (entity_type='RI_PROTOCOLO' AND entity_id=%s)
@@ -237,7 +238,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date):
             for r in linhas:
                 p=pessoas.setdefault(r["id"],{"nome":r["full_name"],"concluidas":0,"rever":0,"ultima":""})
                 if r["aula"]:
-                    a=TR.aula_corrente(con,r["aula"],r["role"])
+                    a=TR.aula_corrente(con,r["aula"],PAP.papel_efetivo(r["role"]))
                     if a and r["aprovado"] and r["versao"]==a["versao"]: p["concluidas"]+=1
                     else: p["rever"]+=1
                     p["ultima"]=max(p["ultima"],r["feito_em"] or "")

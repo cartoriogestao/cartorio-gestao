@@ -17,6 +17,7 @@ A TV NÃO ENTRA COM LOGIN, E POR QUÊ
 """
 from __future__ import annotations
 
+import papeis as PAP
 from datetime import date, timedelta
 
 from flask import abort, flash, jsonify, redirect, render_template, request, url_for
@@ -257,7 +258,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 from bd_nativo import banco
                 papel = banco(con).um("SELECT role FROM users WHERE id = %s",
                                       (session.get("user_id"),))
-                if not papel or papel["role"] not in ("ADMIN", "MANAGER"):
+                if not papel or not PAP.equivale_a(papel, "ADMIN", "MANAGER"):  # o TI segue o ADMIN (T015)
                     return {"senhas_no_painel": None}
                 hoje = _hoje()
                 m = SEN.metricas(con, hoje, hoje, hoje=hoje)

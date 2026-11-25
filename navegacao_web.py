@@ -15,6 +15,7 @@ from flask import flash, g, redirect, request, session, url_for
 
 import caixa_protocolo as CXP
 import navegacao as NAV
+import papeis as PAP
 import titular_privado as TITULAR
 from seguranca_web import destino_interno
 
@@ -140,7 +141,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         funcao = app.view_functions.get(endpoint)
         exigidos = getattr(funcao, "papeis_exigidos", None)
         metodos = getattr(funcao, "metodos_exigidos", None)
-        return exigidos is None or (metodos is not None and "GET" not in metodos) or papel in exigidos
+        return (exigidos is None or (metodos is not None and "GET" not in metodos)
+                or PAP.equivale_a(papel, exigidos))
 
     def nav_da_tela(*, papel="", escondidos=(), ajuda_liberada=False,
                     agente_no_menu=False, tipo_do_ato="", superusuario_no_menu=False):

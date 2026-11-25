@@ -1,6 +1,7 @@
 """Referencia mensal do Portal do Selo, sem criar selos ou ajustes ficticios no livro."""
 from __future__ import annotations
 
+import papeis as PAP
 import calendar
 import hashlib
 import json
@@ -132,7 +133,7 @@ def cns_da_casa(con) -> str:
 def registrar(con, conteudo: bytes, *, cns: str, pasta: Path, por: str, usuario_id: int, agora: str) -> dict:
     r=ler(conteudo,cns=cns); bd=banco(con)
     pessoa=bd.um('SELECT id,username,role,active,eh_robo FROM users WHERE id=%s',(int(usuario_id),))
-    if not pessoa or not pessoa['active'] or pessoa['role']!='ADMIN' or pessoa['eh_robo']:
+    if not pessoa or not pessoa['active'] or not PAP.equivale_a(pessoa, 'ADMIN') or pessoa['eh_robo']:  # o TI segue o ADMIN (T015)
         raise DP.DespesaError('A importacao exige a conta humana do titular.')
     chave=_chave(r['competencia'],cns)
     bd.escrever("INSERT INTO settings(key,value) VALUES(%s,'') ON CONFLICT(key) DO NOTHING",(chave,))

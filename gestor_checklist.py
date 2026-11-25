@@ -235,6 +235,11 @@ def _conta_tarefas(con, hoje):
     return {"n": vencidas, "texto": f"{vencidas} vencida(s) de {abertas} aberta(s)"}
 
 
+def _conta_painel_onr(con, hoje):
+    import onr_conformidade as OC
+    return OC.contagem_para_a_checklist(con, hoje)
+
+
 #: A LISTA FIXA DAS CONFERÊNCIAS DO DIA, na ordem em que se faz.
 #: (código, rótulo, endpoint, contagem ou None, o que olhar)
 #: O código é o que se grava em `ge_conferencias_do_dia`: não muda.
@@ -245,6 +250,9 @@ CONFERENCIAS: tuple[tuple[str, str, str, Callable | None, str], ...] = (
      "As rotinas rodaram? A situação e o envio da CENSEC, e as rodadas do gestor."),
     ("ROBOS", "Robôs", "robos_lista", None,
      "Os robôs ligados responderam, e nenhum ficou parado."),
+    ("PAINEL_ONR", "Painel de conformidade do ONR", "ri_onr_conformidade", _conta_painel_onr,
+     "Provimento 143, Provimento 195 e ITN 003: o declarado ao ONR tem lastro? As pendências têm "
+     "prazo, protocolo e comprovante?"),
     ("LEITURAS", "Leitura dos textos (IA)", "gestor_leituras", _conta_leituras,
      "O que a IA apontou nas minutas e escrituras, para quem qualifica decidir."),
     ("CAIXAS", "Caixas para o visto", "gestor_caixas", _conta_caixas,

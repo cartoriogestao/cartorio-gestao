@@ -6,6 +6,7 @@ que escrevesse disputaria a trava com o balcão.
 """
 from __future__ import annotations
 
+import papeis as PAP
 import sqlite3
 from datetime import datetime
 
@@ -33,7 +34,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             with db.connect() as con:
                 quem = banco(con).um("SELECT role, username FROM users WHERE id = %s",
                                      (session.get("user_id"),)) or {}
-                e_admin = quem.get("role") == "ADMIN"
+                e_admin = PAP.equivale_a(quem, "ADMIN")  # o TI segue o ADMIN (T015)
                 fim = db.get_setting(CA.CHAVE_FIM, CA.FIM_PADRAO)
                 # O TURNO DE QUEM TEM TURNO (29/10/2026): para ele o aviso
                 # começa no fim do turno DELE, e não no fim do expediente.

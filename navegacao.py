@@ -597,6 +597,10 @@ PAI: dict[str, tuple[str, str]] = {
     "ri_onr_endereco": ("RI", "Centrais e obrigações"),
     "ri_onr_indicador": ("RI", "Centrais e obrigações"),
     "onr_ir_conferir": ("RI", "Centrais e obrigações"),
+    # A FILA DE CONFERÊNCIA DAS FICHAS (RI009, #499): a ficha de um item e a auditoria da
+    # fila abrem dentro da seção da lista (25/11/2026, junção da 3.7.22).
+    "ri_fila_ficha": ("RI", "Centrais e obrigações"),
+    "ri_fila_auditoria": ("RI", "Centrais e obrigações"),
     "onr_ir_lotes_conferir": ("RI", "Centrais e obrigações"),
     "ri_expurgar_ato": ("RI", "Acervo e modelos"),
     "ri_fichas_do_disco": ("RI", "Acervo e modelos"),

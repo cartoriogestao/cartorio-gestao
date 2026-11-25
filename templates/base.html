@@ -376,6 +376,7 @@
         <a href="{{ url_for('ri_selos') }}">Selos e emolumentos</a>{% endif %}
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('ri_onr') }}">Exportação ONR</a>
         <a href="{{ url_for('onr_ir') }}">Indicador Real — o arquivo inteiro</a>
+        {% if user.role == 'ADMIN' %}<a href="{{ url_for('onr_ir_lotes') }}">Indicador Real: lotes para o portal</a>{% endif %}
         {#
           A CARGA DO NEXT CLOUD SAS FICA AO LADO DA EXPORTACAO, e nao numa
           secao nova: as duas mandam a mesma coisa ao mesmo destino — o que

@@ -27,37 +27,28 @@ O que os arquivos reais mostraram:
                      divergencia na tela, em vez de escolher calado.
 
   Indicador Real     JSON, {"INDICADOR_REAL": {"CNS": ..., "REAL": [...]}}.
-                     Campos numericos sao codigos; TIPO_DE_IMOVEL vem da
-                     tabela de dominio do E-Oficio, cuja coluna onr_id ja
-                     traz o codigo do ONR.
+                     CORRECAO DE 23/11/2026: o formato e os codigos agora
+                     seguem o manual do ONR, v2.0, em `onr_ir_json`. O unico
+                     arquivo antigo tinha UF, CIDADE e TIPO_LOGRADOURO zerados
+                     e nao servia de modelo.
 
 Nada aqui transmite arquivo. A geracao produz o arquivo para conferencia e
 envio manual pelos canais do ONR.
 """
 from __future__ import annotations
 
-import json
 from datetime import date
 from xml.sax.saxutils import escape
 
 # ------------------------------------------------------------------ codigos
 
-# tbRI_TipoImovel.onr_id do E-Oficio. A descricao fica ao lado para a tela.
+# tbRI_TipoImovel.onr_id do E-Oficio, so para mostrar o que veio do sistema antigo.
+# **NAO E A TABELA DO ARQUIVO DO ONR**, que vai de 1 a 13: ver `onr_ir_json.TIPOS_DE_IMOVEL`.
 TIPO_IMOVEL_ONR = {
     0: "Casa", 1: "Apto", 2: "Loja", 3: "Sala/Conjunto", 4: "Terreno/fração",
     5: "Galpão", 6: "Prédio Comercial", 7: "Prédio Residencial",
     8: "Fazenda/Sítio/Chácara", 9: "Outros",
 }
-
-TIPO_IMOVEL_PADRAO_RURAL = 8    # Fazenda/Sítio/Chácara
-TIPO_IMOVEL_PADRAO_URBANO = 4   # Terreno/fração
-
-LOCALIZACAO_URBANO = 1
-LOCALIZACAO_RURAL = 2
-
-# Valores observados nos arquivos enviados pela serventia.
-TIPOENVIO_INCLUSAO = 0
-REGISTRO_TIPO_MATRICULA = 1
 
 DOC_DESCONHECIDO = "00000000000"
 
@@ -109,59 +100,14 @@ def gerar_indicador_pessoal(vinculos: list[dict], cns: str = "") -> str:
 # ------------------------------------------------------ Indicador Real (JSON)
 
 
-def _tipo_imovel_onr(matricula: dict) -> int:
-    bruto = matricula.get("tipo_imovel")
-    if bruto is not None and str(bruto).strip().isdigit():
-        codigo = int(str(bruto).strip())
-        if codigo in TIPO_IMOVEL_ONR:
-            return codigo
-    rural = (matricula.get("rural_urbano") or "").upper().startswith("R")
-    return TIPO_IMOVEL_PADRAO_RURAL if rural else TIPO_IMOVEL_PADRAO_URBANO
+def gerar_indicador_real(registros: list[dict], casa) -> bytes:
+    """O arquivo JSON do manual do ONR, v2.0, a partir de registros ja montados.
 
-
-def gerar_indicador_real(matriculas: list[dict], cns: str) -> str:
-    """Monta o JSON do Indicador Real.
-
-    Campos não aplicáveis vão como null, do jeito que os arquivos enviados
-    fazem — o ONR distingue ausente de vazio, então não se troca null por "".
+    Quem monta e valida e `onr_ir_json`, e quem escolhe as fichas e `onr_ir_lotes`. Registro que
+    contraria o manual derruba o arquivo aqui, antes de chegar ao portal.
     """
-    reais = []
-    for m in matriculas:
-        rural = (m.get("rural_urbano") or "").upper().startswith("R")
-        bloco_rural = {
-            "CAR": m.get("car") or "",
-            "NIRF": m.get("nirf") or "",
-            "CCIR": m.get("ccir") or "",
-            "NUMERO_INCRA": m.get("incra") or "",
-            "SIGEF": m.get("sigef") or "",
-            "DENOMINACAORURAL": (m.get("logradouro") or "") if rural else "",
-            "ACIDENTEGEOGRAFICO": "",
-        }
-        reais.append({
-            "TIPOENVIO": TIPOENVIO_INCLUSAO,
-            "NUMERO_REGISTRO": str(m.get("numero") or "").strip(),
-            "REGISTRO_TIPO": REGISTRO_TIPO_MATRICULA,
-            "TIPO_DE_IMOVEL": _tipo_imovel_onr(m),
-            "LOCALIZACAO": LOCALIZACAO_RURAL if rural else LOCALIZACAO_URBANO,
-            "TIPO_LOGRADOURO": 0,
-            "NOME_LOGRADOURO": m.get("logradouro") or "",
-            "NUMERO_LOGRADOURO": m.get("numero_predial") or "",
-            "UF": 0,
-            "CIDADE": 0,
-            "BAIRRO": m.get("bairro") or "",
-            "CEP": _so_digitos(m.get("cep")),
-            "COMPLEMENTO": m.get("complemento_endereco") or "",
-            "QUADRA": None,
-            "CONJUNTO": None,
-            "SETOR": None,
-            "LOTE": None,
-            "LOTEAMENTO": None,
-            "CONTRIBUINTE": None,
-            "RURAL": bloco_rural,
-            "CONDOMINIO": None,
-        })
-    return json.dumps({"INDICADOR_REAL": {"CNS": cns, "REAL": reais}},
-                      ensure_ascii=False, indent=2)
+    import onr_ir_json as IRJ
+    return IRJ.arquivo_json(registros, casa)
 
 
 def nome_arquivo(tipo: str, inicio: date, fim: date) -> str:

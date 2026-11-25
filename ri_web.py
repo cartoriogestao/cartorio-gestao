@@ -1455,20 +1455,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
           uma leitura de hoje poderia ENVELHECER a base mostrada na ficha — e
           o alerta de copia velha diria o contrario do que aconteceu.
 
-        Quem responde «ate quando» e a ultima leitura que a Central respondeu
-        e este sistema entendeu. Enquanto nao houver leitura nenhuma, vale o
-        retrato do acervo, que e o que a casa tem.
+        **E A LEITURA SOZINHA TAMBEM ENGANOU, EM 23/11/2026.** A copia parou
+        em 12/08/2026 e esta funcao seguiu dizendo «ate hoje», porque leitura
+        vazia contava como lida. Quem responde agora e
+        `cnib_atualizador.data_da_base`: a menor entre o fim da ultima leitura
+        que trouxe ordem e o dia da ordem mais nova da copia.
         """
-        linha = q1("SELECT MAX(data_pedido) d, COUNT(*) n FROM ri_cnib_ordens WHERE ativa=1")
-        base = linha["d"] if linha else None
+        linha = q1("SELECT COUNT(*) n FROM ri_cnib_ordens WHERE ativa=1")
         quantas = linha["n"] if linha else 0
-        marcas = ",".join(["%s"] * len(CNIBATZ.SITUACOES_QUE_ANDAM))
-        leitura = q1(f"""SELECT ate FROM ri_cnib_leituras
-                          WHERE situacao IN ({marcas}) AND terminada_em IS NOT NULL
-                          ORDER BY ate DESC, id DESC LIMIT 1""",
-                     tuple(sorted(CNIBATZ.SITUACOES_QUE_ANDAM)))
-        if leitura and leitura["ate"]:
-            base = leitura["ate"]
+        with db.connect() as con:
+            base = CNIBATZ.data_da_base(con, hoje=date.today())  # noqa: DTZ011 — relogio da casa
         return base, quantas
 
     # Quantos dias de atraso a copia local pode ter antes de a tela mudar de

@@ -141,22 +141,25 @@ class AtualizadorDoCnibTests(unittest.TestCase):
                 self.assertIsNone(ATZ.ultima_leitura(con),
                                   "recusa não pode virar marca de janela lida")
 
-    def test_a_resposta_vazia_fica_anotada_e_a_janela_anda(self):
-        """Vazio é resposta: a Central falou e a casa entendeu."""
+    def test_a_resposta_vazia_fica_anotada_e_a_janela_nao_anda(self):
+        """A vazia fica na lista, mas não diz que a cópia está em dia.
+
+        Até 23/11/2026 ela movia a marca, e foi assim que a cópia parou em
+        12/08/2026 com a ficha dizendo «até hoje»: 59 vazias seguidas.
+        """
         with TemporaryDirectory() as td:
             _, db = self._casa(td)
             fora = self._gravar(db, [], de="2026-09-01", ate="2026-09-19")
             self.assertEqual(fora["situacao"], ATZ.VAZIA)
             with db.connect() as con:
-                ultima = ATZ.ultima_leitura(con)
-            self.assertIsNotNone(ultima)
-            self.assertEqual(ultima["ate"], "2026-09-19")
+                self.assertIsNone(ATZ.ultima_leitura(con))
+                self.assertEqual(len(ATZ.leituras(con)), 1)
 
     def test_a_janela_do_dia_volta_uma_semana_atras(self):
         """O zero da Central não é prova de ausência — por isso se relê."""
         with TemporaryDirectory() as td:
             _, db = self._casa(td)
-            self._gravar(db, [], de="2026-09-01", ate="2026-09-19")
+            self._gravar(db, [ORDEM_DE_PEDIDO], de="2026-09-01", ate="2026-09-19")
             with db.connect() as con:
                 de, ate = ATZ.janela_do_dia(con, hoje=date(2026, 9, 20))
             self.assertEqual(ate, "2026-09-20")
@@ -260,7 +263,13 @@ class AtualizadorDoCnibTests(unittest.TestCase):
                              "o último pedaço termina hoje, e não no fim do mês")
             self.assertFalse(any(p["feita"] for p in pedacos))
 
+            # a vazia não conclui o mês (23/11/2026); a que trouxe ordem, sim
             self._gravar(db, [], de="2026-07-01", ate="2026-07-31")
+            with db.connect() as con:
+                pedacos = ATZ.janelas_da_posta_em_dia(con, hoje=date(2026, 9, 19))
+            self.assertFalse(pedacos[0]["feita"])
+
+            self._gravar(db, [ORDEM_DE_PEDIDO], de="2026-07-01", ate="2026-07-31")
             with db.connect() as con:
                 pedacos = ATZ.janelas_da_posta_em_dia(con, hoje=date(2026, 9, 19))
             self.assertTrue(pedacos[0]["feita"])

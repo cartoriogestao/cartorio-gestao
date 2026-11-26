@@ -2,6 +2,16 @@
 {% block heading %}<h1>{{ projeto.titulo }}</h1>{% endblock %}
 {% block content %}
 <p><a href="{{ url_for('dev_projetos_lista') }}">↩ Voltar à lista</a></p>
+{% if retirada %}
+<div class="notice">Retirado dos projetos da gestão por {{ retirada.por }} em {{ retirada.em[8:10] }}/{{ retirada.em[5:7] }}/{{ retirada.em[:4] }} às {{ retirada.em[11:16] }}:
+  {% if retirada.motivo_pronto %}<strong>{{ retirada.motivo_pronto }}</strong> — {% endif %}{{ retirada.motivo }}.
+  Não aparece na lista principal; nada foi apagado.
+  <form method="post" action="{{ url_for('dev_projetos_devolver', projeto_id=projeto.id) }}" style="display:inline">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit" class="small">Devolver à lista</button>
+  </form>
+</div>
+{% endif %}
 
 <section class="panel dev-projetos-panel dev-projetos-pendencia-panel">
   <div class="panel-head"><span>Próximo passo / pendência</span></div>
@@ -47,6 +57,26 @@
     <button type="submit" class="button primary">Registrar</button>
   </form>
 </section>
+
+{% if not retirada %}
+{# O QUE NÃO CABE À GESTÃO (25/11/2026, T019): sai da lista, com motivo; não apaga. #}
+<section class="panel dev-projetos-panel" id="retirar">
+  <details><summary>Retirar dos projetos da gestão</summary>
+  <form method="post" action="{{ url_for('dev_projetos_retirar', projeto_id=projeto.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p class="small muted">Para o projeto que não cabe à gestão nem à administração. Ele sai da lista
+    principal e vai para «Ver os retirados»; a ficha, as etapas e o histórico ficam.</p>
+    <label>Motivo pronto (opcional)
+      <select name="motivo_codigo"><option value="">—</option>
+        {% for cod, rot in motivos_prontos %}<option value="{{ cod }}">{{ rot }}</option>{% endfor %}
+      </select></label>
+    <label class="block">Por que não cabe à gestão (obrigatório)
+      <input type="text" name="motivo" required minlength="3" maxlength="{{ motivo_maximo }}"></label>
+    <button type="submit" class="button">Retirar dos projetos da gestão</button>
+  </form>
+  </details>
+</section>
+{% endif %}
 
 <section class="panel dev-projetos-panel">
   <div class="panel-head"><span>Histórico</span></div>

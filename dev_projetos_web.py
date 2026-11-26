@@ -173,10 +173,13 @@ def register_dev_projetos_routes(
         arquivo = request.files.get("arquivo")
         if arquivo and arquivo.filename:
             bruto = arquivo.read(CARGA_MAXIMA_EM_BYTES + 1)
-            if len(bruto) > CARGA_MAXIMA_EM_BYTES:
-                flash("A carga passa de 2 MB: divida em arquivos menores.", "warning")
-                return redirect(url_for("dev_projetos_lista", _anchor="carga-em-lote"))
             texto = bruto.decode("utf-8-sig", errors="replace")
+        else:
+            bruto = texto.encode("utf-8")
+        # o mesmo limite para o arquivo e para o JSON colado
+        if len(bruto) > CARGA_MAXIMA_EM_BYTES:
+            flash("A carga passa de 2 MB: divida em cargas menores. Nada foi gravado.", "warning")
+            return redirect(url_for("dev_projetos_lista", _anchor="carga-em-lote"))
         resultados = []
         try:
             specs = DP.ler_carga(texto)
@@ -200,6 +203,12 @@ def register_dev_projetos_routes(
         flash(f"Carga lida: {len(resultados)} projeto(s) — {criados} cadastrado(s), "
               f"{mudaram} atualizado(s), {len(resultados) - criados - mudaram} sem mudança.",
               "success")
+        fora = [(r["titulo"], f["titulo"]) for r in resultados for f in r["fases_fora_da_carga"]]
+        if fora:
+            mostra = "; ".join(f"«{fase}» ({projeto})" for projeto, fase in fora[:10])
+            resto = f" e mais {len(fora) - 10}" if len(fora) > 10 else ""
+            flash(f"{len(fora)} fase(s) do sistema não vieram na carga e ficaram como estavam, no fim "
+                  f"da lista: {mostra}{resto}. Confira se foram renomeadas no arquivo.", "warning")
         return redirect(url_for("dev_projetos_lista"))
 
     @app.route("/desenvolvimento/projetos/<int:projeto_id>/editar", methods=["POST"])
@@ -306,6 +315,10 @@ def register_dev_projetos_routes(
     def dev_projetos_fase_alterar(projeto_id: int, fase_id: int):
         """A situação (com aguardando e observação) ou os campos da fase."""
         dados = _formulario(DP.CAMPOS_DA_FASE + ("situacao",))
+        # No «Mudar a situação», a observação é a DESTA mudança e vem em branco:
+        # em branco, não apaga a que está gravada.
+        if request.form.get("formulario") == "situacao" and not (dados.get("observacao") or "").strip():
+            dados.pop("observacao", None)
         try:
             with get_db() as con:
                 fase = _fase_do_projeto(con, projeto_id, fase_id)
@@ -357,16 +370,17 @@ def register_dev_projetos_routes(
                 if not DP.obter_projeto(con, projeto_id):
                     abort(404)
                 anexo_id = None
+                comum = {"fase_id": fase_id, "tipo": tipo,
+                         "descricao": request.form.get("descricao") or "",
+                         "referencia": request.form.get("referencia") or "", "por": _por()}
                 if tem_arquivo:
-                    anexo_id = DP.guardar_arquivo(
+                    # confere antes de escrever: o recusado não deixa arquivo no disco
+                    comprovante_id, anexo_id = DP.registrar_comprovante_com_arquivo(
                         con, projeto_id, nome_arquivo=arquivo.filename,
                         conteudo=arquivo.read(DP.TAMANHO_MAXIMO_DO_ARQUIVO + 1),
-                        pasta=_pasta_dos_comprovantes(), usuario_id=_uid())
-                comprovante_id = DP.registrar_comprovante(
-                    con, projeto_id, fase_id=fase_id, tipo=tipo,
-                    descricao=request.form.get("descricao") or "",
-                    referencia=request.form.get("referencia") or "",
-                    attachment_id=anexo_id, por=_por())
+                        pasta=_pasta_dos_comprovantes(), usuario_id=_uid(), **comum)
+                else:
+                    comprovante_id = DP.registrar_comprovante(con, projeto_id, **comum)
         except DP.ProjetoError as erro:
             flash(f"{erro} O comprovante não foi registrado.", "warning")
             return _voltar(projeto_id, ancora)

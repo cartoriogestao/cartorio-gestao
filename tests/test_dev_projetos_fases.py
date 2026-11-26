@@ -186,8 +186,6 @@ def test_as_regras_da_situacao_da_fase():
         DP.alterar_fase(con, f1, {"situacao": "DISPENSADA", "observacao": ""}, por="ana")
     with pytest.raises(DP.ProjetoError, match="Situação da fase"):
         DP.alterar_fase(con, f1, {"situacao": "QUASE"}, por="ana")
-    with pytest.raises(DP.ProjetoError, match="observação"):
-        DP.alterar_fase(con, f2, {"observacao": ""}, por="ana")   # concluída sem prova nenhuma
 
 
 def test_reordenar_e_mover_fases():
@@ -423,20 +421,22 @@ def test_importar_e_tudo_ou_nada_por_projeto():
 
 def test_importar_atualiza_a_fase_que_mudou():
     con = _con()
-    r1 = DP.importar(con, _spec(), por="agente-11")
+    r1 = DP.importar(con, _spec(), por="agente-11", agora="2026-11-01T08:00:00")
     spec = _spec()
     spec["fases"][1].update({"situacao": "CONCLUIDA", "concluida_em": "2026-11-20",
                              "observacao": "Aceite recebido"})
-    r2 = DP.importar(con, spec, por="agente-11")
+    r2 = DP.importar(con, spec, por="agente-11", agora="2026-11-26T08:00:00")
     homologar = next(f for f in DP.listar_fases(con, r1["projeto_id"]) if f["titulo"] == "Homologar")
-    assert r2["fases_concluidas"] == [homologar["id"]] == r2["fases_alteradas"]
+    assert r2["fases_concluidas"] == [homologar["id"]] == list(r2["fases_alteradas"])
+    assert r2["fases_alteradas"][homologar["id"]]["situacao"] == ["AGUARDANDO", "CONCLUIDA"]
+    assert r2["fases_alteradas"][homologar["id"]]["observacao"] == ["", "Aceite recebido"]
     assert homologar["situacao"] == "CONCLUIDA" and homologar["aguardando_o_que"] == ""
     assert homologar["concluida_em"] == "2026-11-20"
 
 
 def test_ler_carga_aceita_um_ou_varios():
     assert len(DP.ler_carga(json.dumps(_spec()))) == 1
-    assert len(DP.ler_carga(json.dumps([_spec(), _spec(codigo="PRJ-02")]))) == 2
+    assert len(DP.ler_carga(json.dumps([_spec(), _spec(codigo="PRJ-02", titulo="PRJ-02 — Outro")]))) == 2
     assert len(DP.ler_carga(json.dumps({"projetos": [_spec()]}))) == 1
     for ruim in ("", "não é json", "[1, 2]"):
         with pytest.raises(DP.ProjetoError):
@@ -648,3 +648,340 @@ def test_retirar_e_devolver_continuam_e_entram_na_linha_do_tempo(cg_casa):
     linha = ficha[ficha.index('id="linha-do-tempo"'):]
     assert "Devolvido à lista dos projetos da gestão." in linha
     assert "Retirado dos projetos da gestão: É do escrevente da área — É do escrevente." in linha
+
+
+# ================================================================ a revisão independente
+# Um teste por item da revisão de 26/11/2026, quase todos com o caso da sonda dela.
+
+def _tipos_e_datas(con, pid):
+    return [(e["tipo"], e["data"]) for e in DP.linha_do_tempo(con, pid)]
+
+
+def test_rev01_datas_da_carga_so_onde_dizem_a_verdade():
+    con = _con()
+    # retomar AGUARDANDO → EM_ANDAMENTO: o início da carga não vale mais (não é o primeiro)
+    spec = {"codigo": "PRJ-05", "titulo": "P5", "fases": [
+        {"titulo": "Homologar", "situacao": "AGUARDANDO", "aguardando_o_que": "a Central",
+         "iniciada_em": "2026-10-10"}]}
+    r1 = DP.importar(con, spec, por="a", agora="2026-11-10T08:00:00")
+    spec["fases"][0]["situacao"] = "EM_ANDAMENTO"
+    DP.importar(con, spec, por="a", agora="2026-11-26T08:00:00")
+    fases = [x for x in _tipos_e_datas(con, r1["projeto_id"]) if x[0].startswith("FASE")]
+    assert [d for _, d in fases] == ["2026-10-10", "2026-11-10T08:00:00", "2026-11-26T08:00:00"]
+    assert DP.listar_fases(con, r1["projeto_id"])[0]["iniciada_em"] == "2026-10-10"
+
+    # reaberta na tela e reconcluída pela carga: a conclusão antiga do arquivo vira `ts`
+    base = {"codigo": "PRJ-01", "titulo": "PRJ-01 — Ensaio", "fases": [
+        {"titulo": "Levantar", "situacao": "CONCLUIDA", "iniciada_em": "2026-10-01",
+         "concluida_em": "2026-10-05",
+         "comprovantes": [{"tipo": "PR", "descricao": "Telas", "referencia": "#518"}]}]}
+    r = DP.importar(con, base, por="a", agora="2026-11-01T08:00:00")
+    fid = r["fases_concluidas"][0]
+    assert DP.obter_fase(con, fid)["concluida_em"] == "2026-10-05"     # 1ª vez: a data vale
+    DP.alterar_fase(con, fid, {"situacao": "EM_ANDAMENTO"}, por="gerente", agora="2026-11-20T10:00:00")
+    r2 = DP.importar(con, base, por="a", agora="2026-11-26T08:00:00")
+    assert r2["fases_concluidas"] == [fid]
+    assert DP.obter_fase(con, fid)["concluida_em"] == "2026-11-26T08:00:00"
+    fim = [x for x in _tipos_e_datas(con, r["projeto_id"]) if x[0].startswith("FASE")][-1]
+    assert fim == ("FASE_CONCLUIDA", "2026-11-26T08:00:00")
+
+
+def test_rev02_data_com_fuso_vira_hora_local():
+    from datetime import datetime as dt
+    local = dt.fromisoformat("2026-10-05T12:00:00+00:00").astimezone().replace(tzinfo=None)
+    con = _con()
+    r = DP.importar(con, {"titulo": "P", "fases": [
+        {"titulo": "A", "situacao": "CONCLUIDA", "observacao": "ok",
+         "concluida_em": "2026-10-05T12:00:00Z"}],
+        "andamento": [{"texto": "Uma hora depois, na hora local",
+                       "criado_em": (local.replace(minute=0) + __import__("datetime").timedelta(hours=1)).isoformat()}]},
+        por="a", agora="2026-11-26T08:00:00")
+    fase = DP.listar_fases(con, r["projeto_id"])[0]
+    assert fase["concluida_em"] == local.isoformat(timespec="seconds")
+    assert DP.formatar_momento(fase["concluida_em"]) == local.strftime("%d/%m/%Y às %H:%M")
+    tipos = [e["tipo"] for e in DP.linha_do_tempo(con, r["projeto_id"])]
+    assert tipos.index("FASE_CONCLUIDA") < tipos.index("ANDAMENTO")
+
+
+def test_rev03_e_04_fases_fora_da_carga_e_a_ordem_do_arquivo(cg_casa):
+    con = _con()
+    pid = DP.criar_projeto(con, {"titulo": "PRJ-01 — Ensaio"}, por="a")
+    x = DP.adicionar_fase(con, pid, {"titulo": "X da tela"}, por="a")
+    y = DP.adicionar_fase(con, pid, {"titulo": "Y da tela", "criterio": "fica"}, por="a")
+    r = DP.importar(con, {"titulo": "PRJ-01 — Ensaio", "fases": [{"titulo": "A"}, {"titulo": "B"}]},
+                    por="a")
+    ordem = [(f["ordem"], f["titulo"]) for f in DP.listar_fases(con, pid)]
+    assert ordem == [(1, "A"), (2, "B"), (3, "X da tela"), (4, "Y da tela")]
+    assert r["fases_fora_da_carga"] == [{"id": x, "titulo": "X da tela"}, {"id": y, "titulo": "Y da tela"}]
+    assert r["fases_alteradas"] == {x: {"ordem": [1, 3]}, y: {"ordem": [2, 4]}}
+    assert DP.obter_fase(con, y)["criterio"] == "fica"                  # não muda nem se apaga
+    # fase inserida no meio na rodada seguinte
+    spec = {"codigo": "PRJ-08", "titulo": "P8", "fases": [{"titulo": t} for t in ("A", "B", "C")]}
+    r1 = DP.importar(con, spec, por="a")
+    spec["fases"].insert(1, {"titulo": "X"})
+    r2 = DP.importar(con, spec, por="a")
+    assert [f["titulo"] for f in DP.listar_fases(con, r1["projeto_id"])] == ["A", "X", "B", "C"]
+    assert r2["fases_fora_da_carga"] == []
+    # sem a chave «fases», a carga não fala das fases: nada fica de fora nem se renumera
+    assert DP.importar(con, {"codigo": "PRJ-08", "area": "TI"}, por="a")["fases_fora_da_carga"] == []
+
+    # a tela avisa as que ficaram de fora
+    db = cg_casa["db"]
+    with db.transaction() as tcon:
+        tpid = DP.criar_projeto(tcon, {"titulo": "PRJ-50 — Pela tela"}, por="a")
+        DP.adicionar_fase(tcon, tpid, {"titulo": "Homologar"}, por="a")
+    c = _entrar(cg_casa, "oficial.exemplo", "ADMIN")
+    r = c.post(f"{BASE}/importar", data={"csrf_token": _token(c), "carga": json.dumps(
+        {"titulo": "PRJ-50 — Pela tela", "fases": [{"titulo": "Homologar a remessa"}]})},
+        follow_redirects=True)
+    assert "não vieram na carga" in r.get_data(as_text=True)
+    assert "«Homologar» (PRJ-50 — Pela tela)" in r.get_data(as_text=True)
+
+
+def test_rev05_concluir_pede_prova_dada_nesta_mudanca(cg_casa):
+    con = _con()
+    pid = DP.criar_projeto(con, {"titulo": "P"}, por="a")
+    f = DP.adicionar_fase(con, pid, {"titulo": "A"}, por="a")
+    DP.alterar_fase(con, f, {"situacao": "CONCLUIDA", "observacao": "Conferido"}, por="a")
+    DP.alterar_fase(con, f, {"situacao": "EM_ANDAMENTO"}, por="a")
+    with pytest.raises(DP.ProjetoError, match="nesta mudança"):
+        DP.alterar_fase(con, f, {"situacao": "CONCLUIDA"}, por="a")
+    with pytest.raises(DP.ProjetoError, match="nesta mudança"):        # a mesma, repetida, não vale
+        DP.alterar_fase(con, f, {"situacao": "CONCLUIDA", "observacao": "Conferido"}, por="a")
+    assert DP.alterar_fase(con, f, {"situacao": "CONCLUIDA", "observacao": "Conferido de novo"},
+                           por="a")["concluida"]
+    # o motivo de uma dispensa não serve para concluir depois
+    g = DP.adicionar_fase(con, pid, {"titulo": "B"}, por="a")
+    DP.alterar_fase(con, g, {"situacao": "DISPENSADA", "observacao": "Não se usa"}, por="a")
+    DP.alterar_fase(con, g, {"situacao": "EM_ANDAMENTO"}, por="a")
+    with pytest.raises(DP.ProjetoError, match="nesta mudança"):
+        DP.alterar_fase(con, g, {"situacao": "CONCLUIDA"}, por="a")
+    # na carga, a observação do arquivo conta como dada (mesmo igual à gravada)
+    spec = {"codigo": "PRJ-09", "titulo": "P9", "fases": [
+        {"titulo": "A", "situacao": "CONCLUIDA", "observacao": "Feito no ensaio"}]}
+    r = DP.importar(con, spec, por="a", agora="2026-11-01T08:00:00")
+    fid = r["fases_concluidas"][0]
+    DP.alterar_fase(con, fid, {"situacao": "EM_ANDAMENTO"}, por="a", agora="2026-11-02T08:00:00")
+    assert DP.importar(con, spec, por="a", agora="2026-11-03T08:00:00")["fases_concluidas"] == [fid]
+
+    # na tela, a observação da mudança vem em branco e não apaga a gravada
+    db = cg_casa["db"]
+    with db.transaction() as tcon:
+        tpid = DP.criar_projeto(tcon, {"titulo": "P tela"}, por="a")
+        tf = DP.adicionar_fase(tcon, tpid, {"titulo": "A", "observacao": "Nota que fica"}, por="a")
+    c = _entrar(cg_casa, "oficial.exemplo", "ADMIN")
+    url = f"{BASE}/{tpid}/fases/{tf}/alterar"
+    _post(c, url, formulario="situacao", situacao="CONCLUIDA", aguardando_o_que="", observacao="")
+    with db.connect() as tcon:
+        assert DP.obter_fase(tcon, tf)["situacao"] == "A_FAZER"        # a gravada não conclui
+    _post(c, url, formulario="situacao", situacao="EM_ANDAMENTO", aguardando_o_que="", observacao="")
+    with db.connect() as tcon:
+        fase = DP.obter_fase(tcon, tf)
+    assert (fase["situacao"], fase["observacao"]) == ("EM_ANDAMENTO", "Nota que fica")
+
+
+def test_rev06_repeticao_na_carga_e_recusada():
+    con = _con()
+    with pytest.raises(DP.ProjetoError, match="duas vezes a fase «A»"):
+        DP.importar(con, {"titulo": "P", "fases": [{"titulo": "A", "criterio": "um"},
+                                                   {"titulo": " A ", "criterio": "dois"}]}, por="a")
+    assert _contagem(con) == (0, 0, 0, 0, 0)
+    with pytest.raises(DP.ProjetoError, match="duas vezes o projeto PRJ-01"):
+        DP.ler_carga(json.dumps([{"codigo": "PRJ-01", "titulo": "A"}, {"codigo": "prj-01", "titulo": "B"}]))
+    with pytest.raises(DP.ProjetoError, match="duas vezes o projeto «A»"):
+        DP.ler_carga(json.dumps([{"titulo": "A"}, {"titulo": "A", "area": "RI"}]))
+
+
+def test_rev07_conclusao_antes_do_inicio_e_recusada():
+    con = _con()
+    with pytest.raises(DP.ProjetoError, match="antes de iniciada"):
+        DP.importar(con, {"titulo": "P", "fases": [{"titulo": "A", "situacao": "CONCLUIDA",
+                    "observacao": "ok", "iniciada_em": "2026-10-10", "concluida_em": "2026-10-01"}]},
+                    por="a")
+    # no mesmo dia vale, com ou sem a hora
+    r = DP.importar(con, {"titulo": "P", "fases": [{"titulo": "A", "situacao": "CONCLUIDA",
+                    "observacao": "ok", "iniciada_em": "2026-10-10", "concluida_em": "2026-10-10T18:00"}]},
+                    por="a")
+    assert r["fases_concluidas"]
+
+
+@pytest.mark.parametrize("carga", [
+    {"titulo": "P", "andamento": 5},
+    {"titulo": "P", "comprovantes": 5},
+    {"titulo": "P", "fases": [{"titulo": "A", "comprovantes": 5}]},
+    {"titulo": "P", "fases": 5},
+    {"titulo": "P", "andamento": [5]},
+])
+def test_rev08_tipo_errado_na_carga_e_recusa(carga):
+    con = _con()
+    with pytest.raises(DP.ProjetoError):
+        DP.importar(con, carga, por="a")
+    assert _contagem(con) == (0, 0, 0, 0, 0)
+
+
+def test_rev08_json_aninhado_demais_e_recusa_e_a_tela_nao_cai(cg_casa):
+    with pytest.raises(DP.ProjetoError, match="aninhada"):
+        DP.ler_carga("[" * 200000 + "]" * 200000)
+    c = _entrar(cg_casa, "oficial.exemplo", "ADMIN")
+    for carga in ("[" * 100000 + "]" * 100000, json.dumps({"titulo": "P", "andamento": 5})):
+        assert _post(c, f"{BASE}/importar", carga=carga).status_code == 302
+    with cg_casa["db"].connect() as con:
+        assert not banco(con).um("SELECT 1 AS um FROM dev_projetos WHERE titulo = 'P'")
+
+
+def test_rev09_pr_pelo_endereco_do_repositorio_vira_o_numero():
+    con = _con()
+    base = {"codigo": "PRJ-01", "titulo": "P", "fases": [{"titulo": "A", "comprovantes": [
+        {"tipo": "PR", "descricao": "Telas", "referencia": "#518"}]}]}
+    DP.importar(con, base, por="a")
+    for url in (DP.REPOSITORIO_PR + "518", "http://www.github.com/cartoriogestao/cartorio-gestao/pull/518/files"):
+        base["fases"][0]["comprovantes"][0]["referencia"] = url
+        assert DP.importar(con, base, por="a")["comprovantes_criados"] == []
+    # PR de outro repositório continua o endereço
+    pid = DP.obter_projeto(con, 1)["id"]
+    cid = DP.registrar_comprovante(con, pid, fase_id=None, tipo="PR", descricao="Outro",
+                                   referencia="https://github.com/outro/repo/pull/518", por="a")
+    assert banco(con).valor("SELECT referencia FROM dev_projetos_comprovantes WHERE id=%s", (cid,)) \
+        == "https://github.com/outro/repo/pull/518"
+
+
+def test_rev10_codigo_vazio_na_carga_nao_apaga_o_codigo():
+    con = _con()
+    pid = _projeto(con, "PRJ-07 — Com código", codigo="PRJ-07")
+    r = DP.importar(con, {"codigo": "", "titulo": "PRJ-07 — Com código", "area": "RI"}, por="a")
+    assert r["achado_por"] == "TITULO" and "codigo" not in r["campos_alterados"]
+    assert DP.obter_projeto(con, pid)["codigo"] == "PRJ-07"
+
+
+def test_rev11_limites_da_carga(cg_casa):
+    con = _con()
+    casos = [
+        ({"titulo": "P", "fases": [{"titulo": f"F{i}"} for i in range(DP.CARGA_MAXIMA_DE_FASES + 1)]}, "máximo é 60"),
+        ({"titulo": "P", "fases": [{"titulo": "A", "comprovantes": [
+            {"tipo": "TEXTO", "descricao": f"c{i}"} for i in range(DP.CARGA_MAXIMA_DE_COMPROVANTES + 1)]}]},
+         "máximo é 40"),
+        ({"titulo": "P", "comprovantes": [{"tipo": "TEXTO", "descricao": f"c{i}"}
+                                          for i in range(DP.CARGA_MAXIMA_DE_COMPROVANTES + 1)]}, "máximo é 40"),
+        ({"titulo": "P", "andamento": [{"texto": f"a{i}"} for i in range(DP.CARGA_MAXIMA_DE_ANDAMENTOS + 1)]},
+         "máximo é 300"),
+        ({"titulo": "P", "andamento": [{"texto": "x" * (DP.LIMITE_DO_ANDAMENTO + 1)}]}, "no máximo 4000"),
+    ]
+    for carga, frase in casos:
+        with pytest.raises(DP.ProjetoError, match=frase):
+            DP.importar(con, carga, por="a")
+    assert _contagem(con) == (0, 0, 0, 0, 0)
+    # a carga real cabe: 8 fases, 12 comprovantes numa fase, 40 andamentos
+    real = {"titulo": "Real", "fases": [{"titulo": f"F{i}", "comprovantes": [
+        {"tipo": "TEXTO", "descricao": f"c{i}-{j}"} for j in range(12 if i == 0 else 1)]} for i in range(8)],
+        "andamento": [{"texto": f"andamento {i}"} for i in range(40)]}
+    assert DP.importar(con, real, por="a")["projeto"] == "CRIADO"
+
+    # o JSON colado também tem o limite de 2 MB
+    c = _entrar(cg_casa, "oficial.exemplo", "ADMIN")
+    grande = json.dumps({"titulo": "P grande", "resultado_pleno": "x",
+                         "andamento": [{"texto": "y" * 3000}] * 800})
+    assert len(grande.encode()) > 2 * 1024 * 1024
+    r = _post(c, f"{BASE}/importar", carga=grande)
+    assert r.status_code == 302
+    with cg_casa["db"].connect() as tcon:
+        assert not banco(tcon).um("SELECT 1 AS um FROM dev_projetos WHERE titulo = 'P grande'")
+
+
+def test_rev12_autoria_da_carga_so_com_o_parametro(cg_casa):
+    carga = {"titulo": "P", "andamento": [{"texto": "Feito", "autor": "oficial.exemplo",
+                                           "criado_em": "2026-01-01 08:00:00"}],
+             "comprovantes": [{"tipo": "TEXTO", "descricao": "Aprovado",
+                               "registrado_por": "oficial.exemplo"}]}
+    con = _con()
+    r = DP.importar(con, carga, por="agente-11")
+    assert {e["quem"] for e in DP.linha_do_tempo(con, r["projeto_id"])} == {"agente-11"}
+    carga["titulo"] = "Q"
+    r = DP.importar(con, carga, por="agente-11", autoria_da_carga=True)
+    quem = {e["tipo"]: e["quem"] for e in DP.linha_do_tempo(con, r["projeto_id"])}
+    assert quem["ANDAMENTO"] == quem["COMPROVANTE"] == "oficial.exemplo"
+    assert quem["PROJETO_CRIADO"] == "agente-11"
+    # a tela usa o login de quem carrega
+    c = _entrar(cg_casa, "gerente.exemplo", "MANAGER")
+    carga["titulo"] = "R"
+    _post(c, f"{BASE}/importar", carga=json.dumps(carga))
+    with cg_casa["db"].connect() as tcon:
+        pid = banco(tcon).valor("SELECT id FROM dev_projetos WHERE titulo='R'")
+        assert {e["quem"] for e in DP.linha_do_tempo(tcon, pid)} == {"gerente.exemplo"}
+
+
+def test_rev13_comprovante_recusado_nao_deixa_arquivo_no_disco(cg_casa, tmp_path):
+    db = cg_casa["db"]
+    pid, fid = _semear(db)
+    c = _entrar(cg_casa, "oficial.exemplo", "ADMIN")
+    raiz = cg_casa["app"].extensions["archive_root"]() / "dev_projetos"
+    antes = set(raiz.glob("*")) if raiz.exists() else set()
+    for dados in ({"descricao": " ", "tipo": "ARQUIVO"},                      # sem descrição
+                  {"descricao": "Prova", "tipo": "LINK", "referencia": "sem endereço"},
+                  {"descricao": "Prova", "tipo": "ARQUIVO", "fase_id": "999999"}):
+        c.post(f"{BASE}/{pid}/comprovantes", data={
+            "csrf_token": _token(c), "fase_id": str(fid), "referencia": "",
+            **dados, "arquivo": (io.BytesIO(b"%PDF-1.4 recusado"), "r.pdf")},
+            content_type="multipart/form-data")
+    depois = set(raiz.glob("*")) if raiz.exists() else set()
+    assert depois == antes
+    with db.connect() as con:
+        assert not banco(con).um("SELECT 1 AS um FROM attachments WHERE entity_type = %s",
+                                 (DP.ENTIDADE_DO_ANEXO,))
+    # pela função: a recusa vem antes de escrever
+    with db.transaction() as con:
+        with pytest.raises(DP.ProjetoError):
+            DP.registrar_comprovante_com_arquivo(
+                con, pid, fase_id=fid, tipo="ARQUIVO", descricao="", referencia="",
+                nome_arquivo="x.pdf", conteudo=b"%PDF x", pasta=tmp_path, usuario_id=None, por="a")
+        cid, anexo = DP.registrar_comprovante_com_arquivo(
+            con, pid, fase_id=fid, tipo="ARQUIVO", descricao="Aceite", referencia="",
+            nome_arquivo="x.pdf", conteudo=b"%PDF x", pasta=tmp_path, usuario_id=None, por="a")
+    assert list(tmp_path.glob("*")) and cid and anexo
+
+
+def test_rev14_a_auditoria_da_carga_leva_o_antes_e_o_depois_de_cada_fase(cg_casa):
+    db = cg_casa["db"]
+    c = _entrar(cg_casa, "oficial.exemplo", "ADMIN")
+    spec = {"codigo": "PRJ-06", "titulo": "P6", "fases": [{"titulo": "A", "criterio": "do arquivo"}]}
+    _post(c, f"{BASE}/importar", carga=json.dumps(spec))
+    with db.connect() as con:
+        fid = DP.listar_fases(con, _id_pelo_titulo(db, "P6"))[0]["id"]
+    with db.transaction() as con:
+        DP.alterar_fase(con, fid, {"criterio": "corrigido na tela"}, por="gerente")
+    _post(c, f"{BASE}/importar", carga=json.dumps(spec))
+    [det] = _auditoria(db, "DEV_PROJETO_ALTERADO")
+    assert det["fases_alteradas"] == {str(fid): {"criterio": ["corrigido na tela", "do arquivo"]}}
+    for chave in ("projeto_id", "codigo", "titulo", "projeto", "achado_por", "campos_alterados",
+                  "fases_criadas", "fases_concluidas", "comprovantes_criados", "andamentos_criados",
+                  "mudou", "fases_fora_da_carga"):
+        assert chave in det, chave
+
+
+def test_rev15_comprovantes_de_uma_vez_viram_um_evento_so():
+    con = _con()
+    r = DP.importar(con, {"titulo": "P", "fases": [
+        {"titulo": "A", "situacao": "CONCLUIDA", "concluida_em": "2026-11-19",
+         "comprovantes": [{"tipo": "TEXTO", "descricao": f"a{i}"} for i in range(3)]},
+        {"titulo": "B", "comprovantes": [{"tipo": "TEXTO", "descricao": "b1"},
+                                         {"tipo": "TEXTO", "descricao": "b2"}]}],
+        "andamento": [{"texto": "Em outubro", "criado_em": "2026-10-10 10:00:00"}]},
+        por="agente-11", agora="2026-11-26T08:00:30")
+    pid = r["projeto_id"]
+    linha = DP.linha_do_tempo(con, pid)
+    juntos = [e for e in linha if e["tipo"] == "COMPROVANTES"]
+    assert [e["tipo"] for e in linha].count("COMPROVANTE") == 0 and len(juntos) == 1
+    assert juntos[0]["quantidade"] == 5 and len(juntos[0]["comprovantes"]) == 5
+    assert juntos[0]["texto"] == "5 comprovantes registrados de uma vez — «A» (3); «B» (2)."
+    assert linha[-1]["tipo"] == "COMPROVANTES"                 # e a história real continua lá
+    assert {"ANDAMENTO", "FASE_CONCLUIDA"} <= {e["tipo"] for e in linha}
+    # cada comprovante continua na sua fase
+    fases = {f["titulo"]: f for f in DP.ficha(con, pid)["fases"]}
+    assert len(fases["A"]["comprovantes"]) == 3 and len(fases["B"]["comprovantes"]) == 2
+    # dois juntos, ou de outra pessoa no mesmo minuto, não se juntam
+    DP.registrar_comprovante(con, pid, fase_id=None, tipo="TEXTO", descricao="x1", referencia="",
+                             por="bia", agora="2026-11-27T09:00:00")
+    DP.registrar_comprovante(con, pid, fase_id=None, tipo="TEXTO", descricao="x2", referencia="",
+                             por="bia", agora="2026-11-27T09:00:40")
+    DP.registrar_comprovante(con, pid, fase_id=None, tipo="TEXTO", descricao="x3", referencia="",
+                             por="caio", agora="2026-11-27T09:00:50")
+    assert [e["tipo"] for e in DP.linha_do_tempo(con, pid)][-3:] == ["COMPROVANTE"] * 3

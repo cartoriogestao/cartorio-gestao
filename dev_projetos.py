@@ -97,6 +97,7 @@ EVENTO_ROTULO = {
     "FASE_CONCLUIDA": "Fase concluída",
     "FASE_SITUACAO": "Fase",
     "COMPROVANTE": "Comprovante",
+    "COMPROVANTES": "Comprovantes",
     "RETIRADO": "Retirado",
     "DEVOLVIDO": "Devolvido",
 }
@@ -117,8 +118,17 @@ CAMPOS_DO_PROJETO = ("titulo", "codigo", "area", "responsavel", "resultado_pleno
 CAMPOS_DA_FASE = ("titulo", "criterio", "ordem", "responsavel", "prazo", "observacao",
                   "aguardando_o_que")
 
-#: A carga em lote: até quantos projetos de uma vez.
+#: A carga em lote: até quantos projetos de uma vez, e o que cabe em cada um.
+#: Folgados para a carga real (o maior projeto dela: 8 fases, 12 comprovantes
+#: numa fase, uns 40 andamentos); existem para a carga errada não entupir a ficha.
 CARGA_MAXIMA_DE_PROJETOS = 200
+CARGA_MAXIMA_DE_FASES = 60
+CARGA_MAXIMA_DE_COMPROVANTES = 40          # por fase, e os do projeto sem fase
+CARGA_MAXIMA_DE_ANDAMENTOS = 300
+LIMITE_DO_ANDAMENTO = 4000                 # letras, como os outros blocos de texto
+#: Comprovantes registrados juntos (mesmo minuto, mesma pessoa) a partir de
+#: quantos viram um evento só na linha do tempo.
+COMPROVANTES_JUNTOS = 3
 
 
 class ProjetoError(ValueError):
@@ -843,10 +853,15 @@ def _momento(valor, nome: str) -> str | None:
     if re.fullmatch(r"\d{2}/\d{2}/\d{4}", texto) or len(texto) == 10:
         return _dia(texto, nome)
     try:
-        return datetime.fromisoformat(texto.replace(" ", "T", 1)).isoformat(timespec="seconds")
+        dt = datetime.fromisoformat(texto.replace(" ", "T", 1))
     except ValueError:
         raise ProjetoError(f"{nome}: informe a data (AAAA-MM-DD) ou a data e a hora "
                            "(AAAA-MM-DDTHH:MM).") from None
+    if dt.tzinfo is not None:
+        # Com fuso, vira a hora local sem fuso: é como o resto do banco grava, e
+        # só assim a ordem da linha do tempo e o que a tela mostra batem.
+        dt = dt.astimezone().replace(tzinfo=None)
+    return dt.isoformat(timespec="seconds")
 
 
 def _ordem(valor) -> int:
@@ -893,6 +908,24 @@ def _chave_do_momento(texto) -> str:
     if len(t) > 10 and t[10] == " ":
         t = t[:10] + "T" + t[11:]
     return t
+
+
+def _antes(a, b) -> bool:
+    """`a` é anterior a `b`? Só o dia contra dia e hora compara pelo dia."""
+    x, y = _chave_do_momento(a), _chave_do_momento(b)
+    n = min(len(x), len(y))
+    return x[:n] < y[:n]
+
+
+def _lista(valor, nome: str, *, limite: int) -> list:
+    """O que a carga manda em lista: vazio é lista vazia; outro tipo é recusa."""
+    if valor is None:
+        return []
+    if not isinstance(valor, list):
+        raise ProjetoError(f"{nome} vêm numa lista.")
+    if len(valor) > limite:
+        raise ProjetoError(f"{nome}: {len(valor)} na carga, e o máximo é {limite}.")
+    return valor
 
 
 def formatar_dia(valor) -> str:
@@ -1097,25 +1130,31 @@ def _tem_comprovante(bd, fase_id: int) -> bool:
                       (int(fase_id),)))
 
 
-def _conferir_situacao(nova: str, *, titulo: str, aguardando: str, observacao: str,
+def _conferir_situacao(nova: str, *, titulo: str, aguardando: str, observacao_nova: str,
                        tem_comprovante: bool) -> None:
-    """As regras da situação. A fase só se conclui com prova (S006)."""
+    """As regras da situação. A fase só se conclui com prova (S006).
+
+    `observacao_nova` é a observação dada NESTA mudança: a que já estava
+    gravada (a da conclusão de antes, o motivo de uma dispensa) não vale.
+    """
     if nova == FASE_AGUARDANDO and not (aguardando or "").strip():
         raise ProjetoError(f"A fase «{titulo}» fica aguardando o quê? Diga em «Aguardando o quê».")
-    if nova == FASE_CONCLUIDA and not (tem_comprovante or (observacao or "").strip()):
+    if nova == FASE_CONCLUIDA and not (tem_comprovante or (observacao_nova or "").strip()):
         raise ProjetoError(f"Para concluir a fase «{titulo}», anexe um comprovante dela ou "
-                           "explique na observação como se sabe que ficou pronta.")
-    if nova == FASE_DISPENSADA and not (observacao or "").strip():
-        raise ProjetoError(f"Para dispensar a fase «{titulo}», diga na observação por que ela "
+                           "escreva, nesta mudança, como se sabe que ficou pronta (a observação "
+                           "já gravada não vale).")
+    if nova == FASE_DISPENSADA and not (observacao_nova or "").strip():
+        raise ProjetoError(f"Para dispensar a fase «{titulo}», diga, nesta mudança, por que ela "
                            "não é mais necessária.")
 
 
 def _transitar(bd, fase: dict, nova: str, *, por: str, ts: str, quando: str | None = None,
-               limpar_aguardando: bool = True) -> str | None:
+               limpar_aguardando: bool = True, nota: str | None = None) -> str | None:
     """Muda a situação (já conferida), grava as datas e anota no histórico.
 
     Devolve o evento anotado (INICIADA, CONCLUIDA ou SITUACAO), ou None se
-    nada mudou. `fase` sai atualizada.
+    nada mudou. `fase` sai atualizada. `nota` é o que o histórico guarda;
+    sem ela, o «aguardando» ou a observação da fase.
     """
     antes = fase["situacao"]
     if nova == antes:
@@ -1141,10 +1180,8 @@ def _transitar(bd, fase: dict, nova: str, *, por: str, ts: str, quando: str | No
         evento = "SITUACAO"
     if nova == FASE_AGUARDANDO:
         nota = fase.get("aguardando_o_que") or ""
-    elif nova in FASE_FEITA:
-        nota = fase.get("observacao") or ""
-    else:
-        nota = ""
+    elif nota is None:
+        nota = (fase.get("observacao") or "") if nova in FASE_FEITA else ""
     colunas = ", ".join(f"{c}=%s" for c in sets)
     bd.escrever(
         f"UPDATE dev_projetos_fases SET {colunas}, atualizado_em=%s WHERE id=%s",
@@ -1189,7 +1226,7 @@ def adicionar_fase(con, projeto_id: int, dados: dict, *, por: str,
         raise ProjetoError(f"Este projeto já tem a fase «{campos['titulo']}».")
     nova = _situacao_da_fase(dados["situacao"]) if dados.get("situacao") else FASE_A_FAZER
     _conferir_situacao(nova, titulo=campos["titulo"], aguardando=campos.get("aguardando_o_que", ""),
-                       observacao=campos.get("observacao", ""), tem_comprovante=False)
+                       observacao_nova=campos.get("observacao", ""), tem_comprovante=False)
     if "ordem" not in campos:
         campos["ordem"] = int(bd.valor(
             "SELECT COALESCE(MAX(ordem), 0) + 1 FROM dev_projetos_fases WHERE projeto_id=%s",
@@ -1208,8 +1245,18 @@ def adicionar_fase(con, projeto_id: int, dados: dict, *, por: str,
     return fid
 
 
+def _ultimo_evento(bd, fase_id: int) -> str | None:
+    datas = [r["em"] for r in bd.ler(
+        "SELECT em FROM dev_projetos_fases_historico WHERE fase_id=%s", (int(fase_id),))]
+    return max(datas, key=_chave_do_momento) if datas else None
+
+
 def _alterar_fase(bd, fase_id: int, dados: dict, *, por: str, ts: str,
-                  iniciada_em: str | None = None, concluida_em: str | None = None) -> dict:
+                  iniciada_em: str | None = None, concluida_em: str | None = None,
+                  observacao_da_carga: bool = False) -> dict:
+    """`iniciada_em` e `concluida_em` são as datas da carga. Valem só onde dizem a
+    verdade: o início, quando a fase sai de «a fazer» pela primeira vez; a
+    conclusão, se não for anterior ao último evento da fase. No resto, `ts`."""
     fase = obter_fase(bd, fase_id)
     if not fase:
         raise LookupError("Fase não encontrada.")
@@ -1218,12 +1265,20 @@ def _alterar_fase(bd, fase_id: int, dados: dict, *, por: str, ts: str,
     if nova and nova != FASE_AGUARDANDO:
         campos.pop("aguardando_o_que", None)  # a mudança o limpa
     efetivo = {**fase, **campos}
-    situacao_final = nova or fase["situacao"]
-    if situacao_final != fase["situacao"] or set(campos) & {"aguardando_o_que", "observacao"}:
+    # a observação dada NESTA mudança; na carga, a do arquivo conta como dada
+    observacao_nova = ""
+    if campos.get("observacao") and (observacao_da_carga or campos["observacao"] != fase["observacao"]):
+        observacao_nova = campos["observacao"]
+    transita = bool(nova) and nova != fase["situacao"]
+    if transita:
         _conferir_situacao(
-            situacao_final, titulo=efetivo["titulo"], aguardando=efetivo["aguardando_o_que"],
-            observacao=efetivo["observacao"],
-            tem_comprovante=_tem_comprovante(bd, fase_id) if situacao_final == FASE_CONCLUIDA else False)
+            nova, titulo=efetivo["titulo"], aguardando=efetivo["aguardando_o_que"],
+            observacao_nova=observacao_nova,
+            tem_comprovante=_tem_comprovante(bd, fase_id) if nova == FASE_CONCLUIDA else False)
+    elif fase["situacao"] == FASE_AGUARDANDO and "aguardando_o_que" in campos:
+        _conferir_situacao(FASE_AGUARDANDO, titulo=efetivo["titulo"],
+                           aguardando=campos["aguardando_o_que"], observacao_nova="",
+                           tem_comprovante=False)
     mudou = {c: [fase.get(c), v] for c, v in campos.items() if fase.get(c) != v}
     if "titulo" in mudou and bd.um(
             "SELECT 1 AS um FROM dev_projetos_fases WHERE projeto_id=%s AND titulo=%s AND id<>%s",
@@ -1235,16 +1290,22 @@ def _alterar_fase(bd, fase_id: int, dados: dict, *, por: str, ts: str,
                     [par[1] for par in mudou.values()] + [ts, int(fase_id)])
         fase.update({c: par[1] for c, par in mudou.items()})
     eventos: list[str] = []
-    if nova and nova != fase["situacao"]:
+    if transita:
         antes = fase["situacao"]
-        if (iniciada_em and antes == FASE_A_FAZER and nova != FASE_EM_ANDAMENTO
-                and not fase.get("iniciada_em")):
+        primeiro_inicio = antes == FASE_A_FAZER and not fase.get("iniciada_em")
+        if iniciada_em and primeiro_inicio and nova != FASE_EM_ANDAMENTO:
             # o início informado vem antes, e não limpa o «aguardando» que vem depois
             eventos.append(_transitar(bd, fase, FASE_EM_ANDAMENTO, por=por, ts=ts, quando=iniciada_em,
                                       limpar_aguardando=False))
-        quando = (concluida_em if nova == FASE_CONCLUIDA
-                  else iniciada_em if nova == FASE_EM_ANDAMENTO else None)
-        evento = _transitar(bd, fase, nova, por=por, ts=ts, quando=quando)
+        quando = None
+        if nova == FASE_EM_ANDAMENTO and iniciada_em and primeiro_inicio:
+            quando = iniciada_em
+        elif nova == FASE_CONCLUIDA and concluida_em:
+            ultimo = _ultimo_evento(bd, fase_id)
+            if ultimo is None or not _antes(concluida_em, ultimo):
+                quando = concluida_em
+        evento = _transitar(bd, fase, nova, por=por, ts=ts, quando=quando,
+                            nota=observacao_nova if nova in FASE_FEITA else None)
         if evento:
             eventos.append(evento)
         mudou["situacao"] = [antes, nova]
@@ -1262,8 +1323,9 @@ def alterar_fase(con, fase_id: int, dados: dict, *, por: str,
     """Muda os campos e/ou a situação da fase.
 
     Regras: AGUARDANDO exige «aguardando o quê»; CONCLUIDA exige ao menos um
-    comprovante da fase OU a observação que explique; DISPENSADA exige o
-    porquê na observação. EM_ANDAMENTO grava o início (o primeiro fica);
+    comprovante da fase OU a observação dada nesta mudança (a já gravada não
+    vale); DISPENSADA exige o porquê, dado nesta mudança. EM_ANDAMENTO grava o
+    início (o primeiro fica);
     CONCLUIDA grava quando e por quem; reabrir limpa a conclusão da fase (o
     histórico a guarda). Devolve {mudou: {campo: [antes, depois]}, eventos,
     concluida}.
@@ -1311,6 +1373,12 @@ def mover_fase(con, projeto_id: int, fase_id: int, direcao: str, *, por: str,
 
 # ------------------------------------------------------------- os comprovantes
 
+#: O endereço de um PR do próprio repositório: vira o número, para não duplicar.
+_PR_DO_REPOSITORIO = re.compile(
+    r"https?://(?:www\.)?" + re.escape(REPOSITORIO_PR.split("://", 1)[1]) + r"(\d{1,6})(?:[/?#]\S*)?",
+    flags=re.I)
+
+
 def _referencia(tipo: str, valor, *, tem_anexo: bool) -> str:
     """A referência de cada tipo, conferida e no formato da chave única."""
     ref = _linha(valor, "Referência", limite=500)
@@ -1318,7 +1386,7 @@ def _referencia(tipo: str, valor, *, tem_anexo: bool) -> str:
         if not _e_url(ref):
             raise ProjetoError("Link: cole o endereço completo, começando por https://.")
     elif tipo == "PR":
-        m = re.fullmatch(r"#?\s*(\d{1,6})", ref)
+        m = re.fullmatch(r"#?\s*(\d{1,6})", ref) or _PR_DO_REPOSITORIO.fullmatch(ref)
         if m:
             ref = m.group(1)
         elif not _e_url(ref):
@@ -1350,19 +1418,13 @@ def _comprovante_igual(bd, projeto_id: int, fase_id: int | None, tipo: str, refe
         (int(projeto_id), int(fase_id or 0), tipo, descricao))
 
 
-def registrar_comprovante(con, projeto_id: int, *, fase_id, tipo: str, descricao: str,
-                          referencia: str, attachment_id: int | None = None, por: str,
-                          agora: datetime | str | None = None) -> int:
-    """Registra a prova de uma fase (ou do projeto, sem fase). Devolve o id.
+def _conferir_comprovante(bd, pid: int, *, fase_id, tipo, descricao, referencia,
+                          sha_do_anexo: str | None) -> dict:
+    """Tudo o que se confere antes de gravar o comprovante. Só lê.
 
-    ARQUIVO exige o anexo (`guardar_arquivo`) e, sem referência, usa o
-    sha-256 dele; LINK exige o endereço http(s); PR, o número ou o endereço;
-    TAREFA, o número ou o código; RELATORIO, o caminho, o endereço ou o
-    anexo; TEXTO, só a descrição. A mesma referência não entra duas vezes na
-    mesma fase. `agora` é quando foi registrado.
+    `sha_do_anexo` é o do arquivo que vai junto (None: sem arquivo). Devolve
+    os campos prontos: fase_id, tipo, descricao, referencia.
     """
-    bd = banco(con)
-    pid = int(projeto_id)
     if not _existe_projeto(bd, pid):
         raise LookupError("Projeto não encontrado.")
     tipo_n = str(tipo or "").strip().upper()
@@ -1377,6 +1439,45 @@ def registrar_comprovante(con, projeto_id: int, *, fase_id, tipo: str, descricao
     desc = _bloco(descricao, "Descrição", limite=1000)
     if not desc:
         raise ProjetoError("Descreva o comprovante: o que ele prova.")
+    if tipo_n == "ARQUIVO" and sha_do_anexo is None:
+        raise ProjetoError("Escolha o arquivo do comprovante.")
+    ref = _referencia(tipo_n, referencia, tem_anexo=sha_do_anexo is not None)
+    if tipo_n == "ARQUIVO" and not ref:
+        ref = "sha256:" + str(sha_do_anexo)
+    if ref and _comprovante_igual(bd, pid, fid, tipo_n, ref):
+        raise ProjetoError("Este comprovante já está registrado " +
+                           ("nesta fase." if fid else "no projeto."))
+    return {"fase_id": fid, "tipo": tipo_n, "descricao": desc, "referencia": ref}
+
+
+def _gravar_comprovante(bd, pid: int, campos: dict, *, attachment_id: int | None, por: str,
+                        ts: str) -> int:
+    novo = bd.escrever(
+        "INSERT INTO dev_projetos_comprovantes (projeto_id, fase_id, tipo, descricao, referencia, "
+        "attachment_id, registrado_em, registrado_por) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+        "RETURNING id",
+        (pid, campos["fase_id"], campos["tipo"], campos["descricao"], campos["referencia"],
+         attachment_id, ts, str(por or "").strip()),
+    )
+    _tocar(bd, pid, ts)
+    return int(novo[0]["id"])
+
+
+def registrar_comprovante(con, projeto_id: int, *, fase_id, tipo: str, descricao: str,
+                          referencia: str, attachment_id: int | None = None, por: str,
+                          agora: datetime | str | None = None) -> int:
+    """Registra a prova de uma fase (ou do projeto, sem fase). Devolve o id.
+
+    ARQUIVO exige o anexo (`guardar_arquivo`) e, sem referência, usa o
+    sha-256 dele; LINK exige o endereço http(s); PR, o número ou o endereço
+    (o do próprio repositório vira o número); TAREFA, o número ou o código;
+    RELATORIO, o caminho, o endereço ou o anexo; TEXTO, só a descrição. A
+    mesma referência não entra duas vezes na mesma fase. `agora` é quando foi
+    registrado. Com o arquivo na mão, use `registrar_comprovante_com_arquivo`:
+    ele confere antes de gravar o arquivo.
+    """
+    bd = banco(con)
+    pid = int(projeto_id)
     anexo = None
     if attachment_id is not None:
         anexo = bd.um("SELECT id, sha256, entity_type, entity_id FROM attachments WHERE id=%s",
@@ -1384,24 +1485,50 @@ def registrar_comprovante(con, projeto_id: int, *, fase_id, tipo: str, descricao
         if (not anexo or anexo["entity_type"] != ENTIDADE_DO_ANEXO
                 or int(anexo["entity_id"]) != pid):
             raise ProjetoError("O arquivo anexado não é deste projeto.")
-    if tipo_n == "ARQUIVO" and anexo is None:
-        raise ProjetoError("Escolha o arquivo do comprovante.")
-    ref = _referencia(tipo_n, referencia, tem_anexo=anexo is not None)
-    if tipo_n == "ARQUIVO" and not ref:
-        ref = "sha256:" + str(anexo["sha256"])
-    if ref and _comprovante_igual(bd, pid, fid, tipo_n, ref):
-        raise ProjetoError("Este comprovante já está registrado " +
-                           ("nesta fase." if fid else "no projeto."))
-    ts = _agora_iso(agora)
-    novo = bd.escrever(
-        "INSERT INTO dev_projetos_comprovantes (projeto_id, fase_id, tipo, descricao, referencia, "
-        "attachment_id, registrado_em, registrado_por) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
-        "RETURNING id",
-        (pid, fid, tipo_n, desc, ref, int(anexo["id"]) if anexo else None, ts,
-         str(por or "").strip()),
-    )
-    _tocar(bd, pid, ts)
-    return int(novo[0]["id"])
+    campos = _conferir_comprovante(bd, pid, fase_id=fase_id, tipo=tipo, descricao=descricao,
+                                   referencia=referencia,
+                                   sha_do_anexo=str(anexo["sha256"]) if anexo else None)
+    return _gravar_comprovante(bd, pid, campos, attachment_id=int(anexo["id"]) if anexo else None,
+                               por=por, ts=_agora_iso(agora))
+
+
+def _conferir_arquivo(nome_arquivo, conteudo: bytes) -> tuple[str, str, str]:
+    """O nome (sem pasta), a extensão e o sha-256 do arquivo, ou a recusa. Só calcula."""
+    nome = re.split(r"[\\/]", str(nome_arquivo or ""))[-1].strip()
+    extensao = Path(nome).suffix.lower()
+    if extensao not in EXTENSOES_DO_ARQUIVO:
+        raise ProjetoError("Arquivo do comprovante: PDF, imagem (JPG, PNG), texto (TXT, MD, CSV, "
+                           "JSON, LOG), documento ou planilha (ODT, ODS, DOCX, XLSX) ou ZIP.")
+    if not conteudo:
+        raise ProjetoError("O arquivo veio vazio.")
+    if len(conteudo) > TAMANHO_MAXIMO_DO_ARQUIVO:
+        raise ProjetoError("O arquivo passa de 20 MB.")
+    return nome, extensao, hashlib.sha256(conteudo).hexdigest()
+
+
+def _guardar(bd, pid: int, nome: str, extensao: str, sha: str, conteudo: bytes, pasta,
+             usuario_id: int | None, ts: str) -> tuple[int, Path | None]:
+    """Grava o arquivo e a linha em `attachments`. Devolve (id, o arquivo SE foi
+    escrito agora): quem chama apaga só o que esta chamada escreveu."""
+    pasta = Path(pasta)
+    pasta.mkdir(parents=True, exist_ok=True)
+    destino = pasta / f"{pid}_{sha[:16]}{extensao}"
+    escrito = None
+    if not destino.exists():
+        destino.write_bytes(conteudo)
+        escrito = destino
+    try:
+        novo = bd.escrever(
+            "INSERT INTO attachments(entity_type, entity_id, original_name, stored_name, stored_path, "
+            "sha256, size_bytes, description, uploaded_by, uploaded_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+            (ENTIDADE_DO_ANEXO, pid, nome, destino.name, str(destino), sha, len(conteudo),
+             "Comprovante do projeto de desenvolvimento", usuario_id, ts))
+    except BaseException:
+        if escrito is not None:
+            escrito.unlink(missing_ok=True)
+        raise
+    return int(novo[0]["id"]), escrito
 
 
 def guardar_arquivo(con, projeto_id: int, *, nome_arquivo: str, conteudo: bytes, pasta,
@@ -1416,28 +1543,34 @@ def guardar_arquivo(con, projeto_id: int, *, nome_arquivo: str, conteudo: bytes,
     pid = int(projeto_id)
     if not _existe_projeto(bd, pid):
         raise LookupError("Projeto não encontrado.")
-    nome = re.split(r"[\\/]", str(nome_arquivo or ""))[-1].strip()
-    extensao = Path(nome).suffix.lower()
-    if extensao not in EXTENSOES_DO_ARQUIVO:
-        raise ProjetoError("Arquivo do comprovante: PDF, imagem (JPG, PNG), texto (TXT, MD, CSV, "
-                           "JSON, LOG), documento ou planilha (ODT, ODS, DOCX, XLSX) ou ZIP.")
-    if not conteudo:
-        raise ProjetoError("O arquivo veio vazio.")
-    if len(conteudo) > TAMANHO_MAXIMO_DO_ARQUIVO:
-        raise ProjetoError("O arquivo passa de 20 MB.")
-    sha = hashlib.sha256(conteudo).hexdigest()
-    pasta = Path(pasta)
-    pasta.mkdir(parents=True, exist_ok=True)
-    destino = pasta / f"{pid}_{sha[:16]}{extensao}"
-    if not destino.exists():
-        destino.write_bytes(conteudo)
-    novo = bd.escrever(
-        "INSERT INTO attachments(entity_type, entity_id, original_name, stored_name, stored_path, "
-        "sha256, size_bytes, description, uploaded_by, uploaded_at) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
-        (ENTIDADE_DO_ANEXO, pid, nome, destino.name, str(destino), sha, len(conteudo),
-         "Comprovante do projeto de desenvolvimento", usuario_id, _agora_iso(agora)))
-    return int(novo[0]["id"])
+    nome, extensao, sha = _conferir_arquivo(nome_arquivo, conteudo)
+    return _guardar(bd, pid, nome, extensao, sha, conteudo, pasta, usuario_id, _agora_iso(agora))[0]
+
+
+def registrar_comprovante_com_arquivo(con, projeto_id: int, *, fase_id, tipo: str, descricao: str,
+                                      referencia: str, nome_arquivo: str, conteudo: bytes, pasta,
+                                      usuario_id: int | None, por: str,
+                                      agora: datetime | str | None = None) -> tuple[int, int]:
+    """O comprovante com o arquivo junto. Devolve (comprovante_id, attachment_id).
+
+    CONFERE TUDO ANTES DE ESCREVER O ARQUIVO: o comprovante recusado não deixa
+    arquivo no disco nem linha em `attachments`. Se algo falha depois de
+    escrito, o arquivo que esta chamada escreveu é apagado.
+    """
+    bd = banco(con)
+    pid = int(projeto_id)
+    nome, extensao, sha = _conferir_arquivo(nome_arquivo, conteudo)
+    campos = _conferir_comprovante(bd, pid, fase_id=fase_id, tipo=tipo, descricao=descricao,
+                                   referencia=referencia, sha_do_anexo=sha)
+    ts = _agora_iso(agora)
+    anexo_id, escrito = _guardar(bd, pid, nome, extensao, sha, conteudo, pasta, usuario_id, ts)
+    try:
+        comprovante_id = _gravar_comprovante(bd, pid, campos, attachment_id=anexo_id, por=por, ts=ts)
+    except BaseException:
+        if escrito is not None:
+            escrito.unlink(missing_ok=True)
+        raise
+    return comprovante_id, anexo_id
 
 
 def _destino_do_comprovante(c: dict) -> dict:
@@ -1604,11 +1737,51 @@ def linha_do_tempo(con, projeto_id: int) -> list[dict]:
         if r["devolvido_em"]:
             junta(r["devolvido_em"], "DEVOLVIDO", "Devolvido à lista dos projetos da gestão.",
                   r["devolvido_por"])
-    ordem = sorted(enumerate(eventos), key=lambda par: (_chave_do_momento(par[1]["data"]), par[0]))
-    saida = []
-    for _, e in ordem:
+    ordem = [e for _, e in sorted(enumerate(eventos),
+                                  key=lambda par: (_chave_do_momento(par[1]["data"]), par[0]))]
+    saida = _juntar_comprovantes(ordem, titulos)
+    for e in saida:
         e["data_exibicao"] = formatar_momento(e["data"])
-        saida.append(e)
+    return saida
+
+
+def _juntar_comprovantes(eventos: list[dict], titulos: dict[int, str]) -> list[dict]:
+    """Os comprovantes registrados de uma vez viram um evento só.
+
+    A carga registra dezenas de comprovantes no mesmo minuto, e eles tomavam o
+    alto da linha do tempo, escondendo a história real (o ensaio com os 41
+    projetos, 26/11/2026). Três ou mais COMPROVANTE seguidos, do mesmo minuto
+    e da mesma pessoa, viram «N comprovantes registrados de uma vez», com as
+    fases a que pertencem. Cada um continua na sua fase, na ficha.
+    """
+    def chave(e: dict):
+        return (_chave_do_momento(e["data"])[:16], e["quem"])
+
+    saida: list[dict] = []
+    i = 0
+    while i < len(eventos):
+        e = eventos[i]
+        j = i + 1
+        if e["tipo"] == "COMPROVANTE":
+            while (j < len(eventos) and eventos[j]["tipo"] == "COMPROVANTE"
+                   and chave(eventos[j]) == chave(e)):
+                j += 1
+        grupo = eventos[i:j]
+        if len(grupo) < COMPROVANTES_JUNTOS:
+            saida.extend(grupo)
+        else:
+            contagem: dict[str, int] = {}
+            for g in grupo:
+                fase_id = g["comprovante"]["fase_id"]
+                nome = f"«{titulos.get(int(fase_id), '?')}»" if fase_id else "do projeto, sem fase"
+                contagem[nome] = contagem.get(nome, 0) + 1
+            onde = "; ".join(f"{nome} ({n})" for nome, n in contagem.items())
+            saida.append({
+                "data": e["data"], "tipo": "COMPROVANTES", "rotulo": EVENTO_ROTULO["COMPROVANTES"],
+                "texto": f"{len(grupo)} comprovantes registrados de uma vez — {onde}.",
+                "quem": e["quem"], "quantidade": len(grupo),
+                "comprovantes": [g["comprovante"] for g in grupo]})
+        i = j
     return saida
 
 
@@ -1643,12 +1816,18 @@ def ficha(con, projeto_id: int, *, hoje: date | None = None) -> dict | None:
 # ------------------------------------------------------------- a carga em lote
 
 def ler_carga(texto: str) -> list[dict]:
-    """O JSON da carga: um projeto, uma lista deles ou {"projetos": [...]}. Só lê."""
+    """O JSON da carga: um projeto, uma lista deles ou {"projetos": [...]}. Só lê.
+
+    Recusa a carga que repete o código ou o título de um projeto: os dois
+    acertariam o mesmo projeto, e o segundo desfaria o primeiro.
+    """
     bruto = str(texto or "").strip()
     if not bruto:
         raise ProjetoError("Cole a carga (JSON) ou escolha o arquivo .json.")
     try:
         dado = json.loads(bruto)
+    except RecursionError:
+        raise ProjetoError("A carga não é um JSON que se leia: aninhada demais.") from None
     except ValueError as erro:
         raise ProjetoError(f"A carga não é um JSON válido (linha {getattr(erro, 'lineno', '?')}).") from None
     if isinstance(dado, dict) and isinstance(dado.get("projetos"), list):
@@ -1659,11 +1838,22 @@ def ler_carga(texto: str) -> list[dict]:
     if len(specs) > CARGA_MAXIMA_DE_PROJETOS:
         raise ProjetoError(f"A carga traz {len(specs)} projetos: no máximo "
                            f"{CARGA_MAXIMA_DE_PROJETOS} por vez.")
+    codigos: set[str] = set()
+    titulos: set[str] = set()
+    for s in specs:
+        codigo = _codigo(s.get("codigo"))
+        titulo = _linha(s.get("titulo"), "Título", limite=200)
+        if codigo and codigo in codigos:
+            raise ProjetoError(f"A carga traz duas vezes o projeto {codigo}: junte-os num só.")
+        if titulo and titulo in titulos:
+            raise ProjetoError(f"A carga traz duas vezes o projeto «{titulo}»: junte-os num só.")
+        codigos.add(codigo or "")
+        titulos.add(titulo or "")
     return specs
 
 
 def _importar_comprovante(bd, pid: int, fid: int | None, spec: dict, *, por: str, ts: str,
-                          r: dict) -> None:
+                          r: dict, autoria: bool) -> None:
     if not isinstance(spec, dict):
         raise ProjetoError("Cada comprovante da carga é um objeto {tipo, descricao, referencia}.")
     tipo = str(spec.get("tipo") or "").strip().upper()
@@ -1676,60 +1866,102 @@ def _importar_comprovante(bd, pid: int, fid: int | None, spec: dict, *, por: str
     descricao = _bloco(spec.get("descricao"), "Descrição", limite=1000)
     if _comprovante_igual(bd, pid, fid, tipo, referencia, descricao):
         return
+    quem = str(spec.get("registrado_por") or "").strip() if autoria else ""
     r["comprovantes_criados"].append(registrar_comprovante(
         bd, pid, fase_id=fid, tipo=tipo, descricao=descricao, referencia=referencia,
-        por=str(spec.get("registrado_por") or por),
+        por=quem or por,
         agora=_momento(spec.get("registrado_em"), "Data do comprovante") or ts))
 
 
-def _importar_fase(bd, pid: int, spec: dict, posicao: int, *, por: str, ts: str, r: dict) -> None:
-    if not isinstance(spec, dict):
-        raise ProjetoError("Cada fase da carga é um objeto {titulo, criterio, situacao, …}.")
+def _importar_fase(bd, pid: int, spec: dict, *, por: str, ts: str, r: dict, autoria: bool) -> int:
+    """Uma fase da carga. Devolve o id. A ordem não se grava aqui: `importar`
+    renumera todas no fim, na ordem do arquivo."""
     titulo = _linha(spec.get("titulo"), "Título da fase", limite=200, obrigatorio=True)
-    simples = {k: spec[k] for k in CAMPOS_DA_FASE if k in spec and k != "titulo"}
+    simples = {k: spec[k] for k in CAMPOS_DA_FASE if k in spec and k not in ("titulo", "ordem")}
     alvo = _situacao_da_fase(spec["situacao"]) if spec.get("situacao") else None
     iniciada = _momento(spec.get("iniciada_em"), f"Início da fase «{titulo}»")
     concluida = _momento(spec.get("concluida_em"), f"Conclusão da fase «{titulo}»")
+    if iniciada and concluida and _antes(concluida, iniciada):
+        raise ProjetoError(f"A fase «{titulo}» vem concluída em {formatar_momento(concluida)}, "
+                           f"antes de iniciada em {formatar_momento(iniciada)}.")
+    comprovantes = _lista(spec.get("comprovantes"), f"Os comprovantes da fase «{titulo}»",
+                          limite=CARGA_MAXIMA_DE_COMPROVANTES)
     fase = bd.um("SELECT id FROM dev_projetos_fases WHERE projeto_id=%s AND titulo=%s",
                  (pid, titulo))
     criada = fase is None
     if criada:
-        simples.setdefault("ordem", posicao)
         fid = adicionar_fase(bd, pid, {"titulo": titulo, **simples}, por=por, agora=ts)
         r["fases_criadas"].append(fid)
-        simples = {}
     else:
         fid = int(fase["id"])
     # os comprovantes antes da situação: a conclusão os conta
-    for c in spec.get("comprovantes") or []:
-        _importar_comprovante(bd, pid, fid, c, por=por, ts=ts, r=r)
+    for c in comprovantes:
+        _importar_comprovante(bd, pid, fid, c, por=por, ts=ts, r=r, autoria=autoria)
     if alvo:
         simples["situacao"] = alvo
+    # a fase recém-criada já tem os campos: passá-los de novo só faz a
+    # observação do arquivo contar como dada nesta mudança
     feito = _alterar_fase(bd, fid, simples, por=por, ts=ts, iniciada_em=iniciada,
-                          concluida_em=concluida)
+                          concluida_em=concluida, observacao_da_carga=True)
     if feito["mudou"] and not criada:
-        r["fases_alteradas"].append(fid)
+        r["fases_alteradas"].setdefault(fid, {}).update(feito["mudou"])
     if feito["concluida"]:
         r["fases_concluidas"].append(fid)
+    return fid
 
 
-def importar(con, spec: dict, *, por: str, agora: datetime | str | None = None) -> dict:
+def _renumerar_pela_carga(bd, pid: int, specs_e_ids: list[tuple[int, dict, int]], *, por: str,
+                          ts: str, r: dict) -> list[dict]:
+    """Põe as fases na ordem do arquivo (o `ordem` dele, senão a posição na lista);
+    as que existem e não vieram na carga vão para o fim, como estavam. Devolve
+    essas que ficaram de fora (id e título): não se apagam nem mudam."""
+    def chave(item):
+        posicao, spec, _ = item
+        return (_ordem(spec["ordem"]) if spec.get("ordem") not in (None, "") else posicao, posicao)
+
+    da_carga = [fid for _, _, fid in sorted(specs_e_ids, key=chave)]
+    atuais = listar_fases(bd, pid)
+    fora = [f for f in atuais if int(f["id"]) not in set(da_carga)]
+    nova_ordem = da_carga + [int(f["id"]) for f in fora]
+    ordem_antes = {int(f["id"]): int(f["ordem"]) for f in atuais}
+    if any(ordem_antes[fid] != n for n, fid in enumerate(nova_ordem, 1)):
+        reordenar_fases(bd, pid, nova_ordem, por=por, agora=ts)
+        criadas = set(r["fases_criadas"])
+        for n, fid in enumerate(nova_ordem, 1):
+            if fid not in criadas and ordem_antes[fid] != n:
+                r["fases_alteradas"].setdefault(fid, {})["ordem"] = [ordem_antes[fid], n]
+    return [{"id": int(f["id"]), "titulo": f["titulo"]} for f in fora]
+
+
+def importar(con, spec: dict, *, por: str, agora: datetime | str | None = None,
+             autoria_da_carga: bool = False) -> dict:
     """A carga de UM projeto, idempotente — a porta da carga em lote (o agente 11).
 
     Acha o projeto pelo `codigo`; senão pelo `titulo` exato (e então preenche
-    o código que faltava); senão cadastra. As fases se acham pelo (projeto,
-    título); os comprovantes pela chave única (projeto, fase, tipo,
-    referência) — o TEXTO sem referência, pela descrição; os andamentos pelo
-    (projeto, texto). Só grava o que mudou: rodar duas vezes não duplica nada.
+    o código que faltava; `"codigo": ""` não apaga o código de ninguém); senão
+    cadastra. As fases se acham pelo (projeto, título) e são renumeradas na
+    ordem do arquivo; as que existem e não vêm na carga ficam como estão, no
+    fim, e voltam em `fases_fora_da_carga`. Os comprovantes se acham pela
+    chave única (projeto, fase, tipo, referência) — o TEXTO sem referência,
+    pela descrição; os andamentos pelo (projeto, texto). Só grava o que
+    mudou: rodar duas vezes não duplica nada.
+
+    As datas da carga valem onde dizem a verdade: `iniciada_em` no primeiro
+    início da fase, `concluida_em` se não for anterior ao último evento dela;
+    no resto vale `agora`. A observação da fase no arquivo conta como dada
+    para concluir ou dispensar. Quem registrou o comprovante e quem escreveu o
+    andamento é `por`; os nomes do arquivo (`registrado_por`, `autor`) só
+    valem com `autoria_da_carga=True` (o script do agente 11; a tela, nunca).
 
     É tudo ou nada: a recusa de uma fase desfaz o que a carga deste projeto
     já tinha gravado (SAVEPOINT), e a transação de quem chama continua.
 
     Devolve, para quem chama auditar: projeto_id, codigo, titulo, projeto
     (CRIADO | ALTERADO | SEM_MUDANCA), achado_por (CODIGO | TITULO | None),
-    campos_alterados {campo: [antes, depois]}, fases_criadas,
-    fases_alteradas, fases_concluidas, comprovantes_criados,
-    andamentos_criados (listas de ids) e mudou (bool).
+    campos_alterados {campo: [antes, depois]}, fases_criadas [ids],
+    fases_alteradas {fase_id: {campo: [antes, depois]}}, fases_concluidas
+    [ids], comprovantes_criados [ids], andamentos_criados [ids],
+    fases_fora_da_carga [{id, titulo}] e mudou (bool).
     """
     if not isinstance(spec, dict):
         raise ProjetoError("A carga é um objeto por projeto.")
@@ -1737,15 +1969,33 @@ def importar(con, spec: dict, *, por: str, agora: datetime | str | None = None) 
     ts = _agora_iso(agora)
     r: dict[str, Any] = {
         "projeto_id": None, "codigo": None, "titulo": None, "projeto": "SEM_MUDANCA",
-        "achado_por": None, "campos_alterados": {}, "fases_criadas": [], "fases_alteradas": [],
+        "achado_por": None, "campos_alterados": {}, "fases_criadas": [], "fases_alteradas": {},
         "fases_concluidas": [], "comprovantes_criados": [], "andamentos_criados": [],
-        "mudou": False,
+        "fases_fora_da_carga": [], "mudou": False,
     }
     with bd.ponto_de_retorno("dev_projetos_importar"):
         codigo = _codigo(spec.get("codigo"))
         titulo = _linha(spec.get("titulo"), "Título", limite=200)
         if not codigo and not titulo:
             raise ProjetoError("A carga precisa do código ou do título do projeto.")
+        # o que vem em lista se confere antes de gravar qualquer coisa
+        tem_fases = "fases" in spec
+        fases = _lista(spec.get("fases"), "As fases da carga", limite=CARGA_MAXIMA_DE_FASES)
+        if not all(isinstance(f, dict) for f in fases):
+            raise ProjetoError("Cada fase da carga é um objeto {titulo, criterio, situacao, …}.")
+        vistos: set[str] = set()
+        for f in fases:
+            nome = _linha(f.get("titulo"), "Título da fase", limite=200, obrigatorio=True)
+            if nome in vistos:
+                raise ProjetoError(f"A carga traz duas vezes a fase «{nome}»: junte-as numa só.")
+            vistos.add(nome)
+        comprovantes = _lista(spec.get("comprovantes"), "Os comprovantes do projeto",
+                              limite=CARGA_MAXIMA_DE_COMPROVANTES)
+        andamentos = _lista(spec.get("andamento"), "Os andamentos da carga",
+                            limite=CARGA_MAXIMA_DE_ANDAMENTOS)
+        if not all(isinstance(a, dict) for a in andamentos):
+            raise ProjetoError("Cada andamento da carga é um objeto {texto, criado_em, autor}.")
+
         atual = None
         if codigo:
             atual = bd.um("SELECT id, codigo, titulo FROM dev_projetos WHERE codigo=%s", (codigo,))
@@ -1761,8 +2011,10 @@ def importar(con, spec: dict, *, por: str, agora: datetime | str | None = None) 
         dados = {k: spec[k] for k in CAMPOS_DO_PROJETO if k in spec}
         if codigo:
             dados["codigo"] = codigo
+        else:
+            dados.pop("codigo", None)       # a carga não apaga o código de ninguém
         if not titulo:
-            dados.pop("titulo", None)  # sem título, a carga não renomeia
+            dados.pop("titulo", None)       # sem título, a carga não renomeia
         if atual is None:
             if not titulo:
                 raise ProjetoError(f"O projeto {codigo} ainda não existe: a carga precisa do "
@@ -1778,25 +2030,24 @@ def importar(con, spec: dict, *, por: str, agora: datetime | str | None = None) 
                 r["projeto"] = "ALTERADO"
                 r["campos_alterados"] = mudou
         r["projeto_id"] = pid
-        fases = spec.get("fases") or []
-        if not isinstance(fases, list):
-            raise ProjetoError("As fases da carga vêm numa lista.")
-        for posicao, f in enumerate(fases, 1):
-            _importar_fase(bd, pid, f, posicao, por=por, ts=ts, r=r)
-        for c in spec.get("comprovantes") or []:
-            _importar_comprovante(bd, pid, None, c, por=por, ts=ts, r=r)
-        for item in spec.get("andamento") or []:
-            if not isinstance(item, dict):
-                raise ProjetoError("Cada andamento da carga é um objeto {texto, criado_em, autor}.")
-            texto = str(item.get("texto") or "").strip()
+        feitas = [(posicao, f, _importar_fase(bd, pid, f, por=por, ts=ts, r=r,
+                                              autoria=autoria_da_carga))
+                  for posicao, f in enumerate(fases, 1)]
+        if tem_fases:
+            r["fases_fora_da_carga"] = _renumerar_pela_carga(bd, pid, feitas, por=por, ts=ts, r=r)
+        for c in comprovantes:
+            _importar_comprovante(bd, pid, None, c, por=por, ts=ts, r=r, autoria=autoria_da_carga)
+        for item in andamentos:
+            texto = _bloco(item.get("texto"), "Texto do andamento", limite=LIMITE_DO_ANDAMENTO)
             if not texto or bd.um("SELECT 1 AS um FROM dev_projetos_andamento "
                                   "WHERE projeto_id=%s AND texto=%s", (pid, texto)):
                 continue
             criado = _momento(item.get("criado_em"), "Data do andamento") or ts
+            autor = str(item.get("autor") or "").strip() if autoria_da_carga else ""
             r["andamentos_criados"].append(int(bd.escrever(
                 "INSERT INTO dev_projetos_andamento (projeto_id, texto, criado_em, autor) "
                 "VALUES (%s, %s, %s, %s) RETURNING id",
-                (pid, texto, criado, str(item.get("autor") or por or "").strip() or None),
+                (pid, texto, criado, autor or str(por or "").strip() or None),
             )[0]["id"]))
         r["mudou"] = r["projeto"] != "SEM_MUDANCA" or any(
             r[k] for k in ("fases_criadas", "fases_alteradas", "fases_concluidas",

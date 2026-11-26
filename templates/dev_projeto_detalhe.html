@@ -118,14 +118,15 @@
       <details><summary>Mudar a situação</summary>
         <form method="post" action="{{ url_for('dev_projetos_fase_alterar', projeto_id=projeto.id, fase_id=f.id) }}" class="form-grid">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="formulario" value="situacao">
           <label>Situação
             <select name="situacao">
               {% for cod, rot in situacao_da_fase.items() %}<option value="{{ cod }}"{% if cod == f.situacao %} selected{% endif %}>{{ rot }}</option>{% endfor %}
             </select></label>
           <label>Aguardando o quê (para «Aguardando»)
             <input type="text" name="aguardando_o_que" maxlength="500" value="{{ f.aguardando_o_que or '' }}"></label>
-          <label class="span2">Observação (para concluir sem comprovante, ou dispensar: diga por quê)
-            <textarea name="observacao" rows="2" maxlength="4000">{{ f.observacao or '' }}</textarea></label>
+          <label class="span2">Observação desta mudança (para concluir sem comprovante, ou dispensar: diga por quê; a já gravada não vale)
+            <textarea name="observacao" rows="2" maxlength="4000"></textarea></label>
           <button type="submit" class="button primary">Gravar a situação</button>
         </form>
       </details>
@@ -143,6 +144,8 @@
             <input type="text" name="responsavel" maxlength="120" value="{{ f.responsavel or '' }}"></label>
           <label>Prazo
             <input type="date" name="prazo" value="{{ f.prazo or '' }}"></label>
+          <label class="span2">Observação
+            <textarea name="observacao" rows="2" maxlength="4000">{{ f.observacao or '' }}</textarea></label>
           <button type="submit" class="button">Gravar a fase</button>
         </form>
       </details>
@@ -205,6 +208,13 @@
       <span class="badge">{{ e.rotulo }}</span>
       {% if e.quem %}<span class="dev-projetos-autor">{{ e.quem }}</span>{% endif %}
       <p>{{ e.texto }}{% if e.comprovante %} {{ link_do_comprovante(e.comprovante) }}{% endif %}</p>
+      {% if e.comprovantes %}
+      <details><summary class="small">Ver os {{ e.quantidade }}</summary>
+        <ul class="small">
+          {% for c in e.comprovantes %}<li><span class="badge">{{ c.tipo_rotulo }}</span> {{ c.descricao }} {{ link_do_comprovante(c) }}</li>{% endfor %}
+        </ul>
+      </details>
+      {% endif %}
     </li>
     {% else %}
     <li class="muted">Sem eventos ainda.</li>

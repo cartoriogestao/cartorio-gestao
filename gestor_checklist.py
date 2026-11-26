@@ -51,6 +51,15 @@ ROTINA PRIMEIRO, DÉBITO DEPOIS (24/11/2026)
     é `conformidade.medir(so_rotina=True)`: a mesma régua do semáforo, sem o
     débito. A cor oficial da área não muda — o débito não se esconde.
 
+SÓ O QUE A TI E O ADMINISTRADOR RESOLVEM (25/11/2026, G007)
+    «Checklist do dia nao serve para pratica de atos do cartorio, nem para
+    atos materiais que necessitam estar fisicamente no cartorio» — o oficial.
+    A lista dos achados mostra só as regras de destino TI_ADMIN
+    (`gestor_destino.DESTINO`, a tabela única regra → destino). O que é do
+    escrevente sai da lista e aparece num quadro à parte, uma linha por regra,
+    com a tarefa do gestor que o leva ao processo; o débito passado aparece à
+    parte, porque quem o acompanha é o agente de compliance. A COR OFICIAL NÃO MUDA: o semáforo conta todos os achados, de
+    qualquer destino, e a tela diz isso ao lado do quadro.
 O QUE NÃO CABE À GESTÃO (25/11/2026, T019)
     «permitir que retiremos do checklist do dia [...] itens que nao cabem a
     gestao ou admin» — o oficial. O oficial e o gerente retiram um achado da
@@ -73,6 +82,7 @@ from datetime import date, datetime
 from typing import Any, Callable
 
 import conformidade as CF
+import gestor_destino as GDS
 from bd_nativo import banco
 
 #: Quem abre a checklist (a mesma régua do semáforo no painel geral).
@@ -171,6 +181,7 @@ def achados_por_area(con, hoje: date, *, papel: str, area: str | None = None,
             "dias_em_aberto": (hoje - desde).days if desde else None,
             "idade": idade,
             "faz_a_cor": gravidade != "ATENCAO",
+            "destino": GDS.destino(regra),
             "link": None if sigiloso else _link_do_achado(con, r["chave"], regra),
             "retirada": retiradas.get(str(r["chave"])),
         })
@@ -355,6 +366,15 @@ def marcar_conferido(con, item: str, hoje: date, *, por: str, usuario_id: int | 
 # ------------------------------------------------------------------ a tela
 
 
+def _rotulos_do_gestor() -> dict[str, str]:
+    """O nome de cada regra como o título da tarefa o escreve."""
+    try:
+        import gestor_rotina as GR
+        return dict(GR.ROTULOS)
+    except Exception:                                   # noqa: BLE001
+        return {}
+
+
 def _medido(db, fn: Callable, *args) -> tuple[Any, str]:
     """Roda `fn(con, *args)` numa conexão só dela: (resultado, erro)."""
     try:
@@ -392,10 +412,19 @@ def montar(db, hoje: date | None = None, *, papel: str, area: str | None = None,
     todos, erro_achados = _medido(
         db, lambda con: achados_por_area(con, hoje, papel=papel, area=area,
                                          retiradas=retiradas))
-    achados = {a: [x for x in lista if not x["retirada"]] for a, lista in (todos or {}).items()}
+    todos = todos or {}
+    # G007 primeiro, T019 depois: a lista é só da TI e do administrador; o que
+    # é do escrevente ou débito passado vai ao quadro «fora». Dentro da lista,
+    # o retirado à mão sai para «Ver os retirados» (de qualquer destino).
+    achados = {a: [x for x in lista if x["destino"] == GDS.TI_ADMIN and not x["retirada"]]
+               for a, lista in todos.items()}
     achados = {a: lista for a, lista in achados.items() if lista}
-    retirados = {a: [x for x in lista if x["retirada"]] for a, lista in (todos or {}).items()}
+    retirados = {a: [x for x in lista if x["retirada"]] for a, lista in todos.items()}
     retirados = {a: lista for a, lista in retirados.items() if lista}
+    vivos = {a: [x for x in lista if not x["retirada"]] for a, lista in todos.items()}
+    tarefas, erro_tarefas = _medido(db, GDS.tarefas_do_gestor)
+    fora = GDS.fora_da_checklist(vivos, None if erro_tarefas else tarefas,
+                                 _rotulos_do_gestor())
     conferidos, _ = _medido(db, conferidos_hoje, hoje)
     medido = bool(medicao and medicao["gestor"]["medido"])
     itens = []
@@ -413,6 +442,10 @@ def montar(db, hoje: date | None = None, *, papel: str, area: str | None = None,
                                for a in CF.ROTULO_DA_AREA} if rotina and medido else {}),
             "achados": achados, "erro_achados": erro_achados,
             "total_achados": sum(len(v) for v in achados.values()),
+            # G007: o que saiu da lista, por destino — contado, e com a tarefa.
+            "fora": fora, "erro_tarefas": erro_tarefas,
+            "total_fora": {d: sum(x["n"] for x in v) for d, v in fora.items()},
+            "abre_tarefa": abre("task_detail"),
             # O QUE NÃO CABE À GESTÃO (T019): fora da lista e da contagem desta
             # tela, contado e à vista em «Ver os retirados». A cor oficial os
             # conta; a «sem os retirados» não — e a medição que falhou não vira
@@ -422,7 +455,7 @@ def montar(db, hoje: date | None = None, *, papel: str, area: str | None = None,
             "retirados_por_area": {a: len(v) for a, v in retirados.items()},
             # As áreas que a lista mostra: a que só tem retirado também, para
             # dizer que eles existem e qual seria a cor sem eles.
-            "areas_da_lista": list(todos or {}),
+            "areas_da_lista": [a for a in todos if a in achados or a in retirados],
             "cor_sem_retirados": ({a: (sem_retirados["areas"].get(a) or {"cor": CF.VERDE})["cor"]
                                    for a in CF.ROTULO_DA_AREA}
                                   if sem_retirados and medido else {}),

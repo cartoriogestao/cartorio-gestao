@@ -222,7 +222,7 @@ def test_o_oficial_retira_e_devolve_pela_tela_com_auditoria(cg_casa_logada):
     html = c.get(CHECKLIST).get_data(as_text=True)
     principal = html[html.index('id="achados"'):html.index('id="conferencias"')]
     assert "Remessa da quinzena" not in principal and "Envio do mês" in principal
-    assert "Achados abertos (1)" in html
+    assert "Achados abertos da TI e da administração (1)" in html
     assert "Ver os retirados (1)" in html and "1 retirado(s) não conta(m) aqui" in html
     assert 'id="retirados"' not in html
     assert "sem os retirados: Verde" in html             # ao lado da oficial…
@@ -240,7 +240,7 @@ def test_o_oficial_retira_e_devolve_pela_tela_com_auditoria(cg_casa_logada):
     [det] = _auditoria(db, "GESTOR_CHECKLIST_DEVOLVIDO")
     assert det["chave"] == "T:1"
     html = c.get(CHECKLIST).get_data(as_text=True)
-    assert "Achados abertos (2)" in html and "Ver os retirados" not in html
+    assert "Achados abertos da TI e da administração (2)" in html and "Ver os retirados" not in html
     # devolver de novo não grava outra auditoria
     _devolver(c, aid)
     assert len(_auditoria(db, "GESTOR_CHECKLIST_DEVOLVIDO")) == 1

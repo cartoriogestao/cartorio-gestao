@@ -3,6 +3,10 @@
    abertos do gestor pela área do semáforo, e as telas que alguém confere
    todo dia. «Conferido hoje» grava quem olhou; não fecha achado.
    Sem rodada válida do gestor, nada aparece como «em dia».
+   SÓ A TI E O ADMINISTRADOR (25/11/2026, G007): a lista traz só as regras de
+   destino TI_ADMIN (`gestor_destino`); o que é do escrevente ou débito passado
+   vai ao quadro «Fora da checklist», contado e com a tarefa que o leva. A cor
+   oficial da área conta todos.
    O QUE NÃO CABE À GESTÃO (25/11/2026, T019): «Retirar» tira o achado da
    lista e da contagem desta tela, com motivo; «Ver os retirados» mostra quem,
    quando e por quê, e «Devolver à lista». A cor oficial da área continua
@@ -76,6 +80,11 @@
   até {{ ck.rotina_dias_uteis }} dias úteis) vem primeiro; o <strong>débito passado</strong>
   vem depois, recolhido e contado. A cor oficial da área conta os dois; «só a rotina»
   é a cor que ela teria sem o débito.</p>
+  <p>A lista é <strong>só da TI e da administração</strong>: o que se resolve em lote, por
+  mudança no sistema, por IA ou por rotina geral (cargas das centrais, cópia de segurança,
+  conciliação do selo, decisões do oficial). A prática do ato, a digitalização e o que pede
+  livro ou balcão vão para as <strong>tarefas dos escreventes</strong>, e o débito passado fica com o
+  <strong>agente de compliance</strong> — veja <a href="#fora">Fora da checklist</a>. A cor oficial da área conta tudo.</p>
   <p>O que <strong>não cabe à gestão</strong> o oficial ou o gerente retira da lista, com
   o motivo: o achado sai da lista e da contagem desta tela, mas <strong>não é resolvido nem
   apagado</strong> e continua na <strong>cor oficial</strong> da área (a do painel geral e do
@@ -93,13 +102,14 @@
 </section>
 
 <section class="panel" id="achados">
-  <div class="panel-head"><h2>Achados abertos{% if ck.area %} — {{ areas[ck.area] }}{% endif %} ({{ ck.total_achados }})</h2>
+  <div class="panel-head"><h2>Achados abertos da TI e da administração{% if ck.area %} — {{ areas[ck.area] }}{% endif %} ({{ ck.total_achados }})</h2>
+    {% if ck.total_fora.ESCREVENTE or ck.total_fora.COMPLIANCE %}<span class="small"><a href="#fora">Fora da checklist: {{ ck.total_fora.ESCREVENTE }} dos escreventes, {{ ck.total_fora.COMPLIANCE }} de débito passado</a></span>{% endif %}
     {% if ck.total_retirados %}<span class="small"><a href="{{ url_for('gestor_checklist', area=ck.area, ver='retirados') }}#retirados">Ver os retirados ({{ ck.total_retirados }})</a> <span class="muted">— {{ ck.total_retirados }} retirado(s) não conta(m) aqui</span></span>{% endif %}</div>
   {% if ck.erro_retiradas %}<div class="notice critical">Não deu para ler os retirados: {{ ck.erro_retiradas }}. A lista abaixo pode trazer item que alguém retirou.</div>{% endif %}
   {% if ck.erro_achados %}
   <div class="notice critical">Não deu para ler os achados: {{ ck.erro_achados }}. Isto não quer dizer que não há achado.</div>
   {% elif not ck.areas_da_lista %}
-    {% if ck.medido %}<p class="muted">Nenhum achado aberto{% if ck.area %} em {{ areas[ck.area] }}{% endif %} na última conferência do gestor.</p>
+    {% if ck.medido %}<p class="muted">Nenhum achado aberto{% if ck.area %} em {{ areas[ck.area] }}{% endif %} para a TI e a administração na última conferência do gestor{% if ck.total_fora.ESCREVENTE or ck.total_fora.COMPLIANCE %} — o que há está <a href="#fora">fora da checklist</a>{% endif %}.</p>
     {% else %}<p class="muted">Sem medição: não dá para dizer se {% if ck.area %}{{ areas[ck.area] }} está{% else %}as áreas estão{% endif %} em dia.</p>{% endif %}
   {% else %}
   {% for area in ck.areas_da_lista %}{% set lista = ck.achados.get(area, []) %}{% set a = m.areas.get(area) if m else none %}
@@ -129,6 +139,47 @@
   {% if nao_mede %}<p class="small muted">Ainda não entram: {{ nao_mede|join('; ') }}.</p>{% endif %}
 </section>
 
+<section class="panel" id="fora">
+  <div class="panel-head"><h2>Fora da checklist{% if ck.area %} — {{ areas[ck.area] }}{% endif %}</h2></div>
+  <p class="small muted">Saíram da lista porque não são da TI nem da administração. Continuam abertos no
+  gestor e <strong>contam na cor oficial</strong> da área; a tela que os resolve é a da tarefa.</p>
+  {% if ck.erro_achados %}<p class="muted">Sem a lista dos achados, não dá para dizer o que ficou fora.</p>
+  {% else %}
+  <h3>Tarefas dos escreventes <small class="muted">({{ ck.total_fora.ESCREVENTE }} achado(s))</small></h3>
+  {% if ck.erro_tarefas %}<div class="notice critical">Não deu para ler as tarefas: {{ ck.erro_tarefas }}. Isto não quer dizer que a tarefa não existe.</div>{% endif %}
+  {% if ck.fora.ESCREVENTE %}
+  <div class="table-wrap">
+  <table>
+    <tr><th>Regra</th><th>Área</th><th>Achados</th><th>Por que é do escrevente</th><th>Tarefa</th></tr>
+    {% for x in ck.fora.ESCREVENTE %}
+    <tr>
+      <td>{{ x.rotulo }} <code class="small">{{ x.regra }}</code></td>
+      <td>{{ areas[x.area] }}</td>
+      <td>{{ x.n }}{% if x.fazem_a_cor %} <small class="muted">({{ x.fazem_a_cor }} faz(em) a cor)</small>{% endif %}</td>
+      <td class="small">{{ x.motivo }}</td>
+      <td class="small">
+        {% if x.tarefas is none %}<span class="muted">não deu para ler</span>
+        {% elif x.tarefas %}{% for t in x.tarefas %}{% if ck.abre_tarefa %}<a href="{{ url_for('task_detail', task_id=t.id) }}">tarefa {{ t.id }}</a>{% else %}tarefa {{ t.id }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+        {% else %}<span class="muted">a tarefa nasce na próxima rodada do gestor</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% elif ck.medido %}<p class="muted small">Nada dos escreventes{% if ck.area %} em {{ areas[ck.area] }}{% endif %} na última conferência do gestor.</p>
+  {% else %}<p class="muted small">Sem medição: não dá para dizer o que é dos escreventes.</p>{% endif %}
+  <h3>Débito passado — agente de compliance <small class="muted">({{ ck.total_fora.COMPLIANCE }} achado(s))</small></h3>
+  {% if ck.fora.COMPLIANCE %}
+  <ul>
+    {% for x in ck.fora.COMPLIANCE %}
+    <li>{{ x.rotulo }} <code class="small">{{ x.regra }}</code> — {{ areas[x.area] }}, {{ x.n }} achado(s). <span class="small muted">{{ x.motivo }}.</span></li>
+    {% endfor %}
+  </ul>
+  <p class="small muted">Não é rotina do dia a dia: o agente de compliance acompanha, e a cor da área continua contando.</p>
+  {% elif ck.medido %}<p class="muted small">Nada de débito passado{% if ck.area %} em {{ areas[ck.area] }}{% endif %} na última conferência do gestor.</p>
+  {% else %}<p class="muted small">Sem medição: não dá para dizer o que é débito passado.</p>{% endif %}
+  {% endif %}
+</section>
 {% if ver_retirados %}
 <section class="panel" id="retirados">
   <div class="panel-head"><h2>Retirados — não cabem à gestão{% if ck.area %} — {{ areas[ck.area] }}{% endif %} ({{ ck.total_retirados }})</h2>

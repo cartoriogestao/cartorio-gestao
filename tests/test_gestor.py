@@ -693,10 +693,12 @@ def test_caixa_esquecido_e_cobrado_de_quem_o_abriu(con):
     achado = _regras(GC.conferir(con, HOJE), "CAIXA_ABERTO")[0]
     assert achado["setor"] == f"PESSOA:{vid}" and achado["gravidade"] == "CRITICO"
     GR.rodar(con, HOJE)
-    # 06/10/2026: caixa é dinheiro da casa, não dano a terceiro — continua achado
-    # (relatório e aviso vermelho da tela), mas não vira mais tarefa.
-    assert con.execute("""SELECT count(*) FROM tasks
-                           WHERE source_ref LIKE 'GESTOR:CAIXA_ABERTO:%'""").fetchone()[0] == 0
+    # 06/10/2026 o caixa tinha saído das tarefas; G007 («pode» do titular,
+    # 25/11/2026) o devolveu: é trabalho do escrevente no balcão, e a Checklist
+    # do dia só mostra o da TI e do admin. A tarefa vai a quem abriu o caixa.
+    refs = [r[0] for r in con.execute("""SELECT source_ref FROM tasks
+                                          WHERE source_ref LIKE 'GESTOR:CAIXA_ABERTO:%'""")]
+    assert refs == [f"GESTOR:CAIXA_ABERTO:PESSOA:{vid}"]
 
 
 def test_as_14h_o_caixa_de_hoje_aberto_vira_tarefa_critica(con, monkeypatch):

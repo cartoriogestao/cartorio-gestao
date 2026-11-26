@@ -117,10 +117,12 @@ ROTULOS = {
     "RCPN_TERMO_ALTERADO": "Registro Civil — termo alterado depois de lavrado",
 }
 
-#: Medidas e relatadas (boletim, relatório), sem tarefa: não geram dano a
-#: terceiro (ordem do oficial de 06/10/2026, art. 22 da Lei 8.935).
-REGRAS_SEM_TAREFA = frozenset({"RCPN_DADO_COMPLEMENTAR", "RCPN_FOLHA_SEGURANCA",
-                               "RCPN_DADOS_A_CONFERIR"})
+#: Medidas e relatadas (boletim, relatório), sem tarefa (ordem do oficial de
+#: 06/10/2026, art. 22 da Lei 8.935). VAZIA DESDE O G007 («pode» do titular em
+#: 25/11/2026): o dado complementar, os dados a conferir e a folha de segurança
+#: são trabalho do escrevente e viram tarefa, porque a Checklist do dia só
+#: mostra o que a TI e o admin resolvem (`gestor_destino`).
+REGRAS_SEM_TAREFA: frozenset[str] = frozenset()
 
 #: «Onde abrir», no formato de `gestor_didatica.TELA`.
 TELA = {

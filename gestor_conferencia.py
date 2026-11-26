@@ -866,6 +866,52 @@ def regra_cnib_parado(con, hoje: date) -> list[dict]:
 
 # ------------------------------------------------------------- a casa
 
+#: O RECIBO DO BACKUP QUE SAI FORA DO SERVIDOR (26/11/2026). Desde 15/11/2026 o
+#: backup do banco e o completo saem no Mac da casa, e não no servidor; a pasta
+#: do Mac só se alcança pela rede, que a régua de segurança de 22/10/2026 (M3)
+#: não deixa o servidor ler. Ordem do oficial: «B» — o Mac, ao terminar cada
+#: backup, deixa NESTA pasta do servidor um recibo pequeno (arquivo, quando
+#: terminou, tamanho e SHA-256 do último pacote do banco e do último completo),
+#: e a regra lê o recibo como lê os pacotes locais.
+PASTA_DO_RECIBO = "mac"
+NOME_DO_RECIBO = "RECIBO_DO_BACKUP.json"
+
+
+def _dias_do_recibo(pastas, hoje: date) -> tuple[dict, list[str]]:
+    """Os dias do último `banco` e do último `completo` nos recibos, e o que falhou.
+
+    Recibo ilegível não derruba a regra nem conta como backup: vira frase no
+    detalhe. Dia adiante de hoje é relógio errado, e não backup em dia.
+    """
+    import json
+    dias: dict[str, date] = {}
+    problemas: list[str] = []
+    for pasta in pastas:
+        arquivo = Path(pasta) / PASTA_DO_RECIBO / NOME_DO_RECIBO
+        if not arquivo.is_file():
+            continue
+        try:
+            recibo = json.loads(arquivo.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as erro:
+            problemas.append(f"o recibo {arquivo} não se leu ({type(erro).__name__})")
+            continue
+        for tipo in ("banco", "completo"):
+            item = recibo.get(tipo) if isinstance(recibo, dict) else None
+            if not isinstance(item, dict):
+                continue
+            try:
+                dia = date.fromisoformat(str(item.get("terminou") or "")[:10])
+            except ValueError:
+                problemas.append(f"o recibo {arquivo} não diz quando o {tipo} terminou")
+                continue
+            if dia > hoje:
+                problemas.append(f"o recibo {arquivo} traz o {tipo} com data adiante de hoje")
+                continue
+            if tipo not in dias or dia > dias[tipo]:
+                dias[tipo] = dia
+    return dias, problemas
+
+
 def regra_backup(con, hoje: date, pasta_dados: Path | None = None) -> list[dict]:
     if pasta_dados is None:
         return []
@@ -881,12 +927,14 @@ def regra_backup(con, hoje: date, pasta_dados: Path | None = None) -> list[dict]
         configurada = ""
     pastas = {pasta_das_copias.pasta_de_backups(Path(pasta_dados), configurada),
               Path(pasta_dados) / "backups"}
+    do_recibo, problemas = _dias_do_recibo(sorted(pastas), hoje)
 
-    def dia_do_mais_novo(*padroes: str):
+    def dia_do_mais_novo(*padroes: str, recibo: tuple[str, ...] = ()):
         achados = [p for pasta in pastas if pasta.is_dir()
                    for padrao in padroes for p in pasta.glob(padrao)]
-        return (datetime.fromtimestamp(max(p.stat().st_mtime for p in achados)).date()
-                if achados else None)
+        dias = [datetime.fromtimestamp(p.stat().st_mtime).date() for p in achados]
+        dias += [do_recibo[t] for t in recibo if t in do_recibo]
+        return max(dias) if dias else None
 
     # O FUNDAMENTO MUDOU DE NORMA, NÃO DE REGRA: o 213/2026 revogou o 74/2018
     # (art. 26). A cópia completa em periodicidade da classe é o art. 12,
@@ -898,11 +946,19 @@ def regra_backup(con, hoje: date, pasta_dados: Path | None = None) -> list[dict]
     # cobrava só o completo, com a folga de um dia — e o sistema gera o
     # completo uma vez por semana, então acusava seis dias em sete. O pacote do
     # dia é o diário do banco ou um completo (que também leva o banco).
-    completo = dia_do_mais_novo("backup_completo_*.zip")
-    do_dia = dia_do_mais_novo("backup_banco_*.zip", "backup_completo_*.zip")
+    # Só acusa o que passou do prazo da frequência (ordem do oficial em
+    # 26/11/2026): o do dia com mais de um dia, o completo com mais de sete.
+    completo = dia_do_mais_novo("backup_completo_*.zip", recibo=("completo",))
+    do_dia = dia_do_mais_novo("backup_banco_*.zip", "backup_completo_*.zip",
+                              recibo=("banco", "completo"))
+    onde = ("Procurei os pacotes em " + " e em ".join(str(p) for p in sorted(pastas))
+            + f", e o recibo do Mac ({PASTA_DO_RECIBO}/{NOME_DO_RECIBO}) dentro delas.")
+    if problemas:
+        frase = "; ".join(problemas)
+        onde += " " + frase[0].upper() + frase[1:] + "."
     if do_dia is None:
         return [_achado("BACKUP:completo", "BACKUP", "CRITICO", "TI",
-                        "Nenhum backup encontrado", remedio, None, fundamento)]
+                        "Nenhum backup encontrado", onde + " " + remedio, None, fundamento)]
     saida = []
     if completo is None or (hoje - completo).days > BACKUP_COMPLETO_DIAS_TOLERADOS:
         saida.append(_achado(
@@ -910,12 +966,13 @@ def regra_backup(con, hoje: date, pasta_dados: Path | None = None) -> list[dict]
             f"Último backup completo é de {completo:%d/%m/%Y}" if completo
             else "Nenhum backup completo encontrado",
             f"O completo (banco, digitalizações e acervo) sai uma vez por semana; o "
-            f"limite é {BACKUP_COMPLETO_DIAS_TOLERADOS} dias. " + remedio, None, fundamento))
+            f"limite é {BACKUP_COMPLETO_DIAS_TOLERADOS} dias. " + onde + " " + remedio,
+            None, fundamento))
     if (hoje - do_dia).days > BACKUP_DIAS_TOLERADOS:
         saida.append(_achado(
             "BACKUP:diario", "BACKUP", "CRITICO", "TI",
             f"Último backup do banco é de {do_dia:%d/%m/%Y}",
-            "O pacote do banco sai todo dia (o processo BACKUP_DIARIO, às 18h). " + remedio,
+            "O pacote do banco sai todo dia, às 18h. " + onde + " " + remedio,
             None, fundamento))
     return saida
 

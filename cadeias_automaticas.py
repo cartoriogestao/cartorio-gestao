@@ -10,6 +10,9 @@
     «Conferir a carga da CENSEC da madrugada também entra na mesma lógica»
      — o oficial, no mesmo dia
 
+    E «Conferir o Constrijud» (ROT-RI-04), na mesma lógica: a automação
+    verifica e só avisa quando a rotina para (A008, no mesmo dia).
+
 O QUE É UMA CADEIA
     Uma rotina que o sistema faz sozinho, de ponta a ponta, e que antes alguém
     conferia à mão todo dia. Cada cadeia é uma lista de ELOS; cada elo diz se
@@ -24,6 +27,12 @@ O QUE É UMA CADEIA
     CENSEC  o envio da madrugada (02:00) e a conferência da situação (07:40).
             O que a API da CENSEC não faz (fechar a quinzena, ver a validação
             no portal) continua como achado do gestor (`CENSEC_AUTOMATICO`).
+    CONSTRIJUD  a leitura do e-Protocolo do ONR (por onde as ordens do
+            Constrijud chegam, desde 25/05/2026), a conferência do Constrijud
+            (`RI_CONSTRIJUD`: leitura boa nas últimas 2 horas, CNN 320-AB) e a
+            contagem da Penhora Online no WSOfício, que o ONR mantém na
+            transição. Ordem de constrição esperando prenotação é TRABALHO do
+            escrevente do RI (tarefa), e não rotina parada.
 
 QUEM VÊ
     A TI, o gestor (MANAGER) e o administrador (`QUEM_VE`). O escrevente não:
@@ -73,20 +82,27 @@ ATRASO_TOLERADO = timedelta(hours=2)
 #: As situações de rodada que querem dizer «não funcionou».
 _FALHAS = ("ERRO", "TEMPO_ESGOTADO", "INTERROMPIDA")
 
-CNIB, CENSEC = "CNIB", "CENSEC"
+CNIB, CENSEC, CONSTRIJUD = "CNIB", "CENSEC", "CONSTRIJUD"
 ROTULO_DA_CADEIA = {CNIB: "CNIB (indisponibilidade de bens)",
-                    CENSEC: "Carga da CENSEC da madrugada"}
+                    CENSEC: "Carga da CENSEC da madrugada",
+                    CONSTRIJUD: "Constrijud (ordens de constrição)"}
 
 #: Os processos de cada cadeia: (código, nome curto, AVISO também é falha?).
 #: No `RI_CNIB` o AVISO é caso novo da CNIB — trabalho, e não rotina parada. Na
 #: rotina das minutas e no envio da CENSEC, o AVISO é «não terminou como
 #: devia» ou «está desligado»: aí a cadeia parou. Na situação da CENSEC o
-#: AVISO é ato impedido, trabalho de quem lavrou.
+#: AVISO é ato impedido, trabalho de quem lavrou. No Constrijud, o AVISO dos
+#: três é trabalho (título a prenotar, ordem a prenotar, ofício ou penhora
+#: nova); a rotina parada é o ERRO — no `RI_CONSTRIJUD`, inclusive a leitura do
+#: e-Protocolo desligada ou sem leitura boa nas últimas 2 horas.
 PROCESSOS: dict[str, tuple[tuple[str, str, bool], ...]] = {
     CNIB: (("RI_CNIB", "a conferência das ordens da CNIB", False),
            ("RI_CNIB_MINUTAS", "a rotina das minutas da CNIB", True)),
     CENSEC: (("ROTINA_CENSEC_ENVIO", "o envio da madrugada à CENSEC", True),
              ("CASA_CENSEC", "a conferência da situação da CENSEC", False)),
+    CONSTRIJUD: (("RI_ONR_EPROTOCOLO", "a leitura do e-Protocolo do ONR", False),
+                 ("RI_CONSTRIJUD", "a conferência do Constrijud", False),
+                 ("RI_WSOFICIO", "a contagem da Penhora Online (WSOfício)", False)),
 }
 
 
@@ -226,13 +242,16 @@ def _elos_dos_processos(con, cadeia: str, agora: datetime) -> list[dict]:
             desde = _dia(p.get("alerta_desde")) or _dia(ultima["iniciada_em"])
             saida.append(_elo(cadeia, "PROCESSO_COM_ERRO", f"{nome} terminou com problema",
                               desde, onde, str(ultima["relato"] or "")))
+        # O horário que venceu há mais que a folga, e não o último da agenda:
+        # num processo de 15 minutos ou de 2 em 2 horas, o último horário tem
+        # sempre menos de duas horas, e o processo que parasse no meio do dia
+        # só acenderia à noite (A008).
         try:
-            slot = AU.ultimo_slot(AU.normalizar_agenda(p.get("agenda")), agora)
+            slot = AU.ultimo_slot(AU.normalizar_agenda(p.get("agenda")), agora - ATRASO_TOLERADO)
         except Exception:                               # noqa: BLE001 — agenda inválida
             slot = None
         iniciada = _quando((ultima or {}).get("iniciada_em"))
-        if (slot is not None and not rodando and agora - slot > ATRASO_TOLERADO
-                and (iniciada is None or iniciada < slot)):
+        if slot is not None and not rodando and (iniciada is None or iniciada < slot):
             saida.append(_elo(cadeia, "PROCESSO_NAO_RODOU", f"{nome} não rodou na hora",
                               slot.date(), onde,
                               f"Devia ter rodado às {slot:%H:%M} de {slot:%d/%m}"
@@ -280,6 +299,9 @@ PARTES = (
      ("ri_cnib_pendentes", {}, "CNIB: o que espera seu okay")),
     (CENSEC, "os processos da CENSEC na central de automação",
      lambda con, agora: _elos_dos_processos(con, CENSEC, agora),
+     ("automacao_lista", {}, "Automação")),
+    (CONSTRIJUD, "os processos do Constrijud na central de automação",
+     lambda con, agora: _elos_dos_processos(con, CONSTRIJUD, agora),
      ("automacao_lista", {}, "Automação")),
 )
 

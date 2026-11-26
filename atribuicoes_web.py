@@ -7887,13 +7887,33 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         if not escolhidos:
             flash("Escolha ao menos um assento antes de marcar.", "warning")
             return redirect(url_for("rcpn_crc"))
+        # **O RETIDO NÃO ESTAVA NO ARQUIVO, E NÃO SE MARCA (26/11/2026, RC005
+        # e RC006).** O XML baixado em «arquivo» deixa de fora o que `montar`
+        # retém (sem matrícula, sem «possuía bens»…), mas esta marca gravava o
+        # token inteiro: o lote 4 marcou 58 com 50 no arquivo, o lote 5 marcou
+        # 53 com 48. Assim o nascimento duplicado sem número e um óbito sem
+        # «possuía bens» saíram da fila sem nunca chegar à Central. É a mesma
+        # régua do envio pelo web service, logo acima: só o que entrou.
+        with db.connect() as con:
+            retidos = CRC.montar(con, escolhidos, cns=_cns_rcpn())["retidos"]
+        retidos_ids = {int(r["assento_id"]) for r in retidos}
+        marcados = [a for a in escolhidos if a not in retidos_ids]
+        if not marcados:
+            flash("Nenhum assento marcado: todos os escolhidos estão retidos "
+                  "(não entram no arquivo da CRC). Corrija a ficha, baixe o "
+                  "arquivo de novo e suba-o antes de marcar.", "warning")
+            return redirect(url_for("rcpn_crc"))
         with db.transaction() as con:
-            CRCENVIOS.registrar_envio(con, escolhidos, agora=db.now(),
+            CRCENVIOS.registrar_envio(con, marcados, agora=db.now(),
                                 por=usuario_nome(), canal="MANUAL", nota=nota)
         audit("RCPN_CRC_MARCADO_ENVIADO", "rc_assentos", None,
-              {"quantos": len(escolhidos)})
-        flash(f"{len(escolhidos)} assento(s) marcado(s) como já enviados — "
+              {"quantos": len(marcados), "retidos_nao_marcados": len(retidos_ids)})
+        flash(f"{len(marcados)} assento(s) marcado(s) como já enviados — "
               "não vão mais aparecer na lista de pendentes.", "success")
+        if retidos_ids:
+            flash(f"{len(retidos_ids)} assento(s) retido(s) NÃO foram marcados: "
+                  "eles não estavam no arquivo da CRC e continuam na lista, "
+                  "com o motivo.", "warning")
         return redirect(url_for("rcpn_crc"))
 
     @app.route("/rcpn/crc/historico")

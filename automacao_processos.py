@@ -547,10 +547,17 @@ def verificar_sirc(ctx: Contexto) -> dict:
     Central não tem por onde perguntar «o que falta». O acervo não entra
     (`pendentes_de_remessa` já o deixa de fora).
     """
+    import gestor_conferencia as GCF
     import sirc_remessa as SR
     from ri_schema import dias_uteis_entre
     with ctx.db.connect() as con:
-        pendentes = SR.sem_os_ja_enviados(con, SR.pendentes_de_remessa(con))
+        # A MESMA RÉGUA DO GESTOR (26/11/2026, RC006): o acervo (pela origem) e
+        # o termo sem número não têm o prazo de 1 dia útil. Sem isto, os dois
+        # nascimentos de 1982 e 1984 lançados do livro em 16/11 contavam como
+        # «vencidos há onze mil dias úteis» em toda rodada.
+        fora = GCF.assentos_fora_da_cobranca(con)
+        pendentes = [r for r in SR.sem_os_ja_enviados(con, SR.pendentes_de_remessa(con))
+                     if int(r.get("assento_id") or 0) not in fora]
     feriados = ctx.feriados()
     vencidos, hoje_vence = 0, 0
     achados = []
@@ -558,7 +565,7 @@ def verificar_sirc(ctx: Contexto) -> dict:
         datas = [str(a.get("data_ato") or "")[:10] for a in (r.get("atos") or [])] or \
                 [str(r.get("data_ato") or "")[:10]]
         datas = [d for d in datas if re.fullmatch(r"\d{4}-\d{2}-\d{2}", d)]
-        if not datas:
+        if not datas or GCF.antes_do_corte(max(datas)):
             continue
         uteis = dias_uteis_entre(date.fromisoformat(max(datas)), ctx.hoje, feriados)
         if uteis > 1:
@@ -587,11 +594,16 @@ def verificar_crc(ctx: Contexto) -> dict:
     é a dos assentos lavrados nos últimos `dias` (parâmetro, padrão 10).
     """
     import crc_carga as CRC
+    import gestor_conferencia as GCF
     dias = int(ctx.parametros.get("dias", 10))
     with ctx.db.connect() as con:
         pendentes = CRC.pendentes_de_carga(con)
+        # O acervo lançado do livro grava a data da digitação (RC006): pela
+        # data ele parecia «recente». A régua é a do gestor.
+        fora = GCF.assentos_fora_da_cobranca(con)
     limite = (ctx.hoje - timedelta(days=dias)).isoformat()
-    recentes = [p for p in pendentes if str(p.get("data_ato") or "")[:10] >= limite]
+    recentes = [p for p in pendentes if str(p.get("data_ato") or "")[:10] >= limite
+                and int(p["id"]) not in fora]
     achados = [{"total_pendente": len(pendentes), "recentes": len(recentes), "dias": dias}]
     if recentes:
         return resultado(SCH.AVISO,

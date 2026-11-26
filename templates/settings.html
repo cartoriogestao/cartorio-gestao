@@ -443,6 +443,32 @@
 {% if layout_novo %}</div></details>{% else %}
 </section>
 {% endif %}
+{% if onr_pedidos_cfg %}
+{% set opc = onr_pedidos_cfg %}
+<section class="panel" id="cfg-onr-pedidos">
+  <h2>Responsável pelos pedidos do ONR</h2>
+  {# A005, 26/11/2026: os pedidos do ONR parados avisam quem faz o trabalho, e
+     não a Checklist do dia. Rota própria: só mexe nesta chave. #}
+  <p class="muted small">
+    Os pedidos de certidão do ONR, os títulos do e-Protocolo e os atendimentos do SAEC sem
+    andamento viram aviso na tela desta pessoa: simples no 1º dia útil e faixa vermelha do 2º
+    em diante, até o pedido andar. <strong>Em branco, o aviso vai para o ADMIN.</strong>
+    Hoje recebe: <strong>{{ opc.efetivo.nome or 'ninguém' }}</strong>{% if opc.efetivo.de_onde == 'ADMIN' %} (o ADMIN, porque {{ opc.efetivo.motivo }}){% endif %}.
+    <a href="{{ url_for('onr_pedidos_avisos') }}">Ver os pedidos parados</a>.
+  </p>
+  <form method="post" action="{{ url_for('configuracoes_onr_pedidos_responsavel') }}" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Quem recebe os avisos
+      <select name="user_id">
+        <option value="">— em branco: o ADMIN —</option>
+        {% for u in opc.usuarios %}
+        <option value="{{ u.id }}" {% if opc.atual == u.id|string %}selected{% endif %}>{{ u.full_name }} ({{ u.username }}, {{ u.role }})</option>
+        {% endfor %}
+      </select></label>
+    <div class="span2"><button class="button primary" type="submit">Salvar o responsável</button></div>
+  </form>
+</section>
+{% endif %}
 <section class="panel" id="cfg-admin">
   <h2>Administração</h2>
   <div class="actions">

@@ -1110,7 +1110,9 @@ MODULOS_COM_PROCESSOS = ("despesas_automacao", "onr_certidoes_auto", "andamento_
                          # o aviso diário da NFS-e, só leitura (23/11/2026)
                          "nfse_aviso",
                          # a entrada do e-Protocolo do RI pelo ONR, só leitura (RI013 P1, 24/11/2026)
-                         "onr_eprotocolo")
+                         "onr_eprotocolo",
+                         # os avisos dos pedidos do ONR parados à escrevente (A005, 26/11/2026)
+                         "onr_pedidos_avisos")
 
 #: A agenda sugerida por quem escreveu o processo, para quando o catálogo
 #: dele não trouxer uma. O processo nasce DESLIGADO do mesmo jeito.

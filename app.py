@@ -3768,6 +3768,9 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     # títulos remetidos, na ordem da remessa, e o aviso no painel. Só lê.
     import onr_eprotocolo_web
     onr_eprotocolo_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+    # Os pedidos do ONR parados: o aviso na tela de quem faz o trabalho (A005).
+    import onr_pedidos_avisos_web
+    onr_pedidos_avisos_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
     # A CONFERENCIA DO ENDERECO QUE VAI AO ONR — o que o teor da ficha diz,
     # ao lado do que a ficha tem, com a frase de onde cada campo saiu.

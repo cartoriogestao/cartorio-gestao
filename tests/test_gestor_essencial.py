@@ -237,7 +237,7 @@ def test_base_de_agosto_com_dezenas_de_vazias_fica_com_achado_aberto(cg_casa):
         _leitura(con, dia, "VAZIA")
     achado = GC.regra_cnib_parado(con, _date(2026, 11, 23))[0]
     assert (achado["chave"], achado["gravidade"]) == ("CNIB:copia_parada", "CRITICO")
-    assert "12/08/2026" in achado["titulo"]
+    assert achado["titulo"] == "Base local do CNIB atrasada: a ordem mais nova é de 12/08/2026"
     assert "103 dia(s) atrás" in achado["detalhe"]
     assert "60 leituras vazias seguidas, desde 25/09/2026" in achado["detalhe"]
     assert "direto na Central" in achado["detalhe"]
@@ -316,3 +316,67 @@ def test_base_sem_ordem_nenhuma_diz_que_nunca_foi_atualizada(cg_casa):
     _leitura(con, "2026-11-23", "VAZIA")
     achado = GC.regra_cnib_parado(con, _date(2026, 11, 23))[0]
     assert achado["titulo"] == "Base local do CNIB nunca foi atualizada"
+
+
+# ---- 26/11/2026: «se a base não está parada o alerta está errado. mude o alerta para
+# "base atrasada" e a data da ordem mais nova. e se a base estiver ligada indique no alerta»
+
+def _fila_ligada(con):
+    con.execute("INSERT INTO settings(key, value) VALUES ('cnib_leitura_da_fila', '1') "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+
+
+def _rodada_da_fila(con, dia, *, lidas, novas, restantes):
+    con.execute("""INSERT INTO ri_cnib_leituras (de, ate, pedida_em, terminada_em, situacao,
+                       lidas, novas, paginas, parou_no_teto, mensagem, automatica)
+                   VALUES (?, ?, ?, ?, 'OK', ?, ?, 200, 1, ?, 1)""",
+                (dia, dia, f"{dia}T00:00:25", f"{dia}T01:47:09", lidas, novas,
+                 "Fila da serventia. Parou no teto de páginas da rodada; a próxima "
+                 f"continua. A Central disse que restavam {restantes} ordens."))
+
+
+def test_fila_ligada_e_andando_diz_atrasada_e_ligada(cg_casa):
+    """O caso de 26/11: a fila trouxe 40 mil ordens antigas, e a mais nova segue em 12/08."""
+    con = _con(cg_casa)
+    _fila_ligada(con)
+    _ordem_do_dia(con, "ANTIGA-FILA", "2014-05-02")
+    _ordem_do_dia(con, "VELHA-FILA", "2026-08-12")
+    _leitura(con, "2026-11-25", "VAZIA", de="2026-11-17", ate="2026-11-25")
+    _rodada_da_fila(con, "2026-11-26", lidas=40000, novas=39415, restantes=376438)
+    achado = GC.regra_cnib_parado(con, _date(2026, 11, 26))[0]
+    assert (achado["chave"], achado["gravidade"]) == ("CNIB:copia_parada", "CRITICO")
+    assert achado["titulo"] == ("Base local do CNIB atrasada: a ordem mais nova é de "
+                                "12/08/2026 (leitura da fila ligada)")
+    assert "parada" not in achado["titulo"]
+    detalhe = achado["detalhe"]
+    assert "A leitura da fila está ligada" in detalhe
+    assert "26/11/2026, leu 40000 ordens (39415 novas)" in detalhe
+    assert "restavam 376438 ordens" in detalhe
+    assert "confira se a rotina" not in detalhe
+    assert "direto na Central" in detalhe
+
+
+def test_fila_desligada_nao_fala_em_fila(cg_casa):
+    con = _con(cg_casa)
+    _ordem_do_dia(con, "VELHA-SEM-FILA", "2026-08-12")
+    _leitura(con, "2026-11-23", "OK")
+    achado = GC.regra_cnib_parado(con, _date(2026, 11, 23))[0]
+    assert achado["titulo"] == "Base local do CNIB atrasada: a ordem mais nova é de 12/08/2026"
+    assert "fila" not in achado["detalhe"]
+
+
+def test_fila_ligada_sem_rodada_terminada_avisa(cg_casa):
+    con = _con(cg_casa)
+    _fila_ligada(con)
+    _ordem_do_dia(con, "VELHA-FILA-2", "2026-08-12")
+    achado = GC.regra_cnib_parado(con, _date(2026, 11, 26))[0]
+    assert achado["titulo"].endswith("(leitura da fila ligada)")
+    assert "nenhuma rodada dela terminou ainda" in achado["detalhe"]
+
+
+def test_fila_ligada_com_base_em_dia_nao_tem_achado(cg_casa):
+    con = _con(cg_casa)
+    _fila_ligada(con)
+    _ordem_do_dia(con, "NOVA-FILA", "2026-11-25")
+    _rodada_da_fila(con, "2026-11-26", lidas=200, novas=200, restantes=0)
+    assert GC.regra_cnib_parado(con, _date(2026, 11, 26)) == []

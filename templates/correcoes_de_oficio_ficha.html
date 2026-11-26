@@ -50,7 +50,7 @@
         {% for campo, novo in m.depois.items() %}
         <tr>
           <td>{{ m.rotulo }}</td>
-          <td>{% if m.titulo_id %}<a href="{{ url_for('protesto_titulo', titulo_id=m.titulo_id) }}">{{ m.titulo_id }}</a>{% if r %} <small class="muted">nº {{ r.numero_titulo or '—' }} · prot. {{ r.protocolo or '—' }}</small>{% endif %}{% else %}—{% endif %}</td>
+          <td>{% if m.titulo_id %}<a href="{{ url_for('protesto_titulo', titulo_id=m.titulo_id) }}">{{ m.titulo_id }}</a>{% if r %} <small class="muted">nº {{ r.numero_titulo or '—' }} · prot. {{ r.protocolo or '—' }}</small>{% endif %}{% elif m.registro_id %}<a href="{{ url_for('rcpj_rtd_registro', registro_id=m.registro_id) }}">ficha {{ m.registro_id }}</a>{% else %}—{% endif %}</td>
           <td>{{ campo }}</td>
           <td><small>{{ (m.antes.get(campo) if m.antes.get(campo) is not none else '—') | string | truncate(300) }}</small></td>
           <td><small>{{ (novo if novo is not none else '(vazio)') | string | truncate(300) }}</small></td>

@@ -21,6 +21,14 @@
 
 <section class="panel">
   <div class="panel-head"><span>O registro</span><small>{{ registro.situacao }}</small></div>
+  {% if registro.duplicata_de %}
+  {# A cópia repetida do acervo (T021): fica guardada, fora dos livros e dos índices. #}
+  <p class="notice">Cancelado por duplicidade do acervo: é a mesma linha do sistema antigo
+    gravada duas vezes. O registro que vale é a
+    <a href="{{ url_for('rcpj_rtd_registro', registro_id=registro.duplicata_de) }}">ficha {{ registro.duplicata_de }}</a>.
+    Esta ficha não está nos livros nem nos índices.
+    {% if registro.duplicata_motivo %}<br><small>{{ registro.duplicata_motivo }}</small>{% endif %}</p>
+  {% endif %}
   <table class="table">
     <tr><th>Atribuição</th><td>{{ 'RCPJ' if registro.atribuicao == 3 else 'RTD' }}</td>
         <th>Série</th><td>{{ registro.serie }}</td></tr>

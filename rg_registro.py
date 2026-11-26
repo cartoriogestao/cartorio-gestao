@@ -1102,6 +1102,25 @@ def lancar_averbacao(con: sqlite3.Connection, registro_id: int, *, teor: str,
     return feito
 
 
+# ------------------------------------------- a cópia repetida do acervo
+
+#: O motivo da ficha que a correção de ofício (ou a carga do acervo) tirou por
+#: ser a mesma linha do E-Ofício gravada duas vezes (T021, 26/11/2026). Não é
+#: o cancelamento do registro: não há ato, nem selo, nem custas.
+MOTIVO_DA_DUPLICATA = "duplicidade do acervo"
+
+
+def sem_duplicata(apelido: str = "r") -> str:
+    """O pedaço de SQL que tira a cópia repetida do acervo dos livros, dos
+    índices e das buscas. Só monta texto: o apelido é constante de quem chama.
+
+    O registro cancelado por ato (`lancar_cancelamento`) continua: ele está
+    no livro, com o ato dele. Sai só a ficha com `duplicata_de` preenchida, a
+    cópia que nunca foi um ato próprio.
+    """
+    return f"{apelido}.duplicata_de IS NULL"
+
+
 # ---------------------------------------------------------- o cancelamento
 
 

@@ -306,7 +306,7 @@ causa do seu perfil ou porque a administração fechou o módulo.
 | Tela | Para quê |
 |---|---|
 | Visão geral | a primeira tela do dia: avisos, tarefas vencidas, protocolos parados, atos sem conclusão e comunicações pendentes |
-| Projetos | os projetos de desenvolvimento da casa que ainda não têm o resultado pleno, para o administrador e o gerente. No layout novo, fica em **Trabalho › Projetos**. **Novo projeto** cadastra título, código, área, responsável, prazo, origem e o **resultado pleno** (o que precisa ser verdade para estar pronto). A lista mostra o progresso («n de m fases»), a próxima fase, o responsável, o prazo e a área, e filtra por área e situação. A ficha abre com **O que falta para o resultado pleno** (as fases abertas, com critério, prazo e responsável; as atrasadas em vermelho); cada **fase** tem a situação (a fazer, em andamento, aguardando, concluída, dispensada) e os **comprovantes** (arquivo, link, PR, relatório, tarefa ou texto). A fase só se conclui com um comprovante dela ou com a observação que explica; aguardar pede o quê, e dispensar pede o porquê. A **Linha do tempo** junta o cadastro, os andamentos, cada mudança de fase, os comprovantes e a retirada. A **carga em lote** (JSON) cadastra ou atualiza vários projetos de uma vez, sem duplicar. O projeto que não cabe à gestão sai da lista por **Retirar dos projetos da gestão**, na ficha, com o motivo; **Ver os retirados** mostra quem, quando e por quê, e **Devolver à lista** o traz de volta. Nada se apaga, e toda gravação vai para a auditoria |
+| Projetos | os projetos de desenvolvimento da casa que ainda não têm o resultado pleno, para o administrador e o gerente. No layout novo, fica em **Trabalho › Projetos**. **Novo projeto** cadastra título, código, área, responsável, prazo, origem e o **resultado pleno** (o que precisa ser verdade para estar pronto). A lista mostra o progresso («n de m fases»), a próxima fase, o responsável, o prazo e a área, e filtra por área e situação. A ficha abre com **O que falta para o resultado pleno** (as fases abertas, com critério, prazo e responsável; as atrasadas em vermelho); cada **fase** tem a situação (a fazer, em andamento, aguardando, concluída, dispensada) e os **comprovantes** (arquivo, link, PR, relatório, tarefa ou texto). A fase só se conclui com um comprovante dela ou com a observação que explica; aguardar pede o quê, e dispensar pede o porquê. A **Linha do tempo** junta o cadastro, os andamentos, cada mudança de fase, os comprovantes e a retirada. Em cada fase, **Eu cuido desta fase** mostra aos outros quem está nela (seção 24, «Quem está resolvendo»). A **carga em lote** (JSON) cadastra ou atualiza vários projetos de uma vez, sem duplicar. O projeto que não cabe à gestão sai da lista por **Retirar dos projetos da gestão**, na ficha, com o motivo; **Ver os retirados** mostra quem, quando e por quê, e **Devolver à lista** o traz de volta. Nada se apaga, e toda gravação vai para a auditoria |
 
 ### Tabelionato de Notas
 
@@ -1876,6 +1876,27 @@ A prática de atos e o trabalho do balcão não entram: vão para as tarefas.
   ROTINA_REATIVADA e ROTINA_FEITA, com o código do item; a prova anexada vai como
   ROTINA_PROVA_ANEXADA, e o arquivo que não se guardou, como ROTINA_PROVA_FALHOU (o
   feito fica registrado, e a tela avisa).
+
+**Quem está resolvendo**
+
+Para duas pessoas não fazerem o mesmo trabalho, cada problema mostra quem está cuidando dele:
+o item da **rotina do dia** (na Checklist do dia e em **Minha rotina**), o **achado aberto** da
+Checklist do dia e cada **fase** dos **Projetos**.
+
+- **Eu resolvo** (nos Projetos, **Eu cuido desta fase**), com uma nota curta opcional: a linha
+  passa a dizer «Fulano está resolvendo desde 14:40» — ou «desde 25/11, há 2 dias», para ver o
+  que está parado —, com a nota. Quem vê a marca fala com essa pessoa antes de mexer.
+- **Largar**: só quem está resolvendo; o problema fica livre.
+- **Assumir no lugar**: o oficial e o gerente, quando é de outra pessoa, com a confirmação.
+- Quem assume: a rotina, quem pode marcar o «Feito» dela (o responsável, o suplente, o oficial e
+  o gerente); o achado e a fase, o oficial e o gerente. O auditor e a conta de robô nunca.
+- A marca some sozinha quando o problema acaba: o **Feito** da rotina, a fase **concluída** ou
+  **dispensada** (também pela carga em lote), o achado que o gestor fecha.
+- O cabeçalho de cada área da checklist soma «N em resolução», e a lista dos Projetos diz quem
+  está na próxima fase. A marca **não resolve** nada: não marca «feito», não fecha achado nem
+  muda a cor da área.
+- Na **Auditoria**: QUEM_RESOLVE_ASSUMIU, QUEM_RESOLVE_LARGOU, QUEM_RESOLVE_TOMOU e
+  QUEM_RESOLVE_CONCLUIU, com o tipo, a chave e o título do item.
 
 **Controles do oficial**
 

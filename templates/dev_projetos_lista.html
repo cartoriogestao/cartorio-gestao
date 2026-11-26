@@ -60,6 +60,7 @@ O projeto que ainda não tem o resultado pleno anda em fases; cada fase se concl
         <td>
           {% if g.proxima %}{{ g.proxima.titulo }}
             <small class="muted">({{ situacao_da_fase.get(g.proxima.situacao, g.proxima.situacao)|lower }})</small>
+            {% if g.proxima.quem %}<small class="quem-resolve">({{ g.proxima.quem.por }} está nela)</small>{% endif %}
             {% if g.atrasadas %}<span class="badge critica">{{ g.atrasadas }} atrasada(s)</span>{% endif %}
           {% elif g.pleno %}<span class="badge ok">resultado pleno</span>
           {% else %}—{% endif %}

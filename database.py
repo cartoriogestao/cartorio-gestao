@@ -121,7 +121,7 @@ from ia_uso import init_ia_schema
 from dois_fatores import init_dois_fatores_schema
 from selo_portal import init_selo_portal_schema
 from compliance import init_schema as init_compliance_schema
-from gestor_schema import init_gestor_schema, init_rotina_schema
+from gestor_schema import init_gestor_schema, init_quem_resolve_schema, init_rotina_schema
 from gestor_expedientes import init_schema as init_triagem_schema
 from gestor_leitura import init_leitura_schema
 from malote_agente import init_schema as init_malote_schema
@@ -973,6 +973,9 @@ class Database:
         # rotina de manutenção e o «feito» de cada vencimento. Aponta para
         # `users`, que nasceu lá em cima.
         init_rotina_schema(con)
+        # QUEM ESTÁ RESOLVENDO (26/11/2026, `quem_resolve`): a marca de quem
+        # cuida de cada problema da checklist e de cada fase. Aponta para `users`.
+        init_quem_resolve_schema(con)
         init_triagem_schema(con)
         init_leitura_schema(con)
         init_malote_schema(con)

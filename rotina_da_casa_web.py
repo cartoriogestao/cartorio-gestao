@@ -38,6 +38,7 @@ from flask import abort, flash, redirect, render_template, request, url_for
 
 import navegacao as NAV
 import papeis as PAP
+import quem_resolve_web as QRW
 import rotina_da_casa as RT
 from storage import save_upload
 
@@ -342,6 +343,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
               {"codigo": r["codigo"], "referencia": r["referencia"], "prazo": r["prazo"],
                "com_atraso": r["com_atraso"], "resultado": r["resultado"],
                "observacao": r["observacao"], "feito_id": r["id"], "com_prova": tem_arquivo})
+        QRW.auditar_conclusao(audit, "ROTINA", f"{int(rotina_id)}:{r['referencia']}", r["titulo"],
+                              r.get("quem_resolvia"))
         flash(f"«{r['titulo']}»: {RT.ROTULO_DO_RESULTADO[r['resultado']].lower()}, registrado"
               + (" com atraso" if r["com_atraso"] else "") + ".", "success")
         if tem_arquivo and archive_root is not None:
@@ -380,6 +383,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             erro = str(falha) or falha.__class__.__name__
         preparar(itens, papel=papel, usuario_id=uid, abre=_abre_para(papel))
         preparar(toda, papel=papel, usuario_id=uid, abre=_abre_para(papel))
+        em_resolucao, erro_quem = 0, ""
+        try:
+            em_resolucao = QRW.preparar_rotina(db, itens, papel=papel, usuario_id=uid,
+                                               eh_robo=QRW.e_robo(u))
+        except Exception as falha:                         # noqa: BLE001 — a marca não derruba a tela
+            erro_quem = str(falha) or falha.__class__.__name__
         return render_template("rotina_minha.html", itens=itens, toda=toda, erro=erro,
+                               em_resolucao=em_resolucao, erro_quem=erro_quem,
                                hoje=date.today().isoformat(), so_ve=papel in RT.QUEM_SO_VE,
                                **contexto())

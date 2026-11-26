@@ -29,6 +29,7 @@ from typing import Callable
 
 import dev_projetos as DP
 import gestao_retirados as GR
+import quem_resolve_web as QRW
 
 #: Quem abre e grava os projetos (o TI passa como ADMIN).
 QUEM_USA = ("ADMIN", "MANAGER")
@@ -99,6 +100,13 @@ def register_dev_projetos_routes(
             todos = DP.listar_projetos(con)
             retiradas = GR.ativas(con, GR.PROJETOS)
         na_lista = [p for p in todos if str(p["id"]) not in retiradas]
+        # quem está na próxima fase de cada projeto (`quem_resolve`)
+        db = app.extensions.get("db")
+        if db is not None:
+            try:
+                QRW.quem_nas_proximas(db, na_lista)
+            except Exception:                              # noqa: BLE001 — a marca não derruba a lista
+                pass
         retirados = [{**p, "retirada": retiradas[str(p["id"])]}
                      for p in todos if str(p["id"]) in retiradas]
         return render_template(
@@ -129,6 +137,14 @@ def register_dev_projetos_routes(
             if not dados:
                 abort(404)
             retirada = GR.ativas(con, GR.PROJETOS).get(str(projeto_id))
+        # QUEM CUIDA DE CADA FASE (`quem_resolve`): a marca e os botões
+        db, u = app.extensions.get("db"), app.extensions["current_user"]()
+        if db is not None:
+            try:
+                QRW.preparar_fases(db, dados["fases"], papel=u["role"], usuario_id=_uid(),
+                                   eh_robo=QRW.e_robo(u), outras=dados["falta"].get("abertas"))
+            except Exception:                              # noqa: BLE001 — a marca não derruba a ficha
+                pass
         return render_template(
             "dev_projeto_detalhe.html",
             projeto=dados["projeto"],
@@ -198,6 +214,11 @@ def register_dev_projetos_routes(
             if r["mudou"]:
                 _auditar("DEV_PROJETO_CRIADO" if r["projeto"] == "CRIADO" else "DEV_PROJETO_ALTERADO",
                          r["projeto_id"], {"via": "importar", **r})
+            for fechado in r.get("quem_resolve_encerrados") or []:
+                if audit is not None:
+                    audit("QUEM_RESOLVE_CONCLUIU", "ge_quem_resolve", fechado["id"],
+                          {"tipo": "FASE", "chave": str(fechado["fase_id"]),
+                           "titulo": fechado["titulo"], "de": fechado["por"], "via": "importar"})
         criados = sum(1 for r in resultados if r["projeto"] == "CRIADO")
         mudaram = sum(1 for r in resultados if r["mudou"] and r["projeto"] != "CRIADO")
         flash(f"Carga lida: {len(resultados)} projeto(s) — {criados} cadastrado(s), "
@@ -332,6 +353,7 @@ def register_dev_projetos_routes(
         acao = "DEV_PROJETO_FASE_CONCLUIDA" if feito["concluida"] else "DEV_PROJETO_FASE_ALTERADA"
         _auditar(acao, projeto_id, {"fase_id": fase_id, "titulo": fase["titulo"],
                                     "mudou": feito["mudou"]})
+        QRW.auditar_conclusao(audit, "FASE", str(fase_id), fase["titulo"], feito.get("quem_resolvia"))
         flash("Fase concluída." if feito["concluida"] else "Fase atualizada.", "success")
         return _voltar(projeto_id, f"fase-{fase_id}")
 

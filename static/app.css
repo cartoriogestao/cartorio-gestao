@@ -1077,6 +1077,10 @@ details.panel.tasks-nova-tarefa{margin-left:auto;margin-right:auto;max-width:960
 .dev-projetos-fase-acoes { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: flex-start; margin-top: 0.5rem; }
 .dev-projetos-fase-acoes details { flex: 1 1 18rem; }
 .dev-projetos-fase-acoes summary { font-size: 13px; font-weight: 600; cursor: pointer; }
+/* Os formulários da fase (situação, comprovante, editar) moram em blocos de ~18rem, lado a lado: em duas
+   colunas, o campo de data não cabia e saía cortado na tela de 1920 px (26/11/2026). Uma coluna só. */
+.dev-projetos-fase-acoes .form-grid { grid-template-columns: minmax(0, 1fr); }
+.dev-projetos-fase-acoes .form-grid .span2 { grid-column: auto; }
 .dev-projetos-mover { display: inline; }
 /* ---- Produtividade rápida (botão global) ---- */
 .prod-rapida{position:fixed;right:18px;bottom:72px;z-index:910;font:inherit}

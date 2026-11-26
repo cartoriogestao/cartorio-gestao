@@ -487,7 +487,18 @@ def gravar_achados(con, achados: list[dict],
         resolvidos += 1
         bd.escrever("UPDATE ge_achados SET resolvido_em=%s WHERE id=%s",
                     (agora, r["id"]))
+        _fechar_quem_resolvia(con, r["chave"], agora)
     return {"novos": novos, "resolvidos": resolvidos, "segurados": segurados}
+
+
+def _fechar_quem_resolvia(con, chave: str, agora: str) -> None:
+    """O ACHADO RESOLVIDO FECHA A MARCA DE QUEM O RESOLVIA (S006, 26/11/2026).
+
+    «Fulano está resolvendo» (`quem_resolve`) vale enquanto o achado está aberto.
+    Sem fechá-la aqui, o achado que reabre com a mesma chave voltaria a mostrar a
+    marca velha, como se alguém ainda estivesse nele."""
+    import quem_resolve as QR
+    QR.encerrar(con, QR.ACHADO, chave, por="gestor (achado resolvido)", agora=agora)
 
 
 # ---------------------------------------------------------------- tarefas

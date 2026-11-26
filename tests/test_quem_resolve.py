@@ -129,6 +129,25 @@ def test_assumir_recusar_tomar_largar_e_encerrar(cg_casa):
         ("Ana", "TOMADO", "Gil"), ("Gil", "LARGOU", "Gil"), ("Bia", "CONCLUIU", "Fulano")]
 
 
+def test_o_achado_resolvido_pelo_gestor_fecha_a_marca_e_reabre_sem_ela(cg_casa):
+    import gestor_rotina as GROT
+    db = cg_casa["db"]
+    ana = _pessoa(db, "ana", "MANAGER")
+    _achado(db)
+    with db.transaction() as con:
+        QR.assumir(con, QR.ACHADO, "T:1", usuario_id=ana, por="Ana")
+    with db.transaction() as con:      # a rodada não vê mais o achado: resolvido
+        assert GROT.gravar_achados(con, [], date.today())["resolvidos"] == 1
+        assert QR.ativos(con, QR.ACHADO, ["T:1"]) == {}
+    [linha] = _linhas(db, QR.ACHADO)
+    assert (linha["motivo_fim"], linha["fim_por"]) == (QR.CONCLUIU, "gestor (achado resolvido)")
+    volta = {"chave": "T:1", "regra": "CENSEC", "gravidade": "VENCIDO", "setor": "NOTAS",
+             "titulo": "Remessa da quinzena", "detalhe": None, "prazo": None, "fundamento": None}
+    with db.transaction() as con:      # reabre com a mesma chave: ninguém «resolvendo»
+        GROT.gravar_achados(con, [volta], date.today())
+        assert QR.ativos(con, QR.ACHADO, ["T:1"]) == {}
+
+
 def test_o_auditor_o_robo_e_a_conta_inativa_nao_assumem(cg_casa):
     db = cg_casa["db"]
     carla, robo, velho = _pessoa(db, "carla", "AUDITOR"), _pessoa(db, "robozinho"), _pessoa(db, "velho")

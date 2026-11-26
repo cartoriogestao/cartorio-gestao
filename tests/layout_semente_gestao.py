@@ -704,6 +704,27 @@ def _desenvolvimento(casa) -> None:
     import dev_projetos as DEV
     with casa.transacao() as con:
         DEV.seed_sandbox_exemplo(con)
+        # S006: um projeto com fases em todas as situações, comprovantes e
+        # andamento, para a varredura ver a ficha inteira (e não só a vazia).
+        DEV.importar(con, {
+            "codigo": "PRJ-ENSAIO", "titulo": "Homologação CRA21 (API)", "area": "Protesto",
+            "responsavel": "ti", "origem": "S006", "prazo": "2026-12-31",
+            "resultado_pleno": "Remessa e retorno aceitos pela Central em produção.",
+            "fases": [
+                {"titulo": "Levantar o contrato", "situacao": "CONCLUIDA",
+                 "iniciada_em": "2026-09-01", "concluida_em": "2026-09-10",
+                 "comprovantes": [{"tipo": "PR", "descricao": "Telas da Central", "referencia": "#518"}]},
+                {"titulo": "Homologar a remessa", "situacao": "AGUARDANDO", "prazo": "2026-10-01",
+                 "aguardando_o_que": "o nome do arquivo de remessa", "iniciada_em": "2026-09-20",
+                 "criterio": "A Central aceita a remessa de ensaio",
+                 "comprovantes": [{"tipo": "LINK", "descricao": "Roteiro",
+                                   "referencia": "https://exemplo.invalid/roteiro"}]},
+                {"titulo": "Conferir o retorno", "situacao": "DISPENSADA",
+                 "observacao": "O retorno vem pela mesma chamada"},
+                {"titulo": "Produção", "criterio": "Primeira remessa real aceita"},
+            ],
+            "comprovantes": [{"tipo": "TEXTO", "descricao": "Combinado com o oficial"}],
+        }, por="ensaio")
     projetos = casa.ler("SELECT id FROM dev_projetos ORDER BY id")
     assert projetos, "o projeto de exemplo não nasceu"
     for projeto in projetos[:2]:

@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+{# A ROTINA DA SERVENTIA — o cadastro (26/11/2026, `rotina_da_casa`). Por área
+   e periodicidade, com busca. O oficial e o gerente cadastram, editam,
+   desativam (com motivo) e reativam; o auditor lê. O que se cadastra aqui
+   aparece na Checklist do dia, no alto de cada área, e em «Minha rotina» de
+   quem responde pelo item. #}
+{% from '_rotina.html' import como_fazer, quem, dia with context %}
+{% block title %}Rotina da serventia{% endblock %}
+{% block heading %}<h1>Rotina da serventia</h1>{% endblock %}
+{% block content %}
+<section class="panel">
+  <p>A <strong>rotina de manutenção</strong> da casa: o que a TI e a administração fazem todo dia,
+  semana, mês ou ano para o cartório continuar em ordem — cópias de segurança, centrais, robôs,
+  financeiro, malote, Corregedoria, prazos. Cada item é escrito para <strong>quem não conhece o
+  cartório</strong> poder fazer sozinho: para que serve, o passo a passo, onde se faz, como saber que
+  ficou pronto, o que fazer se der errado e a prova que se guarda.</p>
+  <p class="small muted">O que vence hoje ou está atrasado aparece na <a href="{{ url_for('gestor_checklist') }}#rotina">Checklist do dia</a>,
+  no alto da área, e em <a href="{{ url_for('rotina_minha') }}">Minha rotina</a> do responsável e do suplente.
+  A prática de atos e o trabalho do balcão não entram aqui: vão para as tarefas dos escreventes.</p>
+  <form method="get" action="{{ url_for('rotina_cadastro') }}" class="filtros">
+    <label class="small">Buscar <input type="search" name="q" value="{{ busca }}" maxlength="100" placeholder="código, título ou passo"></label>
+    <label class="small">Área
+      <select name="area"><option value="">Todas</option>
+        {% for cod, rot in areas %}<option value="{{ cod }}" {% if area == cod %}selected{% endif %}>{{ rot }}</option>{% endfor %}
+      </select></label>
+    {% if inativas %}<input type="hidden" name="ver" value="inativas">{% endif %}
+    <button type="submit" class="small">Filtrar</button>
+  </form>
+  <p class="small">
+    {% if inativas %}<a href="{{ url_for('rotina_cadastro', area=area, q=busca or none) }}">Ver as ativas ({{ total_ativas }})</a>
+    {% else %}{% if total_inativas %}<a href="{{ url_for('rotina_cadastro', area=area, q=busca or none, ver='inativas') }}">Ver as desativadas ({{ total_inativas }})</a>{% endif %}{% endif %}
+    {% if pode %} · <a class="button primary" href="{{ url_for('rotina_nova', area=area) }}">Nova rotina</a>{% endif %}
+  </p>
+</section>
+
+<section class="panel" id="lista">
+  <div class="panel-head"><h2>{% if inativas %}Desativadas{% else %}Ativas{% endif %}{% if area %} — {{ rotina_areas[area] }}{% endif %} ({{ total }})</h2></div>
+  {% if not grupos %}
+  <p class="muted">{% if busca %}Nada com «{{ busca }}».{% elif inativas %}Nenhuma rotina desativada.{% else %}Nenhuma rotina cadastrada{% if area %} em {{ rotina_areas[area] }}{% endif %}.{% if pode %} <a href="{{ url_for('rotina_nova', area=area) }}">Cadastrar a primeira</a>.{% endif %}{% endif %}</p>
+  {% endif %}
+  {% for cod_area, rot_area, por_periodo in grupos %}
+  <h3>{{ rot_area }}</h3>
+  {% for per, rot_per, itens in por_periodo %}
+  <h4>{{ rot_per }} <small class="muted">({{ itens|length }})</small></h4>
+  <div class="table-wrap">
+  <table>
+    <tr><th>O que fazer</th><th>Quando</th><th>Quem faz</th><th>Próximo</th><th>Último «feito»</th>{% if pode %}<th></th>{% endif %}</tr>
+    {% for r in itens %}
+    <tr id="rotina-{{ r.id }}">
+      <td><strong>{{ r.titulo }}</strong> <small class="muted">{{ r.codigo }}</small>
+        {% if r.prioridade == 1 %} <span class="badge alta">prioridade alta</span>{% endif %}
+        {% if not r.ativo %}<br><small><span class="badge alta">desativada</span> {{ r.motivo_desativacao }}</small>{% endif %}
+        {{ como_fazer(r) }}</td>
+      <td class="small">{{ r.quando }}</td>
+      <td class="small">{{ quem(r) }}</td>
+      <td class="small">{% if r.proximo %}{{ dia(r.proximo) }}/{{ r.proximo[:4] }}{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td class="small">{% if r.ultimo_feito %}{{ dia(r.ultimo_feito.referencia) }}: {{ r.ultimo_feito.resultado_rotulo|lower }}<br><span class="muted">{{ r.ultimo_feito.por }}</span>{% else %}<span class="muted">nunca</span>{% endif %}</td>
+      {% if pode %}<td class="small">
+        {% if r.ativo %}
+        <a href="{{ url_for('rotina_editar', rotina_id=r.id) }}">Editar</a>
+        <details class="rotina-desativar"><summary class="small">Desativar</summary>
+          <form method="post" action="{{ url_for('rotina_desativar', rotina_id=r.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="area" value="{{ area or '' }}">
+            <label class="small">Por que sai da rotina (obrigatório)
+              <input type="text" name="motivo" required minlength="3" maxlength="{{ motivo_maximo }}"></label>
+            <button type="submit" class="small">Desativar</button>
+            <p class="small muted">Sai da Checklist do dia e de «Minha rotina». Nada se apaga: o histórico dos «feitos» fica.</p>
+          </form>
+        </details>
+        {% else %}
+        <form method="post" action="{{ url_for('rotina_reativar', rotina_id=r.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="area" value="{{ area or '' }}">
+          <input type="hidden" name="ver" value="inativas">
+          <button type="submit" class="small">Reativar</button>
+        </form>
+        {% endif %}
+      </td>{% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% endfor %}
+  {% endfor %}
+</section>
+{% endblock %}

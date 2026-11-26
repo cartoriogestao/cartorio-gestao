@@ -1,0 +1,87 @@
+{# A ROTINA DA SERVENTIA (26/11/2026, `rotina_da_casa`): o mesmo item na
+   Checklist do dia e em «Minha rotina» — quando vence, quem faz, a situação,
+   o «Como fazer» recolhido e o botão «Feito». Importe `with context`: o
+   formulário usa o `csrf_token` e os `rotina_resultados` da tela. #}
+
+{% macro dia(iso) %}{% if iso %}{{ iso[8:10] }}/{{ iso[5:7] }}{% endif %}{% endmacro %}
+
+{% macro texto(t) %}{% for linha in (t or '').split('\n') %}{{ linha }}{% if not loop.last %}<br>{% endif %}{% endfor %}{% endmacro %}
+
+{% macro quem(r) %}
+  {% if r.responsavel %}<span>{{ r.responsavel }}</span>{% if r.responsavel_ativo == false %} <span class="badge alta">inativo</span>{% endif %}
+  {% else %}<span class="badge alta" title="Ninguém responde por esta rotina: ela só aparece na Checklist do dia">sem responsável</span>{% endif %}
+  {% if r.suplente %}<br><small class="muted">suplente: {{ r.suplente }}{% if r.suplente_ativo == false %} (inativo){% endif %}</small>{% endif %}
+{% endmacro %}
+
+{% macro como_fazer(r) %}
+<details class="rotina-como">
+  <summary>Como fazer</summary>
+  {% if r.para_que %}<p><strong>Para que serve:</strong> {{ texto(r.para_que) }}</p>{% endif %}
+  <p><strong>Passo a passo:</strong></p>
+  <ol>{% for p in r.passos %}<li>{{ p }}</li>{% endfor %}</ol>
+  {% if r.onde_endpoint or r.onde_url %}<p><strong>Onde fazer:</strong>
+    {% if r.onde_link %}<a href="{{ r.onde_link }}">{{ r.onde_rotulo }}</a>
+    {% elif r.onde_endpoint %}{{ r.onde_rotulo }} <small class="muted">(sem acesso para você)</small>{% endif %}
+    {% if r.onde_url %}{% if r.onde_endpoint %} · {% endif %}<a href="{{ r.onde_url }}" target="_blank" rel="noopener noreferrer">{{ r.onde_url }}</a> <small class="muted">(fora do sistema)</small>{% endif %}
+  </p>{% endif %}
+  {% if r.pronto_quando %}<p><strong>Está pronto quando:</strong> {{ texto(r.pronto_quando) }}</p>{% endif %}
+  {% if r.se_der_errado %}<p><strong>Se der errado:</strong> {{ texto(r.se_der_errado) }}</p>{% endif %}
+  {% if r.prova %}<p><strong>Prova a guardar:</strong> {{ texto(r.prova) }}</p>{% endif %}
+  {% if r.base_legal %}<p class="small muted"><strong>Base legal:</strong> {{ texto(r.base_legal) }}</p>{% endif %}
+  <p class="small muted">Código {{ r.codigo }} · {{ r.periodicidade_rotulo }} · prioridade {{ r.prioridade_rotulo|lower }}</p>
+</details>
+{% endmacro %}
+
+{% macro situacao(r) %}
+  {% if r.situacao == 'ATRASADO' %}<span class="badge critica">atrasado desde {{ dia(r.referencia) }}</span>
+    <small class="muted">há {{ r.dias_de_atraso }} dia(s)</small>
+  {% elif r.situacao == 'HOJE' %}<span class="badge alta">a fazer hoje</span>
+  {% elif r.situacao == 'DESDE_O_CADASTRO' %}<span class="badge alta">a fazer</span>
+    <small class="muted">o deste período venceu em {{ dia(r.referencia) }}, antes do cadastro</small>
+  {% elif r.situacao == 'FEITO' and r.feito %}
+    <span class="badge {{ 'ok' if r.feito.resultado == rotina_ok else 'alta' }}">{{ r.feito.resultado_rotulo|lower }}</span>
+    <small>por {{ r.feito.por }}{% if r.feito.em[:10] != hoje_da_rotina %} em {{ dia(r.feito.em) }}{% endif %} às {{ r.feito.em[11:16] }}</small>
+    {% if r.feito.observacao %}<br><small class="muted">{{ r.feito.observacao }}</small>{% endif %}
+    {% for a in r.feito.anexos %}<br><small><a href="{{ url_for('attachment_download', attachment_id=a.id) }}">prova: {{ a.nome }}</a></small>{% endfor %}
+  {% endif %}
+  {% if r.anterior_sem_registro %}<br><small class="muted">o de {{ dia(r.anterior_sem_registro) }} ficou sem registro</small>{% endif %}
+{% endmacro %}
+
+{% macro feito(r, voltar, area) %}
+  {% if r.pode_marcar %}
+  <details class="rotina-marcar" id="feito-{{ r.id }}"><summary class="small">Feito</summary>
+  <form method="post" action="{{ url_for('rotina_feito', rotina_id=r.id) }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="referencia" value="{{ r.referencia }}">
+    <input type="hidden" name="voltar" value="{{ voltar }}">
+    <input type="hidden" name="area" value="{{ area or '' }}">
+    <label class="small">Como foi
+      <select name="resultado">{% for cod, rot in rotina_resultados %}<option value="{{ cod }}">{{ rot }}</option>{% endfor %}</select></label>
+    <label class="small">Observação <small class="muted">(obrigatória se não foi «tudo certo»)</small>
+      <input type="text" name="observacao" maxlength="1000"></label>
+    <label class="small">Prova em arquivo (opcional)
+      <input type="file" name="prova_arquivo"></label>
+    <button type="submit" class="small">Registrar o feito</button>
+    <p class="small muted">Grava quem fez e quando, para o vencimento de {{ dia(r.referencia) }}. Não mexe nos achados do gestor nem na cor da área.</p>
+  </form>
+  </details>
+  {% elif r.situacao != 'FEITO' %}<span class="muted small">—</span>{% endif %}
+{% endmacro %}
+
+{% macro lista(itens, voltar, area) %}
+<div class="table-wrap">
+<table class="rotina-do-dia">
+  <tr><th>Situação</th><th>O que fazer</th><th>Quando</th><th>Quem faz</th><th></th></tr>
+  {% for r in itens %}
+  <tr id="rotina-{{ r.id }}">
+    <td class="small">{{ situacao(r) }}</td>
+    <td><strong>{{ r.titulo }}</strong>{% if r.prioridade == 1 %} <span class="badge alta">prioridade alta</span>{% endif %}
+      {{ como_fazer(r) }}</td>
+    <td class="small">{{ r.quando }}</td>
+    <td class="small">{{ quem(r) }}</td>
+    <td>{{ feito(r, voltar, area) }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endmacro %}

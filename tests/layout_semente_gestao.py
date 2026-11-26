@@ -840,7 +840,37 @@ def _atendimento_e_treinamento(casa) -> None:
     casa.pagina("tr_orientacao", chave="roteiro-atendimento")
 
 
-PARTES = PARTES + (_atendimento_e_treinamento,)
+def _rotina_da_serventia(casa) -> None:
+    """A rotina da serventia (26/11/2026): um item diário já feito, com a tela onde se faz, e
+    um mensal atrasado — a Checklist do dia, «Minha rotina» e o cadastro mostram os dois
+    estados; a ficha de editar abre pelos dois."""
+    import rotina_da_casa as RT
+    desde = datetime(2026, 1, 5, 9, 0)
+    with casa.transacao() as con:
+        diario = RT.criar(con, {
+            "codigo": "ENSAIO_TI_BACKUP", "area": "TI", "titulo": "Conferir a cópia de segurança",
+            "para_que": "Sem a cópia, um defeito no disco leva o acervo.",
+            "como_fazer": "Abra a Automação.\nConfira a linha da cópia de segurança.",
+            "pronto_quando": "A linha diz «em dia».", "se_der_errado": "Avise a TI.",
+            "prova": "A imagem da tela.", "onde_endpoint": "automacao_lista",
+            "onde_url": "https://exemplo.invalid/portal", "base_legal": "Norma de exemplo",
+            "periodicidade": "DIARIA", "horario": "até 09:00", "prioridade": 1}, por="ensaio",
+            agora=desde)
+        mensal = RT.criar(con, {
+            "codigo": "ENSAIO_FIN_GUIA", "area": "FINANCEIRO", "titulo": "Pagar a guia do fundo",
+            "como_fazer": "Gere a guia.\nPague.\nAnexe o comprovante.", "periodicidade": "MENSAL",
+            "dia_util": 5}, por="ensaio", agora=desde)
+        referencia = RT.ultimo_vencimento(RT.uma(con, diario), date.today(),
+                                          feriados=RT.feriados_da_casa(con))
+        RT.marcar_feito(con, diario, referencia.isoformat(), resultado="COM_PENDENCIA",
+                        observacao="Cópia de ensaio com aviso", por="ensaio", usuario_id=None)
+    for rotina_id in (diario, mensal):
+        casa.pagina("rotina_editar", rotina_id=rotina_id)
+    casa.pagina("gestor_checklist", _consulta={"area": "TI"})
+    casa.pagina("rotina_cadastro", _consulta={"ver": "inativas"})
+
+
+PARTES = PARTES + (_atendimento_e_treinamento, _rotina_da_serventia)
 
 
 def semear(casa) -> None:

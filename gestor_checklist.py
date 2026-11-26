@@ -71,6 +71,15 @@ O QUE NÃO CABE À GESTÃO (25/11/2026, T019)
     retrato, e ninguém a pinta à mão; ao lado dela vem a cor «sem os
     retirados» e quantos são. Nada se apaga em `ge_achados`.
 
+A ROTINA DO DIA VEM PRIMEIRO (26/11/2026)
+    «Sobre as conferências por área, serve para rotinas e demandas do dia a
+    dia. Não tem nenhuma demanda de rotina cadastrada lá, só débito passado.»
+    — o oficial. No alto de cada área vem o bloco «Rotina do dia»: os itens da
+    rotina da serventia (`rotina_da_casa`) que vencem hoje ou estão atrasados,
+    com o «Como fazer» e o botão «Feito» — e, para a TI, o bloco «TI e
+    sistema» (`?area=TI`). O cadastro é «Rotina da serventia». O «feito» não
+    toca em `ge_achados` nem na cor oficial: a cor continua a do gestor.
+
 O SIGILO DO PLD
     O achado de PLD/COAF diz o número do caso; o detalhe é sigiloso (CNN,
     art. 154) e a tela do PLD é só do ADMIN. Para o gerente e o auditor o
@@ -395,8 +404,10 @@ def montar(db, hoje: date | None = None, *, papel: str, area: str | None = None,
     o papel.
     """
     import gestao_retirados as GR
+    import rotina_da_casa as RT
     hoje = hoje or date.today()
-    if area not in {c for c, _ in CF.AREAS} | {CF.OUTROS}:
+    # A área TI só tem rotina (o semáforo não a mede): o filtro vale para o bloco.
+    if area not in {c for c, _ in CF.AREAS} | {CF.OUTROS, RT.TI}:
         area = None
     if pode_retirar is None:
         pode_retirar = papel in GR.QUEM_RETIRA
@@ -426,6 +437,11 @@ def montar(db, hoje: date | None = None, *, papel: str, area: str | None = None,
     fora = GDS.fora_da_checklist(vivos, None if erro_tarefas else tarefas,
                                  _rotulos_do_gestor())
     conferidos, _ = _medido(db, conferidos_hoje, hoje)
+    # A ROTINA DO DIA (26/11/2026): o que vence hoje e o atrasado, por área.
+    # A leitura que quebra diz que quebrou: lista vazia seria «nada a fazer».
+    do_dia, erro_rotina = _medido(db, lambda con: RT.do_dia(con, hoje, area=area))
+    do_dia = do_dia or []
+    rotina_cadastrada, _ = _medido(db, RT.contar)
     medido = bool(medicao and medicao["gestor"]["medido"])
     itens = []
     for codigo, rotulo, endpoint, conta, olhar in CONFERENCIAS:
@@ -461,4 +477,10 @@ def montar(db, hoje: date | None = None, *, papel: str, area: str | None = None,
                                   if sem_retirados and medido else {}),
             "motivos_prontos": GR.MOTIVOS_PRONTOS, "motivo_maximo": GR.MOTIVO_MAXIMO,
             "itens": itens, "pode_conferir": papel in QUEM_CONFERE,
-            "pode_retirar": bool(pode_retirar)}
+            "pode_retirar": bool(pode_retirar),
+            # A ROTINA DO DIA: os itens (a rota põe em cada um o link e o «pode
+            # marcar» de quem olha), por área, e quantos o cadastro tem.
+            "rotina_itens": do_dia, "rotina": RT.por_area(do_dia),
+            "erro_rotina": erro_rotina, "total_rotina": len(do_dia),
+            "rotina_cadastrada": rotina_cadastrada,
+            "abre_cadastro_rotina": abre("rotina_cadastro")}

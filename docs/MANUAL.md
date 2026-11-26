@@ -1833,6 +1833,35 @@ volta com o quadro aberto.
   **Relatório anual de IA**: a página pronta para imprimir. **O que a ajuda sabe do
   projeto** mostra o que a ajuda lê sobre o sistema, sem gastar consulta.
 
+**Rotina da serventia**
+
+A rotina de **manutenção** da casa — o que a TI e a administração fazem todo dia,
+semana, mês ou ano: cópias de segurança, centrais, robôs, financeiro, malote,
+Corregedoria, prazos. Serve para o oficial **delegar** a quem não conhece o cartório.
+A prática de atos e o trabalho do balcão não entram: vão para as tarefas.
+
+- **Gestão → Rotina da serventia** (oficial e gerente gravam; o auditor lê): cada item
+  diz a área (ou «TI e sistema»), para que serve, o **passo a passo** (um passo por
+  linha), onde se faz (uma tela do sistema ou um site), como saber que ficou pronto, o
+  que fazer se der errado, a prova a guardar e a base legal; quando vence (diária;
+  semanal, nos dias da semana; quinzenal, em dois dias do mês; mensal, num dia do mês
+  ou no Nº dia útil, e -1 é o último; trimestral, semestral e anual, nos meses e no
+  dia); e o responsável e o suplente. O dia que cai em sábado, domingo ou feriado passa
+  para o dia útil seguinte, com os feriados de Configurações. Desativar pede o motivo e
+  não apaga nada; **Reativar** traz de volta.
+- **Checklist de gestão do dia**: no alto de cada área vem o bloco **Rotina do dia**,
+  antes dos achados, com o que vence hoje e o atrasado («atrasado desde dd/mm»). Abra
+  **Como fazer** para o passo a passo, e clique **Feito** ao terminar: diga como foi
+  (tudo certo, com pendência, não se aplica — fora do «tudo certo», a observação é
+  obrigatória) e, se quiser, anexe a prova. O primeiro registro de cada vencimento fica.
+  O «feito com pendência» continua à vista até o vencimento seguinte. **Feito não
+  resolve achado nem muda a cor da área.**
+- **Trabalho → Minha rotina** (todos, também o escrevente): o que a pessoa tem para hoje
+  e o atrasado, como responsável ou suplente, com o mesmo **Como fazer** e o mesmo
+  **Feito**, e embaixo toda a rotina dela com o próximo vencimento.
+- Toda escrita vai à **Auditoria**: ROTINA_CRIADA, ROTINA_ALTERADA, ROTINA_DESATIVADA,
+  ROTINA_REATIVADA e ROTINA_FEITA, com o código do item.
+
 **Controles do oficial**
 
 - **Checklist de gestão do dia**: os achados abertos do gestor por área do semáforo

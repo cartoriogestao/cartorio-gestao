@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+{# O FORMULÁRIO DA ROTINA DA SERVENTIA (26/11/2026, `rotina_da_casa`). Cada
+   campo diz para que serve em linguagem simples: quem vai fazer pode não
+   conhecer o cartório. A recusa volta com o que foi digitado. #}
+{% block title %}{% if item %}Editar rotina{% else %}Nova rotina{% endif %}{% endblock %}
+{% block heading %}<h1>{% if item %}Editar rotina — {{ item.codigo }}{% else %}Nova rotina da serventia{% endif %}</h1>{% endblock %}
+{% block content %}
+{% if problemas %}
+<div class="notice critical">
+  <p><strong>Não gravou. Corrija:</strong></p>
+  <ul>{% for p in problemas %}<li>{{ p }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+<form method="post" class="form rotina-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <p class="small muted">Escreva como se fosse para alguém que <strong>nunca trabalhou num cartório</strong>:
+  frases curtas, o nome da tela ou do site, o que clicar e o que conferir.</p>
+
+  <fieldset>
+    <legend>O que é</legend>
+    {% if item %}
+    <p>Código: <strong>{{ item.codigo }}</strong> <small class="muted">— não muda (é a chave da carga em lote).</small></p>
+    {% else %}
+    <label>Código <small class="muted">— um nome curto, sem espaço nem acento, que não muda (ex.: TI_BACKUP_DIARIO)</small>
+      <input name="codigo" required maxlength="60" value="{{ v.codigo or '' }}"></label>
+    {% endif %}
+    <label>Área <small class="muted">— de quem é o assunto. «TI e sistema» é o que é só do computador e da rede</small>
+      <select name="area" required>
+        <option value="">— escolha —</option>
+        {% for cod, rot in areas %}<option value="{{ cod }}" {% if v.area == cod %}selected{% endif %}>{{ rot }}</option>{% endfor %}
+      </select></label>
+    <label>Título <small class="muted">— o que se faz, em poucas palavras (ex.: Conferir a cópia de segurança da noite)</small>
+      <input name="titulo" required maxlength="200" value="{{ v.titulo or '' }}"></label>
+    <label>Para que serve <small class="muted">— o que é e por que existe; o que acontece se ninguém fizer</small>
+      <textarea name="para_que" rows="3">{{ v.para_que or '' }}</textarea></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Como fazer</legend>
+    <label>Passo a passo <small class="muted">— um passo por linha; a tela numera sozinha</small>
+      <textarea name="como_fazer" rows="8" required>{{ v.como_fazer or '' }}</textarea></label>
+    <label>Onde fazer: tela do sistema <small class="muted">(opcional) — a tela que se abre para fazer; vira um link</small>
+      <input name="onde_endpoint" list="rotina-telas" maxlength="100" value="{{ v.onde_endpoint or '' }}">
+      <datalist id="rotina-telas">{% for endpoint, nome in telas %}<option value="{{ endpoint }}">{{ nome }}</option>{% endfor %}</datalist></label>
+    <label>Onde fazer: endereço de fora <small class="muted">(opcional) — o site da Central ou do Tribunal, começando com https://</small>
+      <input name="onde_url" type="url" maxlength="500" value="{{ v.onde_url or '' }}"></label>
+    <label>Está pronto quando <small class="muted">— como saber que deu certo (ex.: a tela mostra «Concluído» com a data de hoje)</small>
+      <textarea name="pronto_quando" rows="2">{{ v.pronto_quando or '' }}</textarea></label>
+    <label>Se der errado <small class="muted">— o que fazer e a quem avisar</small>
+      <textarea name="se_der_errado" rows="2">{{ v.se_der_errado or '' }}</textarea></label>
+    <label>Prova a guardar <small class="muted">— o que anotar ou anexar no «Feito» (ex.: o número do protocolo, a imagem da tela)</small>
+      <textarea name="prova" rows="2">{{ v.prova or '' }}</textarea></label>
+    <label>Base legal <small class="muted">(opcional) — a norma que manda fazer, com o artigo</small>
+      <input name="base_legal" maxlength="500" value="{{ v.base_legal or '' }}"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Quando</legend>
+    <label>De quanto em quanto tempo
+      <select name="periodicidade" required>
+        {% for cod, rot in periodicidades %}<option value="{{ cod }}" {% if v.periodicidade == cod %}selected{% endif %}>{{ rot }}</option>{% endfor %}
+      </select></label>
+    <p class="small muted">Diária: todo dia útil. Semanal: marque os dias da semana. Quinzenal: os dois dias do mês
+    (ex.: 5,20). Mensal: os dias do mês <em>ou</em> o Nº dia útil. Trimestral, semestral e anual: marque os meses
+    (4, 2 ou 1) e diga o dia do mês <em>ou</em> o Nº dia útil. Só vale o que é da periodicidade escolhida.
+    O dia que cair em sábado, domingo ou feriado passa para o dia útil seguinte; para o fim do mês, use o
+    Nº dia útil -1 (o último dia útil).</p>
+    <fieldset class="rotina-dias-semana">
+      <legend class="small">Dias da semana (semanal)</legend>
+      {% for n, nome in dias_semana %}<label class="checkbox-label"><input type="checkbox" name="dias_semana" value="{{ n }}" {% if n in semana_marcada %}checked{% endif %}> {{ nome }}</label>{% endfor %}
+    </fieldset>
+    <label>Dias do mês <small class="muted">— números separados por vírgula (ex.: 10, ou 5,20)</small>
+      <input name="dias_mes" maxlength="40" value="{{ v.dias_mes or '' }}"></label>
+    <label>Nº dia útil do mês <small class="muted">— 5 é o 5º dia útil; -1 é o último dia útil, -2 o penúltimo</small>
+      <input name="dia_util" type="number" min="-23" max="23" value="{{ v.dia_util if v.dia_util is not none else '' }}"></label>
+    <fieldset class="rotina-meses">
+      <legend class="small">Meses (trimestral, semestral, anual)</legend>
+      {% for n, nome in meses %}<label class="checkbox-label"><input type="checkbox" name="meses" value="{{ n }}" {% if n in meses_marcados %}checked{% endif %}> {{ nome }}</label>{% endfor %}
+    </fieldset>
+    <label>Horário <small class="muted">(opcional) — ex.: até 09:00</small>
+      <input name="horario" maxlength="40" value="{{ v.horario or '' }}"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Quem faz</legend>
+    <label>Responsável <small class="muted">— quem faz; o item aparece em «Minha rotina» dele</small>
+      <select name="responsavel_id">
+        <option value="">— ninguém ainda (só aparece na Checklist do dia) —</option>
+        {% for p in pessoas %}<option value="{{ p.id }}" {% if (v.responsavel_id|string) == (p.id|string) %}selected{% endif %}>{{ p.full_name }} ({{ p.username }})</option>{% endfor %}
+      </select></label>
+    <label>Suplente <small class="muted">— quem cobre o responsável na falta dele</small>
+      <select name="suplente_id">
+        <option value="">— ninguém —</option>
+        {% for p in pessoas %}<option value="{{ p.id }}" {% if (v.suplente_id|string) == (p.id|string) %}selected{% endif %}>{{ p.full_name }} ({{ p.username }})</option>{% endfor %}
+      </select></label>
+    <label>Prioridade
+      <select name="prioridade">
+        {% for n, nome in prioridades %}<option value="{{ n }}" {% if (v.prioridade|string) == (n|string) %}selected{% endif %}>{{ nome }}</option>{% endfor %}
+      </select></label>
+    <label>Ordem na lista <small class="muted">— o menor vem primeiro (padrão 100)</small>
+      <input name="ordem" type="number" min="0" max="9999" value="{{ v.ordem if v.ordem is not none else 100 }}"></label>
+  </fieldset>
+
+  <div class="actions">
+    <button type="submit" class="button primary">Gravar</button>
+    <a class="button" href="{{ url_for('rotina_cadastro', area=(item.area if item else (v.area or none))) }}">Cancelar</a>
+  </div>
+</form>
+{% endblock %}

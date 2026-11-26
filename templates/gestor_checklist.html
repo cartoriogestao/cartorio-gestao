@@ -10,7 +10,11 @@
    O QUE NÃO CABE À GESTÃO (25/11/2026, T019): «Retirar» tira o achado da
    lista e da contagem desta tela, com motivo; «Ver os retirados» mostra quem,
    quando e por quê, e «Devolver à lista». A cor oficial da área continua
-   contando os retirados; ao lado vem a cor «sem os retirados». #}
+   contando os retirados; ao lado vem a cor «sem os retirados».
+   A ROTINA DO DIA (26/11/2026, `rotina_da_casa`): o bloco «Rotina do dia»
+   vem antes dos achados, por área (e «TI e sistema» para a TI), com o «Como
+   fazer» e o «Feito» de cada item. Não mexe nos achados nem na cor. #}
+{% from '_rotina.html' import lista as lista_da_rotina with context %}
 {% block title %}Checklist de gestão do dia{% endblock %}
 {% block heading %}<h1>Checklist de gestão do dia</h1>{% endblock %}
 {% block content %}
@@ -72,6 +76,11 @@
 {% endif %}
 
 <section class="panel">
+  <p>Primeiro vem a <strong>rotina do dia</strong> de cada área: o que a casa faz todo dia,
+  semana ou mês para se manter em ordem (cópia de segurança, centrais, robôs, financeiro,
+  malote, prazos), com o passo a passo de cada item e quem o faz. «Feito» grava quem fez,
+  quando e como foi; <strong>não resolve achado nem muda a cor</strong>. O cadastro é a
+  <strong>Rotina da serventia</strong>{% if ck.abre_cadastro_rotina %} (<a href="{{ url_for('rotina_cadastro') }}">abrir</a>){% endif %}.</p>
   <p>Os <strong>achados abertos</strong> do gestor, pela mesma área do semáforo do
   painel geral, e as <strong>conferências do dia</strong>. O botão «conferido hoje»
   grava quem olhou e quando — <strong>não resolve achado</strong>: o achado só sai
@@ -98,7 +107,28 @@
       {% if a %}<span class="badge {{ {'VERMELHO': 'critica', 'AMARELO': 'alta', 'VERDE': 'ok'}.get(a.cor, '') }}">{{ cores[a.cor] }}{% if a.abertos %} · {{ a.abertos }}{% endif %}</span>{% endif %}
     {% endfor %}
     {% if m and outros in m.areas %} · <a href="{{ url_for('gestor_checklist', area=outros) }}">{{ areas[outros] }}</a>{% endif %}
+    · <a href="{{ url_for('gestor_checklist', area=area_ti) }}" {% if ck.area == area_ti %}aria-current="page"{% endif %} title="Só a rotina: o semáforo não mede a TI">{% if ck.area == area_ti %}<strong>{{ areas[area_ti] }}</strong>{% else %}{{ areas[area_ti] }}{% endif %}</a>
   </nav>
+</section>
+
+<section class="panel" id="rotina">
+  <div class="panel-head"><h2>Rotina do dia{% if ck.area %} — {{ areas[ck.area] }}{% endif %} ({{ ck.total_rotina }})</h2>
+    {% if ck.abre_cadastro_rotina %}<a class="small" href="{{ url_for('rotina_cadastro', area=ck.area) }}">Rotina da serventia (cadastro)</a>{% endif %}</div>
+  {% if ck.erro_rotina %}
+  <div class="notice critical">Não deu para ler a rotina: {{ ck.erro_rotina }}. Isto não quer dizer que não há rotina para hoje.</div>
+  {% elif ck.rotina_cadastrada == 0 %}
+  <p class="small muted">Nenhuma rotina cadastrada ainda.{% if ck.abre_cadastro_rotina %} <a href="{{ url_for('rotina_cadastro') }}">Cadastrar a rotina da serventia</a>.{% endif %}</p>
+  {% elif not ck.rotina %}
+  <p class="small muted">Nada da rotina vence hoje nem está atrasado{% if ck.area %} em {{ areas[ck.area] }}{% endif %}.</p>
+  {% else %}
+  {% for area, lista in ck.rotina.items() %}
+  <h3>{{ rotina_areas[area] }}
+    <small class="muted">{{ lista|selectattr('situacao', 'equalto', 'ATRASADO')|list|length }} atrasado(s),
+      {{ lista|rejectattr('situacao', 'in', ['ATRASADO', 'FEITO'])|list|length }} a fazer,
+      {{ lista|selectattr('situacao', 'equalto', 'FEITO')|list|length }} feito(s)</small></h3>
+  {{ lista_da_rotina(lista, 'checklist', ck.area) }}
+  {% endfor %}
+  {% endif %}
 </section>
 
 <section class="panel" id="achados">

@@ -813,20 +813,6 @@ def _leituras_vazias_em_seguida(bd) -> tuple[int, int, str | None]:
     return vazias, len(dias), desde
 
 
-def _ultima_rodada_da_fila(bd) -> dict | None:
-    """A última rodada da fila que terminou, ou None.
-
-    A linha da fila se reconhece pela frase que `cnib_atualizador` grava nela
-    (`_frase_da_fila`, «Fila da serventia.»): a tabela não tem coluna própria.
-    """
-    for leitura in bd.ler(
-            """SELECT pedida_em, lidas, novas, mensagem FROM ri_cnib_leituras
-                WHERE terminada_em IS NOT NULL AND mensagem LIKE %s
-                ORDER BY id DESC LIMIT 1""", ("Fila da serventia%",)):
-        return dict(leitura)
-    return None
-
-
 def regra_cnib_parado(con, hoje: date) -> list[dict]:
     """A base local do CNIB parou de receber ordens, ou a leitura volta vazia.
 
@@ -838,13 +824,6 @@ def regra_cnib_parado(con, hoje: date) -> list[dict]:
     A ressalva de `cnib_atualizador` (item 7) continua certa e não atrapalha aqui:
     uma ordem antiga que volta por causa do cancelamento não levanta o máximo. Ele
     só sobe quando chega ordem nova de verdade, que é o que esta regra pergunta.
-
-    **«ATRASADA», E NÃO «PARADA» (26/11/2026).** Ordem do oficial: «se a base não
-    está parada o alerta está errado. mude o alerta para "base atrasada" e a data
-    da ordem mais nova. e se a base estiver ligada indique no alerta». Com a
-    leitura da fila ligada, a base anda toda noite, mas a fila entrega primeiro
-    as ordens antigas, e o máximo só sobe quando chegar às novas. O que a regra
-    mede — a ordem mais nova — continua o mesmo; muda o nome do que ela vê.
     """
     bd = banco(con)
     if not (bd.tem_tabela("ri_cnib_leituras") and bd.tem_tabela("ri_cnib_ordens")):
@@ -858,43 +837,25 @@ def regra_cnib_parado(con, hoje: date) -> list[dict]:
     if not base_velha and dias_vazios < CNIB_DIAS_DE_LEITURA_VAZIA:
         return []
 
-    import cnib_atualizador as ATZ
-    fila_ligada = ATZ.fila_autorizada(con)
-    ligada = " (leitura da fila ligada)" if fila_ligada else ""
-
     # O título não leva a contagem: ele nomeia a tarefa, e um número que muda
-    # todo dia reescreveria a tarefa todo dia. A data da ordem mais nova e a
-    # fila ligada mudam pouco, e por isso vão nele.
+    # todo dia reescreveria a tarefa todo dia.
     if base is None:
-        titulo = "Base local do CNIB nunca foi atualizada" + ligada
+        titulo = "Base local do CNIB nunca foi atualizada"
         frases = ["A base local não tem nenhuma ordem."]
     else:
         atraso = (hoje - base).days
-        titulo = ((f"Base local do CNIB atrasada: a ordem mais nova é de {base:%d/%m/%Y}"
-                   if base_velha else
-                   f"Leitura do CNIB voltando vazia desde {_dia(desde):%d/%m/%Y}")
-                  + ligada)
+        titulo = (f"Base local do CNIB parada: a ordem mais nova é de {base:%d/%m/%Y}"
+                  if base_velha else
+                  f"Leitura do CNIB voltando vazia desde {_dia(desde):%d/%m/%Y}")
         frases = [f"A ordem mais nova da base é de {base:%d/%m/%Y}"
                   + (f", {atraso} dia(s) atrás." if atraso else ", de hoje.")]
-    rodada = _ultima_rodada_da_fila(bd) if fila_ligada else None
-    if fila_ligada:
-        if rodada:
-            frases.append(
-                f"A leitura da fila está ligada. A última rodada, em "
-                f"{_dia(rodada['pedida_em']):%d/%m/%Y}, leu {int(rodada['lidas'] or 0)} "
-                f"ordens ({int(rodada['novas'] or 0)} novas) e respondeu: "
-                f"«{rodada['mensagem']}» A fila entrega primeiro as ordens antigas: "
-                "a data acima só sobe quando ela chegar às novas.")
-        else:
-            frases.append("A leitura da fila está ligada, mas nenhuma rodada dela "
-                          "terminou ainda.")
     if vazias:
         frases.append(
             f"Depois da última leitura que trouxe ordens, vieram {vazias} "
             + ("leitura vazia" if vazias == 1 else "leituras vazias seguidas")
             + f", desde {_dia(desde):%d/%m/%Y}. Resposta vazia da Central não prova "
               "que não há ordem.")
-    elif base_velha and not rodada:
+    elif base_velha:
         frases.append("Nenhuma leitura recente voltou vazia: confira se a rotina "
                       "diária do CNIB está rodando.")
     frases.append("Enquanto isso, o «nada consta» da cópia local não vale: consulte "

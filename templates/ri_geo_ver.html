@@ -20,6 +20,18 @@
   </div>
 </section>
 
+{% if memorial %}
+<section class="panel">
+  <div class="panel-head"><span>O memorial de onde saiu</span><span class="small muted">{{ memorial.vertices|length }} vértice(s), na ordem do texto, como vieram</span></div>
+  <div style="padding:12px">
+    <table class="table"><thead><tr><th>#</th><th>Vértice</th><th>Longitude (como escrita)</th><th>Latitude (como escrita)</th></tr></thead><tbody>
+      {% for v in memorial.vertices %}<tr><td>{{ loop.index }}</td><td>{{ v.nome or '—' }}</td><td><code>{{ v.lon_txt }}</code></td><td><code>{{ v.lat_txt }}</code></td></tr>{% endfor %}
+    </tbody></table>
+    <details><summary>Texto-fonte desta gleba</summary><p class="small" style="white-space:pre-wrap">{{ memorial.texto }}</p></details>
+  </div>
+</section>
+{% endif %}
+
 <section class="panel">
   <div class="panel-head"><span>Medidas no SIRGAS 2000 (elipsoide GRS 1980)</span></div>
   <div style="padding:12px">

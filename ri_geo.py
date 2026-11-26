@@ -30,6 +30,16 @@ O QUE FICA GUARDADO, E DE ONDE VEIO
     **A importação NUNCA adota sozinha.** Atributo de arquivo de terceiro é sugestão: quem adota é a pessoa, na
     tela (ou em lote, para as sugestões sem erro). Substituir o vigente de uma matrícula também é ato da pessoa.
 
+O MEMORIAL DA MATRÍCULA (`extrair_memorial`)
+    O teor da matrícula traz, em muitas fichas, o memorial no formato do SIGEF: vértices com nome e
+    Longitude/Latitude em graus, minutos e segundos. `extrair_memorial` LÊ esse texto (a leitura é de `geo_formatos`)
+    e guarda cada gleba como polígono PENDENTE, com origem «memorial da matrícula N», o texto-fonte e os vértices
+    como vieram. Regras: SIRGAS 2000 (o texto que diz SAD 69 ou Córrego Alegre é **recusado**, com o motivo); a
+    matrícula com mais de uma gleba no texto vira **um polígono por gleba** (nunca vértices de glebas diferentes
+    num anel só) e leva o aviso «várias glebas», com a soma das áreas ao lado da registrada; nada é adotado:
+    adoção é ato da pessoa — um a um, ou em lote só para o memorial **sem nenhum aviso**
+    (`adotar_memoriais_sem_aviso`: área que bate, sem sobreposição, sem gleba irmã, matrícula aberta e sem vigente).
+
 A ÁREA DO ARQUIVO É DECISÃO DO OFICIAL (`ri_mapa_area_regra`)
     O plugin de referência manda a área REGISTRADA quando o banco a tem, e a geodésica só no vazio; o ONR fala
     da geodésica. A casa não escolheu: o ajuste fica em Configurações do sistema e **a geração do arquivo exige
@@ -61,9 +71,9 @@ from bd_nativo import banco
 PENDENTE, VIGENTE, SUBSTITUIDA, DESCARTADA = "PENDENTE", "VIGENTE", "SUBSTITUIDA", "DESCARTADA"
 SITUACOES = (PENDENTE, VIGENTE, SUBSTITUIDA, DESCARTADA)
 
-ORIGENS = ("GPKG", "SHP", "GEOJSON", "SIGEF")
+ORIGENS = ("GPKG", "SHP", "GEOJSON", "SIGEF", "MEMORIAL")
 ROTULO_DA_ORIGEM = {"GPKG": "GeoPackage", "SHP": "Shapefile", "GEOJSON": "GeoJSON",
-                    "SIGEF": "Parcela do SIGEF"}
+                    "SIGEF": "Parcela do SIGEF", "MEMORIAL": "Memorial da matrícula"}
 
 CHAVE_REGRA_DA_AREA = "ri_mapa_area_regra"
 CHAVE_TOLERANCIA_FECHAMENTO = "ri_geo_tolerancia_fechamento_m"
@@ -380,6 +390,245 @@ def sugerir_matricula(con, geometria_id: int) -> dict | None:
     return fichas[0]
 
 
+# --------------------------------------------------------------- o memorial da matrícula
+
+def _area_registrada_m2(ficha: dict) -> float | None:
+    return MAPA._metros(ficha.get("area_valor"), ficha.get("area_unidade")) if ficha.get("area_valor") else None
+
+
+def _ficha_do_memorial(con, matricula_id: int) -> dict:
+    ficha = banco(con).um(
+        f"""SELECT m.id, m.numero, m.livro, m.situacao, m.encerrada, m.teor, m.teor_formato, m.descricao_perimetro,
+                   m.area_valor, m.area_unidade, {MAPA._MATRICULA} AS rotulo
+              FROM ri_matriculas m WHERE m.id = %s""", (int(matricula_id),))
+    if not ficha:
+        raise GeoImportError("Esta matrícula não existe.")
+    return dict(ficha)
+
+
+def ler_memorial_da_matricula(con, matricula_id: int, *,
+                              tolerancia_fechamento_m: float = GEO.TOLERANCIA_FECHAMENTO_M) -> dict:
+    """Lê o memorial do teor da matrícula e mede cada gleba — **sem gravar nada**.
+
+    Devolve `{matricula, rotulo, fonte, sha256, sistema, glebas, avisos, soma_ha, registrada_ha}`. Cada gleba:
+    `{indice, rotulo_no_texto, geometria, medidas, achados, vertices, texto, area_ha, comparacao}` (`geometria` é
+    a de `ri_geometrias`: lista de polígonos de anéis lon/lat). Recusa (`GeoImportError`) a matrícula encerrada,
+    o texto em SAD 69 / Córrego Alegre e o que não tem vértices legíveis — sempre dizendo o motivo.
+    """
+    ficha = _ficha_do_memorial(con, matricula_id)
+    if not esta_aberta(ficha):
+        raise GeoImportError(f"A matrícula {ficha['rotulo']} está encerrada ou anulada: não vai ao Mapa.")
+    leitura = fonte = texto = None
+    for nome_da_fonte, bruto in (("teor", ficha.get("teor")), ("descricao_perimetro", ficha.get("descricao_perimetro"))):
+        candidato = FORM.texto_do_memorial(bruto, ficha.get("teor_formato") if nome_da_fonte == "teor" else None)
+        lido = FORM.ler_memorial(candidato) if candidato else None
+        if lido and any(g["anel"] for g in lido["glebas"]):
+            leitura, fonte, texto = lido, nome_da_fonte, candidato
+            break
+    if not leitura:
+        raise GeoImportError(
+            f"O texto da matrícula {ficha['rotulo']} não traz vértices com Longitude e Latitude em graus, minutos e "
+            f"segundos (no teor nem na descrição do perímetro). Esta entrada só lê o memorial nesse formato.")
+    sistema = FORM.sistema_do_texto(texto)
+    if sistema["recusa"]:
+        raise GeoImportError(f"Matrícula {ficha['rotulo']}: {sistema['recusa']}")
+    avisos: list[str] = []
+    if sistema["aviso"]:
+        avisos.append(sistema["aviso"])
+    if leitura["antes_da_primeira"]:
+        avisos.append(f"{leitura['antes_da_primeira']} coordenada(s) estão no texto antes da primeira descrição de "
+                      f"perímetro e não entraram em polígono nenhum: confira se não é outra gleba.")
+    bd = banco(con)
+    atos = bd.um("SELECT count(*) AS n FROM ri_atos WHERE matricula_id = %s AND cancelado = 0 "
+                 "AND teor ILIKE %s", (int(matricula_id), "%Longitude%"))
+    com_atos = bool(atos and int(atos["n"]))
+    glebas: list[dict] = []
+    for g in leitura["glebas"]:
+        if not g["anel"]:
+            avisos.append(f"A gleba {g['indice']} do texto tem menos de 3 vértices legíveis e não virou polígono.")
+            continue
+        geometria = [[g["anel"]]]
+        try:
+            medidas = GEO.analisar(geometria, tolerancia_fechamento_m=tolerancia_fechamento_m)
+        except GEO.GeoErro as erro:
+            avisos.append(f"A gleba {g['indice']} do texto não pôde ser medida: {erro}")
+            continue
+        achados = list(medidas["achados"])
+        if g["ilegiveis"]:
+            achados.append({"codigo": "COORDENADA_ILEGIVEL", "nivel": GEO.ERRO, "texto": (
+                f"O texto desta gleba tem {g['ilegiveis']} coordenada(s) que não se leem em graus, minutos e "
+                f"segundos: o polígono está incompleto e não se adota.")})
+        if g["sem_hemisferio"]:
+            achados.append({"codigo": "SEM_HEMISFERIO", "nivel": GEO.ERRO, "texto": (
+                "Há coordenada sem sinal e sem N/S/L/O: não se sabe o hemisfério, e o sistema não adivinha.")})
+        if g["com_ruido"]:
+            achados.append({"codigo": "COORDENADA_COM_TEXTO_NO_MEIO", "nivel": GEO.AVISO, "texto": (
+                f"{g['com_ruido']} coordenada(s) têm texto no meio, entre o rótulo e os graus (rodapé de página, "
+                f"em geral): foram lidas assim mesmo, e o texto-fonte mostra o trecho. Confira os vértices.")})
+        if g["fechado_pelo_sistema"] and not g["volta_ao_primeiro"]:
+            achados.append({"codigo": "ANEL_FECHADO_PELO_SISTEMA", "nivel": GEO.AVISO, "texto": (
+                "O texto desta gleba não volta ao primeiro vértice: o sistema fechou o anel. Confira se o memorial "
+                "não está cortado.")})
+        if leitura["antes_da_primeira"]:
+            achados.append({"codigo": "COORDENADAS_FORA_DA_DESCRICAO", "nivel": GEO.AVISO, "texto": (
+                "O texto tem coordenadas antes da primeira descrição de perímetro, que ficaram de fora.")})
+        if sistema["aviso"]:
+            achados.append({"codigo": "SISTEMA_DO_TEXTO", "nivel": GEO.AVISO, "texto": sistema["aviso"]})
+        if com_atos:
+            achados.append({"codigo": "ATO_COM_COORDENADAS", "nivel": GEO.AVISO, "texto": (
+                "Há ato (registro ou averbação) desta matrícula com coordenadas no teor: confira qual descrição "
+                "está em vigor — este polígono saiu do texto da ficha.")})
+        comparacao = comparar_areas({"area_geodesica_m2": medidas["area_m2"], "area_valor": ficha.get("area_valor"),
+                                     "area_unidade": ficha.get("area_unidade")})
+        glebas.append({"indice": g["indice"], "rotulo_no_texto": g["rotulo_no_texto"], "geometria": geometria,
+                       "medidas": medidas, "achados": achados, "vertices": g["vertices"], "texto": g["texto"],
+                       "area_ha": GEO.hectares(medidas["area_m2"]), "comparacao": comparacao})
+    if not glebas:
+        raise GeoImportError(f"Matrícula {ficha['rotulo']}: nenhuma gleba do texto virou polígono. "
+                             + " ".join(avisos))
+    registrada = _area_registrada_m2(ficha)
+    soma_m2 = sum(g["medidas"]["area_m2"] for g in glebas)
+    if len(glebas) > 1:
+        # `conferir`: a matrícula tem várias glebas; a área registrada pode ser da soma, de uma só, ou de outra coisa.
+        def ha(m2: float) -> str:
+            return f"{GEO.hectares(m2):.4f}".replace(".", ",")
+        if registrada:
+            dif = 100.0 * (soma_m2 - registrada) / registrada
+            dif = f"{0.0 if abs(dif) < 0.005 else dif:+.2f}".replace(".", ",")
+            frase_soma = (f"A soma das {len(glebas)} glebas é {ha(soma_m2)} ha, contra {ha(registrada)} ha "
+                          f"registrados ({dif}%).")
+        else:
+            frase_soma = f"A soma das {len(glebas)} glebas é {ha(soma_m2)} ha; a ficha não tem área para comparar."
+        for g in glebas:
+            g["achados"].append({"codigo": "VARIAS_GLEBAS", "nivel": GEO.AVISO, "texto": (
+                f"CONFERIR: o texto da matrícula tem {len(glebas)} glebas, e este é um polígono por gleba (os "
+                f"vértices de glebas diferentes não se juntam). {frase_soma}")})
+    return {"matricula": ficha, "rotulo": ficha["rotulo"], "fonte": fonte,
+            "sha256": hashlib.sha256(texto.encode("utf-8")).hexdigest(), "sistema": sistema["sistema"],
+            "glebas": glebas, "avisos": avisos, "soma_ha": GEO.hectares(soma_m2),
+            "registrada_ha": GEO.hectares(registrada) if registrada else None}
+
+
+def extrair_memorial(con, matricula_id: int, *, quem: str | None, quem_id: int | None, agora: str,
+                     tolerancia_fechamento_m: float = GEO.TOLERANCIA_FECHAMENTO_M) -> dict:
+    """Guarda as glebas do memorial da matrícula como polígonos PENDENTES, com a matrícula como SUGESTÃO.
+
+    Nada é adotado. A origem é «memorial da matrícula N»: em `origem_atributos` ficam o texto-fonte da gleba, os
+    vértices como vieram (nome e coordenadas escritas) e de qual campo da ficha saiu. Extrair de novo o **mesmo
+    texto** é recusado (já está guardado — adotado, pendente ou descartado); texto que mudou extrai de novo.
+    Devolve `{importacao_id, geometrias, glebas, avisos, matricula, sha256}`.
+    """
+    plano = ler_memorial_da_matricula(con, matricula_id, tolerancia_fechamento_m=tolerancia_fechamento_m)
+    bd = banco(con)
+    rotulo = plano["rotulo"]
+    ja = bd.um("""SELECT g.id, g.situacao FROM ri_geo_importacoes i JOIN ri_geometrias g ON g.importacao_id = i.id
+                   WHERE i.formato = 'MEMORIAL' AND i.arquivo_sha256 = %s AND g.matricula_declarada = %s
+                   ORDER BY g.id LIMIT 1""", (plano["sha256"], rotulo))
+    if ja:
+        raise GeoImportError(f"O memorial da matrícula {rotulo} já foi extraído (polígono nº {ja['id']}, "
+                             f"{str(ja['situacao']).lower()}). Se o texto da matrícula mudou, extraia de novo.")
+    importacao_id = int(bd.escrever(
+        """INSERT INTO ri_geo_importacoes
+              (arquivo_nome, arquivo_sha256, formato, camada, epsg, origem, levantamento, responsavel_tecnico,
+               n_feicoes, avisos, importado_por, importado_por_id, importado_em)
+           VALUES (%s,%s,'MEMORIAL',NULL,4674,'MEMORIAL',NULL,NULL,%s,%s,%s,%s,%s) RETURNING id""",
+        (_texto(f"memorial da matrícula {rotulo}", 200), plano["sha256"], len(plano["glebas"]),
+         json.dumps(plano["avisos"], ensure_ascii=False) if plano["avisos"] else None, quem, quem_id, agora))[0]["id"])
+    criadas: list[int] = []
+    for g in plano["glebas"]:
+        medidas = g["medidas"]
+        caixa = medidas["caixa"] or GEO.caixa(g["geometria"])
+        atributos = {"matricula": rotulo, "campo_da_ficha": plano["fonte"], "gleba": g["indice"],
+                     "de_n_glebas": len(plano["glebas"]), "rotulo_no_texto": g["rotulo_no_texto"],
+                     "sistema_no_texto": plano["sistema"] or "não diz", "vertices": g["vertices"],
+                     "texto_fonte": g["texto"]}
+        criadas.append(int(bd.escrever(
+            """INSERT INTO ri_geometrias
+                  (importacao_id, matricula_id, situacao, origem, origem_feicao, origem_atributos,
+                   matricula_declarada, geom_wkb_hex, min_lon, min_lat, max_lon, max_lat, area_geodesica_m2,
+                   perimetro_m, vertices, fechamento_m, achados, criado_em)
+               VALUES (%s,%s,'PENDENTE','MEMORIAL',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+            (importacao_id, plano["matricula"]["id"], g["indice"] - 1, json.dumps(atributos, ensure_ascii=False),
+             rotulo, FORM.wkb_de_geometria(g["geometria"]).hex(), caixa[0], caixa[1], caixa[2], caixa[3],
+             medidas["area_m2"], medidas["perimetro_m"], medidas["vertices"], medidas["fechamento_m"],
+             json.dumps(g["achados"], ensure_ascii=False), agora))[0]["id"]))
+    return {"importacao_id": importacao_id, "geometrias": criadas, "glebas": len(plano["glebas"]),
+            "avisos": plano["avisos"], "matricula": rotulo, "sha256": plano["sha256"],
+            "com_erro": sum(1 for g in plano["glebas"] if tem_erro(g["achados"]))}
+
+
+def matriculas_com_memorial(con) -> list[dict]:
+    """As matrículas ABERTAS cujo teor ou descrição do perímetro cita «Longitude» — candidatas à extração."""
+    linhas = banco(con).ler(
+        f"""SELECT m.id, m.encerrada, m.situacao, {MAPA._MATRICULA} AS rotulo FROM ri_matriculas m
+             WHERE (m.teor ILIKE %s OR m.descricao_perimetro ILIKE %s) ORDER BY m.id""", ("%Longitude%", "%Longitude%"))
+    return [dict(l) for l in linhas if esta_aberta(l)]
+
+
+def extrair_memoriais_em_lote(con, *, quem: str | None, quem_id: int | None, agora: str,
+                              tolerancia_fechamento_m: float = GEO.TOLERANCIA_FECHAMENTO_M) -> dict:
+    """Extrai de todas as matrículas abertas com memorial. Guarda PENDENTES; **não adota nenhuma**.
+
+    Devolve `{extraidas: [rotulo], poligonos, recusadas: [{matricula, motivo}]}`: o que não deu certo vem com o motivo.
+    """
+    extraidas: list[str] = []
+    recusadas: list[dict] = []
+    poligonos = 0
+    for ficha in matriculas_com_memorial(con):
+        try:
+            resumo = extrair_memorial(con, ficha["id"], quem=quem, quem_id=quem_id, agora=agora,
+                                      tolerancia_fechamento_m=tolerancia_fechamento_m)
+        except GeoImportError as erro:
+            recusadas.append({"matricula": ficha["rotulo"], "motivo": str(erro)})
+            continue
+        extraidas.append(ficha["rotulo"])
+        poligonos += len(resumo["geometrias"])
+    return {"extraidas": extraidas, "poligonos": poligonos, "recusadas": recusadas}
+
+
+def adotar_memoriais_sem_aviso(con, cfg: dict, *, quem: str | None, quem_id: int | None, agora: str) -> dict:
+    """Adota, em lote, os polígonos PENDENTES de memorial que **não têm aviso nenhum**. Os outros ficam para a pessoa.
+
+    Para ir, o polígono precisa: não ter achado (nem aviso) guardado; ter matrícula aberta e **sem vigente**; a
+    área geodésica **bater** com a registrada (dentro da tolerância da casa); não se sobrepor a nenhum vigente;
+    e não ser uma de várias glebas do mesmo memorial. Devolve `{adotadas, deixadas}`, `deixadas` com o motivo.
+    """
+    bd = banco(con)
+    adotadas: list[int] = []
+    deixadas: list[dict] = []
+    for geo in bd.ler("SELECT * FROM ri_geometrias WHERE situacao = 'PENDENTE' AND origem = 'MEMORIAL' "
+                      "AND matricula_id IS NOT NULL ORDER BY id"):
+        def deixar(motivo: str) -> None:
+            deixadas.append({"id": int(geo["id"]), "matricula": geo["matricula_declarada"], "motivo": motivo})
+
+        achados = achados_da_linha(geo)
+        ficha = bd.um("SELECT m.id, m.encerrada, m.situacao, m.area_valor, m.area_unidade FROM ri_matriculas m "
+                      "WHERE m.id = %s", (geo["matricula_id"],))
+        if achados:
+            deixar("tem aviso ou erro")
+        elif not ficha or not esta_aberta(ficha):
+            deixar("matrícula encerrada ou inexistente")
+        elif bd.um("SELECT 1 FROM ri_geometrias WHERE matricula_id = %s AND situacao = 'VIGENTE'",
+                   (geo["matricula_id"],)):
+            deixar("a matrícula já tem polígono vigente")
+        elif bd.um("SELECT 1 FROM ri_geometrias WHERE importacao_id = %s AND id <> %s AND situacao <> 'DESCARTADA'",
+                   (geo["importacao_id"], geo["id"])):
+            deixar("o memorial tem mais de uma gleba")
+        else:
+            comparacao = comparar_areas({**geo, "area_valor": ficha["area_valor"],
+                                         "area_unidade": ficha["area_unidade"]}, cfg["divergencia_area_pct"])
+            if comparacao["bate"] is None:
+                deixar("a ficha não tem área para comparar")
+            elif comparacao["bate"] is False:
+                deixar(f"a área não bate com a registrada ({comparacao['diferenca_pct']:+.2f}%)".replace(".", ","))
+            elif sobreposicoes(con, geo["id"], tolerancia_m2=cfg["tolerancia_sobreposicao_m2"]):
+                deixar("sobrepõe outro polígono vigente")
+            else:
+                adotar(con, geo["id"], geo["matricula_id"], quem=quem, quem_id=quem_id, agora=agora)
+                adotadas.append(int(geo["id"]))
+    return {"adotadas": adotadas, "deixadas": deixadas}
+
+
 # --------------------------------------------------------------- adotar, descartar
 
 def adotar(con, geometria_id: int, matricula_id: int, *, quem: str | None, quem_id: int | None,
@@ -407,6 +656,12 @@ def adotar(con, geometria_id: int, matricula_id: int, *, quem: str | None, quem_
     if not esta_aberta(ficha):
         avisos.append(f"A matrícula {ficha['rotulo']} está encerrada ou anulada: o polígono fica guardado, mas "
                       f"não vai ao arquivo do Mapa.")
+    if geo["origem"] == "MEMORIAL":
+        irmas = bd.um("SELECT count(*) AS n FROM ri_geometrias WHERE importacao_id = %s AND id <> %s "
+                      "AND situacao <> 'DESCARTADA'", (geo["importacao_id"], int(geometria_id)))
+        if irmas and int(irmas["n"]):
+            avisos.append("Este polígono é uma de várias glebas do mesmo memorial, e o Mapa guarda um polígono por "
+                          "matrícula: adotá-lo substitui o que já for o vigente desta matrícula.")
     vigente = bd.um("SELECT id FROM ri_geometrias WHERE matricula_id = %s AND situacao = 'VIGENTE' AND id <> %s",
                     (int(matricula_id), int(geometria_id)))
     if vigente:
@@ -427,8 +682,9 @@ def adotar_sugestoes(con, *, quem: str | None, quem_id: int | None, agora: str) 
     bd = banco(con)
     adotadas: list[int] = []
     deixadas: list[dict] = []
+    # O memorial da matrícula tem o seu próprio lote (só o sem aviso): a sugestão dele nasce com aviso de propósito.
     for geo in bd.ler("SELECT * FROM ri_geometrias WHERE situacao = 'PENDENTE' AND matricula_id IS NOT NULL "
-                      "ORDER BY id"):
+                      "AND origem <> 'MEMORIAL' ORDER BY id"):
         if tem_erro(achados_da_linha(geo)):
             deixadas.append({"id": geo["id"], "motivo": "tem erro"})
         elif bd.um("SELECT 1 FROM ri_geometrias WHERE matricula_id = %s AND situacao = 'VIGENTE'",

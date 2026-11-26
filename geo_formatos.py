@@ -18,6 +18,9 @@ POR QUE À MÃO, E NÃO COM GDAL / FIONA / PYSHP
     e escrita em duas vias), e os testes do repositório trazem arquivos pequenos feitos pelo GDAL para que a
     leitura continue sendo conferida contra um escritor que não é este.
 
+    LÊ TAMBÉM o MEMORIAL EM TEXTO do teor da matrícula (`ler_memorial`, no fim do módulo): vértices com Longitude
+    e Latitude em graus, minutos e segundos. Só lê — quem guarda, mede e confere é `ri_geo.py`.
+
 O QUE ESTE MÓDULO NÃO FAZ
     Não converte de sistema de coordenadas (isso é de `geo_geodesia`), não valida geometria e não fala com o
     banco. Lê o que o arquivo diz, no sistema do arquivo, e diz qual é.
@@ -825,3 +828,257 @@ def ler_arquivo(nome: str, dados: bytes) -> list[Camada]:
         return [ler_geojson(dados, nome)]
     raise GeoErro("Formato não reconhecido. Aceitam-se GeoPackage (.gpkg), Shapefile (.zip com .shp, .dbf e "
                   ".prj) e GeoJSON (.geojson).")
+
+
+# ------------------------------------------------------------------ o MEMORIAL em texto (teor da matrícula)
+#
+# O memorial no formato do SIGEF vem escrito dentro do teor: «... até o vértice AAAA-M-0001, de coordenadas
+# (Longitude: -47°12'00,425", Latitude -05°50'53,691" e Altitude: 123,45 m) ...». Aqui se LÊ esse texto — só
+# lê: quem decide é a pessoa, na tela (`ri_geo.py`).
+#
+# REGRAS DA LEITURA
+#   - os vértices saem NA ORDEM DO TEXTO, com o nome (o que vem depois de «vértice»/«ponto»/«marco») e as duas
+#     coordenadas como foram escritas; o anel se fecha no primeiro vértice;
+#   - o texto do teor vem em HTML, e às vezes escapado duas vezes (`&#x27;`, `&quot;`, `&amp;quot;`): tira-se
+#     a marcação, desescapa-se, e só então se lê;
+#   - «Inicia-se a descrição» abre uma gleba; sem essa frase, o anel que volta ao primeiro vértice fecha a gleba, e
+#     o que vem depois abre outra. **NUNCA se juntam vértices de glebas diferentes num anel só**;
+#   - coordenada que não se lê (ou rótulo «Longitude» sem a coordenada) NÃO some em silêncio: a gleba leva a
+#     contagem, e quem chama a trata como ERRO.
+#   - o sistema de coordenadas é o que o TEXTO diz: SAD 69 ou Córrego Alegre recusa (quem chama), WGS 84 entra com
+#     aviso, e o texto que não diz nada é tratado como SIRGAS 2000 com aviso.
+
+import html as _html
+
+_ASPAS = {**{ord(c): "'" for c in "´`′’‘ʹ"}, **{ord(c): '"' for c in "″”“"}, **{ord(c): "°" for c in "º˚"}}
+_SINAIS = "-−–—"
+_ANTES_DA_TAG = re.compile(r"(?i)<\s*(?:br|/p|/div|/li|/tr|/td|/h[1-6])\b[^>]*>")
+_TAG = re.compile(r"<[^>]*>")
+
+_DMS = (rf"(?P<sinal>[{_SINAIS}]?)\s*(?P<g>\d{{1,3}})\s*°\s*(?P<m>\d{{1,2}})\s*'\s*"
+        rf"(?P<s>\d{{1,2}}(?:[.,]\d+)?)\s*(?:\"|'')?(?:\s*(?P<h>(?-i:[NSEWOL])(?![A-Za-zÀ-ÿ0-9])|(?i:norte|sul|leste|oeste)(?![A-Za-zÀ-ÿ0-9])))?")
+#: O que pode haver entre o rótulo e os graus: pontuação, e — nos teores que vêm de PDF — o rodapé/cabeçalho da
+#: página que cortou a coordenada no meio. Até 700 caracteres, sem passar por outro rótulo nem por outros graus
+#: (o «N° 9» do rodapé tem o sinal de grau, e não é coordenada).
+_ROTULO_E_DMS = re.compile(
+    rf"(?P<rot>Long(?:itude)?|Lat(?:itude)?)\b\.?(?P<vao>(?:(?!Long(?:itude)?\b|Lat(?:itude)?\b|(?<!\d)\d{{1,3}}\s*°\s*\d)[\s\S]){{0,700}}?)"
+    rf"(?<![\d]){_DMS}", re.IGNORECASE)
+_ROTULO_SOZINHO = re.compile(r"\b(?:Long(?:itude)?|Lat(?:itude)?)\b\.?\s*[:=]", re.IGNORECASE)
+_NOME_DO_VERTICE = re.compile(
+    r"(?:v[ée]rtices?|pontos?|marcos?)\s+(?:de\s+|n[º°o]\.?\s*)?"
+    r"(?P<nome>[A-Za-z0-9]+(?:\s?[-_/.]\s?[A-Za-z0-9]+)*)", re.IGNORECASE)
+_INICIO_DE_GLEBA = re.compile(r"inicia[-\s]se\s+a\s+descri[çc][ãa]o", re.IGNORECASE)
+#: o que separa um rótulo de outro numa mesma coordenada («Longitude …, Latitude …»): pouco texto
+_DISTANCIA_MAXIMA_ENTRE_LONGITUDE_E_LATITUDE = 120
+_FECHA_EM_GRAUS = 1e-7        # ~1 cm: o vértice repetido que fecha o anel
+
+_SAD = re.compile(r"\bsad[\s\-/]*(?:19)?69\b|south\s+american\s+datum", re.IGNORECASE)
+_CORREGO_ALEGRE = re.compile(r"c[óo]rrego\s+alegre", re.IGNORECASE)
+_SIRGAS = re.compile(r"\bsirgas\b", re.IGNORECASE)
+_WGS84 = re.compile(r"\bwgs[\s\-]*(?:19)?84\b", re.IGNORECASE)
+
+
+def texto_do_memorial(teor: Any, formato: Any = None) -> str:
+    """O teor como texto corrido: sem marcação, desescapado (até duas vezes), com as aspas e o grau normalizados.
+
+    `formato` = `html` ou `texto` (o `teor_formato` da ficha); o teor «texto» também chega com `&#x27;`.
+    """
+    texto = str(teor or "")
+    for _ in range(2):
+        desescapado = _html.unescape(texto)
+        if desescapado == texto:
+            break
+        texto = desescapado
+    if "<" in texto:
+        texto = _TAG.sub(" ", _ANTES_DA_TAG.sub(" ", texto))
+    texto = texto.translate(_ASPAS).replace("''", '"')
+    return " ".join(texto.split())
+
+
+def sistema_do_texto(texto: str) -> dict:
+    """O sistema de coordenadas que o TEXTO diz: `{sistema, recusa, aviso}`.
+
+    `sistema` = `SIRGAS2000`, `WGS84` ou `None`. `recusa` é a frase de quem não se trata (SAD 69, Córrego Alegre,
+    ou um texto que cita um deles **e** o SIRGAS — não dá para saber a qual valem as coordenadas); `aviso` vai
+    para a conferência.
+    """
+    antigos = []
+    if _SAD.search(texto):
+        antigos.append("SAD 69")
+    if _CORREGO_ALEGRE.search(texto):
+        antigos.append("Córrego Alegre")
+    sirgas, wgs = bool(_SIRGAS.search(texto)), bool(_WGS84.search(texto))
+    if antigos:
+        quais = " e ".join(antigos)
+        if sirgas:
+            return {"sistema": None, "aviso": None, "recusa": (
+                f"O texto cita {quais} e também SIRGAS: não dá para saber em qual sistema estão as coordenadas "
+                f"do memorial. A passagem de {quais} para SIRGAS 2000 depende de parâmetros que este sistema não "
+                f"tem. Converta no QGIS (ou peça a retificação do texto) e importe o arquivo.")}
+        return {"sistema": None, "aviso": None, "recusa": (
+            f"O texto diz que as coordenadas estão em {quais}, um sistema antigo: a passagem para SIRGAS 2000 "
+            f"depende de parâmetros que este sistema não tem, e não vamos adivinhar a posição do imóvel. "
+            f"Converta no QGIS para SIRGAS 2000 e importe o arquivo.")}
+    if sirgas:
+        return {"sistema": "SIRGAS2000", "aviso": None, "recusa": None}
+    if wgs:
+        return {"sistema": "WGS84", "recusa": None, "aviso": (
+            "O texto diz WGS 84: as coordenadas foram tratadas como SIRGAS 2000 (a diferença é da ordem do "
+            "decímetro ao metro). Para a área do Mapa, converta no QGIS.")}
+    return {"sistema": None, "recusa": None, "aviso": (
+        "O texto não diz o sistema de coordenadas: foi tratado como SIRGAS 2000. Confira com a descrição do "
+        "levantamento.")}
+
+
+def _graus(achado: re.Match, rotulo_de_latitude: bool) -> dict | None:
+    """A coordenada de UM rótulo, em graus decimais; `None` se não existe (minuto ou segundo passa de 59)."""
+    from geo_geodesia import dms_para_graus
+    letra = (achado.group("h") or "").upper()[:1]
+    sinal = achado.group("sinal")
+    if not sinal:   # «Latitude – [rodapé da página] 05°50'…»: o sinal ficou antes do corte
+        sinal = (re.match(r"[\s:=()\.]*([-−–—])", achado.group("vao")) or [None, ""])[1]
+    if sinal and letra in ("N", "E", "L"):
+        return None                               # sinal de um lado e hemisfério do outro: não se adivinha
+    negativo = bool(sinal) or letra in ("S", "W", "O")
+    limite = 90 if rotulo_de_latitude else 180
+    try:
+        valor = dms_para_graus(float(achado.group("g")), float(achado.group("m")),
+                               float(achado.group("s").replace(",", ".")), negativo=negativo)
+    except GeoErro:
+        return None
+    if abs(valor) > limite:
+        return None
+    return {"graus": valor, "sem_hemisferio": not sinal and not letra}
+
+
+def _pares_de_coordenadas(texto: str) -> tuple[list[dict], list[int]]:
+    """`(pares, ilegiveis)`: cada par = `{pos, fim, lon, lat, lon_txt, lat_txt, sem_hemisferio}`; `ilegiveis` = as
+    posições dos rótulos que não viraram coordenada (não casam com graus-minutos-segundos, ou não existem).
+    """
+    achados = []
+    for achado in _ROTULO_E_DMS.finditer(texto):
+        eh_lat = achado.group("rot").lower().startswith("lat")
+        achados.append((achado, eh_lat, _graus(achado, eh_lat)))
+    pares: list[dict] = []
+    usados: set[int] = set()
+    for i, (a, eh_lat, g) in enumerate(achados):
+        if i in usados:
+            continue
+        if i + 1 >= len(achados):
+            break
+        b, b_lat, gb = achados[i + 1]
+        if b_lat == eh_lat or b.start() - a.end() > _DISTANCIA_MAXIMA_ENTRE_LONGITUDE_E_LATITUDE:
+            continue
+        usados.update((i, i + 1))
+        lon_a, lat_a = (b, a) if eh_lat else (a, b)
+        lon_g, lat_g = (gb, g) if eh_lat else (g, gb)
+        par = {"pos": a.start(), "fim": b.end(), "lon_txt": lon_a.group(0).strip(), "lat_txt": lat_a.group(0).strip(),
+               "lon": lon_g["graus"] if lon_g else None, "lat": lat_g["graus"] if lat_g else None,
+               "sem_hemisferio": bool((lon_g and lon_g["sem_hemisferio"]) or (lat_g and lat_g["sem_hemisferio"])),
+               "ruido": bool(re.search(r"[A-Za-z0-9]", lon_a.group("vao") + lat_a.group("vao")))}
+        pares.append(par)
+    posicoes_lidas = {a.start() for a, _, _ in achados}
+    ilegiveis = [r.start() for r in _ROTULO_SOZINHO.finditer(texto) if
+                 not any(abs(r.start() - p) <= 1 for p in posicoes_lidas)]
+    ilegiveis += [achados[i][0].start() for i in range(len(achados)) if i not in usados]
+    return pares, sorted(set(ilegiveis))
+
+
+def _nome_do_vertice(texto: str, de: int, ate: int) -> str | None:
+    """O último nome de vértice escrito entre `de` e `ate` (o trecho que vem antes das coordenadas)."""
+    nome = None
+    for achado in _NOME_DO_VERTICE.finditer(texto, de, ate):
+        candidato = re.sub(r"\s+", "", achado.group("nome")).strip("-_/.")
+        if any(c.isdigit() for c in candidato):
+            nome = candidato[:60]
+    return nome
+
+
+def _mesmo_ponto(a: dict, b: dict) -> bool:
+    return abs(a["lon"] - b["lon"]) <= _FECHA_EM_GRAUS and abs(a["lat"] - b["lat"]) <= _FECHA_EM_GRAUS
+
+
+def _rotulo_no_texto(texto: str, ate: int) -> str | None:
+    """«gleba 2», «parcela B»… escrito nos 160 caracteres antes da gleba (para a pessoa se achar)."""
+    achados = list(re.finditer(r"\b(gleba|parcela|lote|quinh[ãa]o|tarefa)\s+(?:n[º°o]\.?\s*)?([A-Za-z0-9][A-Za-z0-9_.\-]{0,12})",
+                               texto[max(0, ate - 160):ate], re.IGNORECASE))
+    return f"{achados[-1].group(1).lower()} {achados[-1].group(2).strip('.-_')}" if achados else None
+
+
+def ler_memorial(texto: str) -> dict:
+    """Os vértices do memorial, separados por gleba. `texto` já passou por `texto_do_memorial`.
+
+    Devolve `{glebas, antes_da_primeira, ilegiveis_soltas}`. Cada gleba:
+    `{indice, rotulo_no_texto, texto, vertices, anel, fechado_pelo_sistema, volta_ao_primeiro, ilegiveis,
+    sem_hemisferio}`; `vertices` = `[{nome, lon, lat, lon_txt, lat_txt}]` na ordem do texto, `anel` = `[(lon, lat)]` fechado.
+    Gleba com menos de 3 vértices lidos não vira anel (`anel = None`). `antes_da_primeira` conta as
+    coordenadas que estão antes do primeiro «Inicia-se a descrição» (quando o texto tem essa frase): não entram
+    em gleba nenhuma, e quem chama avisa.
+    """
+    pares, ilegiveis = _pares_de_coordenadas(texto)
+    inicios = [m.start() for m in _INICIO_DE_GLEBA.finditer(texto)]
+    antes = 0
+    limites: list[tuple[int, int]] = []
+    if inicios:
+        antes = sum(1 for p in pares if p["pos"] < inicios[0])
+        limites = [(ini, inicios[i + 1] if i + 1 < len(inicios) else len(texto)) for i, ini in enumerate(inicios)]
+    elif pares:
+        limites = [(0, len(texto))]
+    segmentos = []
+    for ini, fim in limites:
+        segmentos.append(([p for p in pares if ini <= p["pos"] < fim],
+                          [i for i in ilegiveis if ini <= i < fim], ini, fim))
+    glebas: list[dict] = []
+    for pares_do_trecho, ilegiveis_do_trecho, ini, fim in segmentos:
+        vertices, anterior = [], ini
+        for p in pares_do_trecho:
+            vertices.append({"nome": _nome_do_vertice(texto, anterior, p["pos"]), "lon": p["lon"], "lat": p["lat"],
+                             "lon_txt": p["lon_txt"], "lat_txt": p["lat_txt"], "pos": p["pos"], "fim": p["fim"],
+                             "sem_hemisferio": p["sem_hemisferio"], "ruido": p["ruido"]})
+            anterior = p["fim"]
+        # um anel por volta ao primeiro vértice: o que vem depois é OUTRA gleba, e não continuação desta
+        voltas: list[list[dict]] = []
+        atual: list[dict] = []
+        for v in vertices:
+            if v["lon"] is None or v["lat"] is None:
+                atual.append(v)
+                continue
+            primeiro = next((x for x in atual if x["lon"] is not None), None)
+            fecha = (primeiro is not None and len(atual) >= 3 and
+                     ((v["nome"] and v["nome"] == primeiro["nome"]) or _mesmo_ponto(v, primeiro)))
+            atual.append(v)
+            if fecha:
+                voltas.append(atual)
+                atual = []
+        if atual:
+            voltas.append(atual)
+        for j, volta in enumerate(voltas):
+            fim_da_volta = (voltas[j + 1][0]["pos"] if j + 1 < len(voltas) else fim)
+            inicio_da_volta = volta[0]["pos"] if (j > 0 or not inicios) else ini
+            ruins = [v for v in volta if v["lon"] is None or v["lat"] is None]
+            bons = [v for v in volta if v["lon"] is not None and v["lat"] is not None]
+            anel = None
+            fechado_pelo_sistema = False
+            volta_ao_primeiro = True
+            if len(bons) >= 3:
+                anel = [(v["lon"], v["lat"]) for v in bons]
+                if anel[0] != anel[-1]:
+                    anel.append(anel[0])
+                    fechado_pelo_sistema = True
+                    nome = bons[0]["nome"]
+                    resto = texto[bons[-1]["fim"]:fim_da_volta].lower()
+                    volta_ao_primeiro = bool(nome and nome.lower() in resto) if nome else True
+            glebas.append({
+                "rotulo_no_texto": _rotulo_no_texto(texto, inicio_da_volta),
+                "texto": texto[(ini if j == 0 else inicio_da_volta):fim_da_volta][:30000],
+                "vertices": [{k: v[k] for k in ("nome", "lon", "lat", "lon_txt", "lat_txt")} for v in volta],
+                "anel": anel, "fechado_pelo_sistema": fechado_pelo_sistema, "volta_ao_primeiro": volta_ao_primeiro,
+                # só o rótulo sem coordenada que está DENTRO do memorial (entre o primeiro e o último vértice
+                # lidos) estraga o anel; o que está antes (um ponto de referência, por exemplo) fica de fora
+                "ilegiveis": len(ruins) + sum(1 for i in ilegiveis_do_trecho
+                                              if volta[0]["pos"] <= i <= volta[-1]["fim"]),
+                "sem_hemisferio": any(v["sem_hemisferio"] for v in bons),
+                "com_ruido": sum(1 for v in bons if v["ruido"])})
+    for i, g in enumerate(glebas, start=1):
+        g["indice"] = i
+    return {"glebas": glebas, "antes_da_primeira": antes, "total_de_pares": len(pares)}

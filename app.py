@@ -3315,6 +3315,8 @@ def _montar_app(test_config: dict | None = None) -> Flask:
         "RI_PROTOCOLO": ("ri_protocolo_ver",),
         # O COMPROVANTE DA PENDENCIA DO PAINEL DO ONR (RI010): abre para quem ve o painel.
         "ONR_PENDENCIA": ("ri_onr_conformidade",),
+        # O COMPROVANTE DE UMA FASE DOS PROJETOS (S006, 26/11/2026): abre para quem abre a ficha.
+        "DEV_PROJETO_COMPROVANTE": ("dev_projetos_detalhe",),
         "RG_ATO": ("rcpj_rtd_registro",),
         "RG_REGISTRO": ("rcpj_rtd_registro",),
         "RG_TITULO": ("rcpj_rtd_titulo",),

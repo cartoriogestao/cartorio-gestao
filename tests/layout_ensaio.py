@@ -226,11 +226,13 @@ def criar_usuario(app, usuario: str, papel: str, nome: str = "") -> None:
 
 def entrar(app, usuario: str, papel: str, layout: str | None = None, nome: str = ""):
     """Um cliente de teste com a sessão da pessoa e, se pedido, o layout escolhido por ela."""
+    # O `cg_login` confere que a sessão abriu (25/11/2026): o 200 sozinho também é o da tela
+    # que recusou a senha, e o ensaio seguia com a pessoa de fora.
+    from conftest import cg_login
+
     criar_usuario(app, usuario, papel, nome)
     c = app.test_client()
-    r = c.post("/login", data={"username": usuario, "password": SENHA,
-                               "csrf_token": token(c.get("/login").get_data(as_text=True))},
-               follow_redirects=True)
+    r = cg_login(c, usuario, SENHA)
     assert r.status_code == 200, r.status_code
     if layout:
         escolher_layout(app, c, layout)

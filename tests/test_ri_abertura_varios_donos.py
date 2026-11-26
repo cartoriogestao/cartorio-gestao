@@ -172,6 +172,18 @@ def test_bloco_com_cpf_e_sem_nome_e_recusado_dizendo_qual(cg_casa_logada):
     assert "O 2º proprietário está sem nome, mas tem CPF ou CNPJ" in pagina
 
 
+def test_bloco_so_com_qualificacao_e_recusado_dizendo_qual(cg_casa_logada):
+    """Resposta 3 do oficial (26/11/2026): manter. Ignorar o bloco apagaria a qualificação calada."""
+    s = cg_casa_logada
+    _numeracao(s["db"])
+    antes = _matriculas(s["db"])
+    pagina = _abrir(s, proprietario_nome=["Pedro Exemplo", ""],
+                    proprietario_qualificacao=["", "brasileira, casada"])
+    assert _matriculas(s["db"]) == antes
+    assert "O 2º proprietário está sem nome, mas tem qualificação" in pagina
+    assert 'value="brasileira, casada"' in pagina
+
+
 def test_o_mesmo_cpf_em_dois_blocos_e_recusado(cg_casa_logada):
     s = cg_casa_logada
     _numeracao(s["db"])

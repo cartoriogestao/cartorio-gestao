@@ -45,7 +45,8 @@
    corpo que vai ao gravar é o mesmo. Ficha de acervo não tem o passo do proprietário, porque a
    abertura histórica não pede dono. O selo é do R-1, na ficha: aqui só o aviso, no último passo.
    A BARRA AVISA DO PROPRIETÁRIO VAZIO porque o botão de abrir está à vista desde o primeiro passo, e
-   a matrícula aberta sem ele não ganha dono depois: o painel Partes não acrescenta titular de abertura. #}
+   a matrícula aberta sem ele não sela. Desde 26/11/2026 (T022) a ficha acrescenta o dono até o selo
+   da abertura, e a barra diz isso (decisão do oficial, pergunta 4 do PR). #}
 {% set cg_passos = none %}
 {% if layout_novo %}
   {% set cg_passos = [('imovel', 'O imóvel'), ('descricao', 'Descrição')] + ([] if e_acervo else [('proprietario', 'Proprietário')]) + [('abertura', 'Abertura e teor')] %}
@@ -185,7 +186,7 @@
       teor como consta no documento. A abertura histórica não recebe selo nem
       identificação de usuário do sistema.</div>
     {% endif %}
-    <div class="span2{% if cg_passos %} cg-acao cg-gravar{% endif %}">{% if cg_passos %}{% if not e_acervo %}<span class="cg-acao-aviso falta cg-gravar-falta">O proprietário ainda está vazio. Sem ele, a abertura não sela, e o painel Partes não o acrescenta depois.</span>{% endif %}{{ andar() }}{% endif %}<button class="{{ 'button primary' if cg_passos else 'primary' }}">Abrir matrícula</button></div>
+    <div class="span2{% if cg_passos %} cg-acao cg-gravar{% endif %}">{% if cg_passos %}{% if not e_acervo %}<span class="cg-acao-aviso falta cg-gravar-falta">O proprietário ainda está vazio. Sem ele, a abertura não sela. Dá para cadastrá-lo depois, na ficha (Identificação → Selar a abertura), até o selo da abertura.</span>{% endif %}{{ andar() }}{% endif %}<button class="{{ 'button primary' if cg_passos else 'primary' }}">Abrir matrícula</button></div>
   </form>
 </section>
 

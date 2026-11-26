@@ -205,6 +205,36 @@ def test_o_acervo_continua_sem_o_proprietario(cg_casa_logada):
     assert _donos(s["db"], m["id"]) == []
 
 
+AVISO_DO_NOME = "Há mais de um proprietário da abertura com o nome"
+
+
+def test_o_mesmo_nome_sem_documento_abre_com_o_aviso(cg_casa_logada):
+    """Decisão do oficial (26/11/2026): avisa, e não impede. O nome se compara sem acento, caixa e espaço."""
+    s = cg_casa_logada
+    pagina = _abrir(s, proprietario_nome=["Pedro Exemplo", "  PÉDRO   exemplo "],
+                    proprietario_documento=["", ""])
+    assert "aberta no livro" in pagina
+    # o nome sai como foi digitado, só sem os espaços das pontas
+    assert f"{AVISO_DO_NOME} «PÉDRO   exemplo»" in pagina
+    assert "Confira se não é a mesma pessoa cadastrada duas vezes" in pagina
+    assert len(_donos(s["db"], _ultima(s["db"])["id"])) == 2
+
+
+def test_o_mesmo_nome_com_um_documento_so_tambem_avisa(cg_casa_logada):
+    s = cg_casa_logada
+    pagina = _abrir(s, proprietario_nome=["Pedro Exemplo", "Pedro Exemplo"],
+                    proprietario_documento=[CPF_1, ""])
+    assert AVISO_DO_NOME in pagina
+
+
+def test_o_mesmo_nome_com_documentos_diferentes_nao_avisa(cg_casa_logada):
+    s = cg_casa_logada
+    pagina = _abrir(s, proprietario_nome=["Pedro Exemplo", "Pedro Exemplo"],
+                    proprietario_documento=[CPF_1, CPF_2])
+    assert "aberta no livro" in pagina
+    assert AVISO_DO_NOME not in pagina
+
+
 # ------------------------------------------------------- a ficha, até o selo
 
 
@@ -247,6 +277,25 @@ def test_ficha_avisa_a_soma_depois_de_acrescentar(cg_casa_logada):
     mid = _ultima(s["db"])["id"]
     pagina = _incluir(s, mid, nome="Beatriz Exemplo", documento=CPF_2, fracao="1/4")
     assert "As frações dos titulares somam 75,00%, e não 100%" in pagina
+
+
+def test_ficha_avisa_o_nome_igual_ao_de_um_dono_ja_cadastrado(cg_casa_logada):
+    s = cg_casa_logada
+    _abrir(s, proprietario_nome="Pedro Exemplo", proprietario_documento=CPF_1)
+    mid = _ultima(s["db"])["id"]
+    pagina = _incluir(s, mid, nome="pedro  exemplo")
+    assert "Proprietário da abertura cadastrado: pedro  exemplo" in pagina
+    assert f"{AVISO_DO_NOME} «pedro  exemplo»" in pagina
+    assert len(_donos(s["db"], mid)) == 2
+
+
+def test_ficha_nao_avisa_o_nome_diferente(cg_casa_logada):
+    s = cg_casa_logada
+    _abrir(s, proprietario_nome="Pedro Exemplo")
+    mid = _ultima(s["db"])["id"]
+    pagina = _incluir(s, mid, nome="Pedro Exemplo Filho")
+    assert "Proprietário da abertura cadastrado" in pagina
+    assert AVISO_DO_NOME not in pagina
 
 
 def test_ficha_sem_dono_continua_com_o_quadro_de_cadastrar(cg_casa_logada):

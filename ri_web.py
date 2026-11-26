@@ -1719,6 +1719,32 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                           "fracao": fracao})
         return donos
 
+    def _aviso_de_nome_repetido(novos, ja_cadastrados=()) -> str:
+        """O mesmo nome em dois donos da abertura, sem documento que os separe. **Só calcula.**
+
+        DECISÃO DO OFICIAL (26/11/2026, T022, pergunta 2): avisa e não impede,
+        como a soma das frações. O nome se compara por `normalizar_busca` (sem
+        acento, sem caixa, sem espaço sobrando). Dois documentos diferentes
+        dizem que são duas pessoas, e aí não há aviso; basta um dos dois sem
+        documento para não haver como saber.
+
+        `novos` são os que entram agora; `ja_cadastrados`, os que a abertura
+        já tinha (o quadro da ficha), com `nome` e `documento`.
+        """
+        antes = [(normalizar_busca(d["nome"]), so_digitos(d.get("documento") or ""), d["nome"])
+                 for d in ja_cadastrados]
+        repetidos: list[str] = []
+        for d in novos:
+            chave, doc = normalizar_busca(d["nome"]), so_digitos(d.get("documento") or "")
+            if any(c == chave and not (doc and o) for c, o, _ in antes) and d["nome"] not in repetidos:
+                repetidos.append(d["nome"])
+            antes.append((chave, doc, d["nome"]))
+        if not repetidos:
+            return ""
+        nomes = ", ".join(f"«{n}»" for n in repetidos)
+        return (f"Há mais de um proprietário da abertura com o nome {nomes}, e sem documento "
+                f"que os distinga. Confira se não é a mesma pessoa cadastrada duas vezes.")
+
     @app.route("/registro-imoveis/<int:matricula_id>")
     @login_required
     def ri_ficha(matricula_id):
@@ -7409,11 +7435,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         with db.transaction() as con:
             # O MESMO DONO NÃO ENTRA DUAS VEZES (T022, 26/11/2026): o quadro
             # agora aparece também com donos já cadastrados, até o selo.
-            if doc:
+            ja_na_abertura = [
+                {"nome": ja["nome"], "documento": ja["documento_numero"]}
                 for ja in banco(con).ler(
-                        """SELECT nome, documento_numero FROM ri_partes
-                           WHERE matricula_id=%s AND ato_id IS NULL""", (matricula_id,)):
-                    if so_digitos(ja["documento_numero"] or "") == doc:
+                    """SELECT nome, documento_numero FROM ri_partes
+                       WHERE matricula_id=%s AND ato_id IS NULL ORDER BY id""", (matricula_id,))]
+            if doc:
+                for ja in ja_na_abertura:
+                    if so_digitos(ja["documento"] or "") == doc:
                         flash(f"O documento {CPFCNPJ.formatar_documento(doc)} já está na "
                               f"abertura, com {ja['nome']}. Para mudar esse dono, use "
                               f"Corrigir na linha dele.", "danger")
@@ -7436,6 +7465,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                "fracao": fracao, "origem": "parte_abertura_antes_selo"})
         flash(f"Proprietário da abertura cadastrado: {nome}. "
               f"Agora dá para selar a abertura em Identificação.", "success")
+        _aviso_nome = _aviso_de_nome_repetido([{"nome": nome, "documento": doc}], ja_na_abertura)
+        if _aviso_nome:
+            flash(_aviso_nome, "warning")
         _aviso_fr = _aviso_das_fracoes(q(
             "SELECT * FROM ri_partes WHERE matricula_id=%s ORDER BY id", (matricula_id,)))
         if _aviso_fr:
@@ -8089,6 +8121,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         flash(f"Matrícula {numero} aberta no livro {livro}. "
               f"O próximo número do livro passou a ser {numero + 1}.", "success")
         # A SOMA DAS FRAÇÕES NÃO IMPEDE A ABERTURA (T022): avisa, como a ficha.
+        # E o mesmo nome sem documento também só avisa (decisão de 26/11/2026).
+        _aviso_nome = _aviso_de_nome_repetido(donos)
+        if _aviso_nome:
+            flash(_aviso_nome, "warning")
         if donos:
             _aviso_fr = _aviso_das_fracoes(q(
                 "SELECT * FROM ri_partes WHERE matricula_id=%s ORDER BY id", (novo_id,)))

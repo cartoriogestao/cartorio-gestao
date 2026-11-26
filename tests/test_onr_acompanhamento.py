@@ -124,6 +124,7 @@ CREATE TABLE ri_notas_devolutivas (id bigint PRIMARY KEY, protocolo_id INTEGER,
     prazo_ate TEXT, situacao TEXT, data_reingresso TEXT, emitida_em TEXT);
 CREATE TABLE ri_atos (id bigint PRIMARY KEY, matricula_id INTEGER, tipo TEXT,
     numero INTEGER, data_ato TEXT, cancelado INTEGER NOT NULL DEFAULT 0, selo_texto TEXT);
+CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
 """
 AGORA = "2026-10-26T10:00:00"
 
@@ -167,6 +168,14 @@ def con():
 
 def _eventos(c):
     return banco(c).ler("SELECT * FROM onr_at_eventos ORDER BY id")
+
+
+def _revisar_as_exigencias(c, quem="beatriz"):
+    """A008: a exigência de texto inteiro só sobe revisada."""
+    for ev in _eventos(c):
+        if ev["evento"] == "EXIGENCIA" and ev["situacao"] == "PENDENTE" and not ev["revisado_em"]:
+            A.marcar_revisada(c, ev["id"], quem=quem, agora=AGORA)
+    c.commit()
 
 
 # ------------------------------------------------------------------ os ganchos
@@ -296,6 +305,7 @@ def test_o_primeiro_cadastra_o_titulo_e_o_seguinte_vai_como_status(con, pasta):
         '["Recolher o ITBI."]', NULL, NULL, 'ABERTA', NULL, '2026-10-22T16:00:00')""")
     A.anotar_nota_de_exigencia(con, 5, agora=AGORA)
     con.commit()
+    _revisar_as_exigencias(con)
     onr = ONRDeMentira()
     feito = _enviar(con, pasta, onr)
     assert (feito["enviados"], feito["titulos_novos"], feito["parou"]) == (2, 1, "")
@@ -336,17 +346,19 @@ def test_titulo_ja_cadastrado_no_onr_e_aproveitado(con, pasta):
 
 def test_registro_sem_selo_espera_e_segura_o_titulo(con, pasta):
     banco(con).escrever("INSERT INTO ri_atos VALUES (77, 1, 'R', 1, '2026-10-26', 0, NULL)")
+    A.anotar_prenotacao(con, 10, agora=AGORA)
     A.anotar_registro(con, 10, ato_id=77, agora=AGORA)
     A.anotar_prorrogacao(con, 10, de="2026-11-17", para="2026-11-24", dias=5,
                          agora="2026-10-27T08:00:00")
     con.commit()
     onr = ONRDeMentira()
     feito = _enviar(con, pasta, onr)
-    assert (feito["enviados"], feito["esperando"]) == (0, 1)
-    assert onr.chamadas == []                         # nem o login: nada a mandar
+    # a prenotação sobe; o registro espera o selo e segura a prorrogação
+    assert (feito["enviados"], feito["esperando"]) == (1, 1)
+    assert onr.de("InsertStatusAT") == []
     ev = _eventos(con)
-    assert [e["situacao"] for e in ev] == ["PENDENTE", "PENDENTE"]
-    assert "selo" in ev[0]["ultimo_erro"]
+    assert [e["situacao"] for e in ev] == ["ENVIADO", "PENDENTE", "PENDENTE"]
+    assert "selo" in ev[1]["ultimo_erro"] and ev[1]["espera"] == "SELO"
     banco(con).escrever("UPDATE ri_atos SET selo_texto='SELO-TESTE' WHERE id=77")
     con.commit()
     assert _enviar(con, pasta, ONRDeMentira())["enviados"] == 2
@@ -403,11 +415,12 @@ def test_descartar_exige_motivo_e_so_o_pendente(con, pasta):
 
 def test_a_ficha_mostra_o_enviado_cujo_fato_sumiu(con, pasta):
     banco(con).escrever("INSERT INTO ri_atos VALUES (77, 1, 'R', 1, '2026-10-26', 0, 'S')")
+    A.anotar_prenotacao(con, 10, agora=AGORA)
     A.anotar_registro(con, 10, ato_id=77, agora=AGORA)
     con.commit()
     _enviar(con, pasta, ONRDeMentira())
     banco(con).escrever("DELETE FROM ri_atos WHERE id=77")
-    (ev,) = A.da_prenotacao(con, 10)["eventos"]
+    (_, ev) = A.da_prenotacao(con, 10)["eventos"]
     assert ev["situacao"] == "ENVIADO" and "desfeito" in ev["fato_sumiu"]
     assert ev["rotulo"] == "Título registrado"
 
@@ -446,6 +459,7 @@ def test_a_nota_de_exigencia_sobe_inteira_no_status_7(con, pasta):
     A.anotar_prenotacao(con, 10, agora=AGORA)
     A.anotar_nota_de_exigencia(con, 5, agora=AGORA)
     con.commit()
+    _revisar_as_exigencias(con)
     onr = ONRDeMentira()
     assert _enviar(con, pasta, onr)["enviados"] == 2
     (status,) = onr.de("InsertStatusAT")
@@ -459,18 +473,33 @@ def test_a_nota_de_exigencia_sobe_inteira_no_status_7(con, pasta):
     assert "…" not in descricao
 
 
-def test_a_nota_sozinha_cadastra_o_titulo_com_ela_de_status_inicial(con, pasta):
-    """Sem a prenotação na fila (o acervo, ou o envio ligado depois), a nota
-    é o primeiro andamento: vai no `InsertTituloAT`, com o texto dela."""
+def test_a_nota_sozinha_precisa_de_decisao_e_o_retroativo_destrava(con, pasta):
+    """A008 (26/11/2026): sem a prenotação na fila (o título anterior à fila),
+    nada do título sobe — abriria no ONR com outro status antes do
+    «prenotado». Fica «precisa de decisão»; o evento retroativo, que nasce
+    desligado, é o caminho pronto: com ele, o título abre como prenotado."""
     banco(con).escrever("""INSERT INTO ri_notas_devolutivas VALUES (5, 10, 1, '2026-10-22',
         '["Recolher o ITBI."]', NULL, NULL, 'ABERTA', NULL, '2026-10-22T16:00:00')""")
     A.anotar_nota_de_exigencia(con, 5, agora=AGORA)
     con.commit()
+    _revisar_as_exigencias(con)
     onr = ONRDeMentira()
-    assert _enviar(con, pasta, onr)["enviados"] == 1
+    feito = _enviar(con, pasta, onr)
+    assert (feito["enviados"], feito["por_espera"]) == (0, {"DECISAO": 1})
+    assert onr.chamadas == []
+    assert _eventos(con)[0]["espera"] == "DECISAO"
+    assert [t["protocolo_id"] for t in A.precisam_de_decisao(con, amb=W.HOMOLOGACAO)] == [10]
+    with pytest.raises(A.AcompanhamentoError, match="desligado"):
+        A.anotar_prenotacao_retroativa(con, 10, agora=AGORA)
+    A.opcao(con, A.CHAVE_RETROATIVO, True)
+    assert A.anotar_prenotacao_retroativa(con, 10, agora=AGORA) is True
+    con.commit()
+    onr = ONRDeMentira()
+    assert _enviar(con, pasta, onr)["enviados"] == 2
     (titulo,) = onr.de("InsertTituloAT")
-    assert "<IDTipoStatus>7</IDTipoStatus>" in titulo
-    assert "1. Recolher o ITBI." in titulo
+    assert "<IDTipoStatus>4</IDTipoStatus>" in titulo
+    (status,) = onr.de("InsertStatusAT")
+    assert "1. Recolher o ITBI." in status
 
 
 def test_o_contrato_do_acompanhamento_nao_tem_anexo_e_isso_fica_declarado():
@@ -534,6 +563,11 @@ def test_telas_do_balcao_ao_onr(cg_casa_logada, monkeypatch):
     import onr_acompanhamento_web as AW
     monkeypatch.setattr(AW.WS, "Sessao", SessaoFalsa)
     c.post("/ri/onr/acompanhamento/ligar", data={"csrf_token": tok, "ligar": "1"})
+    # A008: a exigência espera a revisão; marcada pela tela, sobe junto
+    assert "aguardando revisão" in c.get("/ri/onr/acompanhamento").get_data(as_text=True)
+    with db.connect() as cx:
+        exig = banco(cx).valor("SELECT id FROM onr_at_eventos WHERE evento='EXIGENCIA'")
+    c.post(f"/ri/onr/acompanhamento/{exig}/revisar", data={"csrf_token": tok})
     r = c.post("/ri/onr/acompanhamento/enviar", data={"csrf_token": tok},
                follow_redirects=True).get_data(as_text=True)
     assert "2 andamento(s) enviado(s)" in r
@@ -548,7 +582,11 @@ def test_o_robo_nao_envia_nao_liga_e_nao_descarta(cg_casa, monkeypatch):
     USER abriria —, e nenhum POST chega ao ONR nem muda o interruptor."""
     import selo_robo as SR
     for rota in ("onr_acompanhamento", "onr_acompanhamento_enviar",
-                 "onr_acompanhamento_ligar", "onr_acompanhamento_descartar"):
+                 "onr_acompanhamento_ligar", "onr_acompanhamento_descartar",
+                 # A008, 26/11/2026
+                 "onr_acompanhamento_liberar", "onr_acompanhamento_revisar",
+                 "onr_acompanhamento_prova", "onr_acompanhamento_opcao",
+                 "onr_acompanhamento_retroativo"):
         assert SR.rota_vedada_ao_robo(rota), rota
     from conftest import cg_login
     db = cg_casa["db"]
@@ -570,4 +608,8 @@ def test_o_robo_nao_envia_nao_liga_e_nao_descarta(cg_casa, monkeypatch):
                   data={"csrf_token": tok}).status_code == 403
     assert c.post("/ri/onr/acompanhamento/1/descartar",
                   data={"csrf_token": tok, "motivo": "teste do robô"}).status_code == 403
+    for rota in ("/ri/onr/acompanhamento/liberar", "/ri/onr/acompanhamento/1/revisar",
+                 "/ri/onr/acompanhamento/prova", "/ri/onr/acompanhamento/opcao",
+                 "/ri/onr/acompanhamento/1/retroativo"):
+        assert c.post(rota, data={"csrf_token": tok, "todos": "1"}).status_code == 403, rota
     assert not A.ligado(db.get_setting)

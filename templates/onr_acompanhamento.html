@@ -18,9 +18,15 @@
     {% if producao %}O que for enviado aparece de verdade ao apresentante na Central do ONR.{% endif %}
     <br>Envio: <strong>{{ 'LIGADO' if ligado else 'desligado' }}</strong>{% if not ligado %}
     — nasce desligado; quem liga é o oficial, nesta tela{% endif %}.</p>
+  {% if texto_curto %}
+  <p class="small warning">Nota de exigência: sobe o TEXTO CURTO («Nota de exigência nº N, de
+    dd/mm/aaaa. Prazo: dd/mm/aaaa.»), sem revisão — opção ligada nesta tela. {{ nota_sem_anexo }}.</p>
+  {% else %}
   <p class="small muted">Nota de exigência: sobe com o texto inteiro (as exigências, a
     fundamentação e o prazo), e o apresentante a lê na Central — decisão do oficial em
-    26/10/2026. {{ nota_sem_anexo }}.</p>
+    26/10/2026. <strong>Só sobe depois de marcada como revisada</strong>; a sem exigência no
+    texto e a com frase de rascunho ficam bloqueadas. {{ nota_sem_anexo }}.</p>
+  {% endif %}
   {% if not credencial.tem_chave %}
   <p class="warning">Falta a credencial do Ofício Eletrônico (wsoficio.cred) neste ambiente.</p>
   {% endif %}
@@ -48,8 +54,74 @@
   {% else %}
     <a class="button" href="{{ url_for('onr_acompanhamento', todos=1) }}">Ver tudo, inclusive o enviado</a>
   {% endif %}
+  {% if user.role == 'ADMIN' %}
+    <a class="button" href="{{ url_for('onr_acompanhamento_prova') }}">Chamada de prova de 1 título</a>
+  {% endif %}
   <p class="small muted">Pendentes {{ contagem.PENDENTE }} · enviados {{ contagem.ENVIADO }} ·
     anulados {{ contagem.ANULADO }} · descartados {{ contagem.DESCARTADO }}</p>
+</section>
+
+{# A008 (26/11/2026) — a rotina RI_ONR_ACOMPANHAMENTO da central de automação. #}
+<section class="card" id="rotina">
+  <h2>A rotina automática</h2>
+  {% if auto_desde %}
+  <p>A rotina manda sozinha desde <strong>{{ auto_desde[:16]|replace('T', ' ') }}</strong>. O que já
+    estava na fila nesse momento ficou <strong>atrasado</strong> e só sai depois de liberado.</p>
+  {% else %}
+  <p class="small muted">A rotina ainda não mandou nada sozinha (processo
+    «RI_ONR_ACOMPANHAMENTO» desligado ou sem «pode agir»). Na primeira rodada que puder mandar,
+    tudo o que estiver na fila vira <strong>atrasado</strong> e espera a liberação do titular.</p>
+  {% endif %}
+  <p>Atrasados aguardando liberação: <strong>{{ atrasados }}</strong>.
+  {% if user.role == 'ADMIN' and atrasados %}
+  <form method="post" action="{{ url_for('onr_acompanhamento_liberar') }}" style="display:inline"
+        onsubmit="return confirm('Liberar os {{ atrasados }} atrasados? A rotina os manda ao ONR, que avisa cada apresentante.')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="todos" value="1">
+    <button class="button" type="submit">Liberar todos os atrasados</button>
+  </form>
+  {% endif %}</p>
+
+  {% if precisam_de_decisao %}
+  <h3>Precisam de decisão ({{ precisam_de_decisao|length }})</h3>
+  <p class="small">Títulos que ainda não estão no ONR e cuja fila não tem o «prenotado» (a
+    prenotação é anterior à fila). <strong>Nada deles sobe</strong> até o titular decidir: anotar o
+    «prenotado» retroativo, ou descartar os andamentos.</p>
+  <ul>
+  {% for t in precisam_de_decisao %}
+    <li><a href="{{ url_for('ri_protocolo_ver', protocolo_id=t.protocolo_id) }}">{{ t.protocolo_numero or t.protocolo_id }}</a>
+      — prenotado em {{ t.data_prenotacao or '?' }}, {{ t.pendentes }} andamento(s) na fila
+      {% if user.role == 'ADMIN' %}
+      <form method="post" action="{{ url_for('onr_acompanhamento_retroativo', protocolo_id=t.protocolo_id) }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button" type="submit" {% if not retroativo %}disabled title="opção desligada"{% endif %}>
+          Anotar o «prenotado» retroativo</button>
+      </form>
+      {% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+  {% endif %}
+
+  <h3>Decisões do titular ainda em aberto</h3>
+  <ul class="small">
+    <li>Texto curto da exigência (sem revisão): <strong>{{ 'LIGADO' if texto_curto else 'desligado' }}</strong>.
+      {% if user.role == 'ADMIN' %}
+      <form method="post" action="{{ url_for('onr_acompanhamento_opcao') }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="chave" value="onr_acompanhamento_exigencia_texto_curto">
+        <input type="hidden" name="ligar" value="{{ '0' if texto_curto else '1' }}">
+        <button class="button" type="submit">{{ 'Voltar ao texto inteiro' if texto_curto else 'Ligar o texto curto' }}</button>
+      </form>{% endif %}</li>
+    <li>«Prenotado» retroativo para os títulos anteriores à fila: <strong>{{ 'LIGADO' if retroativo else 'desligado' }}</strong>.
+      {% if user.role == 'ADMIN' %}
+      <form method="post" action="{{ url_for('onr_acompanhamento_opcao') }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="chave" value="onr_acompanhamento_prenotacao_retroativa">
+        <input type="hidden" name="ligar" value="{{ '0' if retroativo else '1' }}">
+        <button class="button" type="submit">{{ 'Desligar' if retroativo else 'Ligar' }}</button>
+      </form>{% endif %}</li>
+  </ul>
 </section>
 
 <div class="table-wrap">
@@ -64,8 +136,25 @@
       <td>{{ e.rotulo }}</td>
       <td>{{ e.data_status }}</td>
       <td class="small" style="white-space:pre-line">{{ e.descricao }}</td>
-      <td>{{ e.situacao|lower }}{% if e.ambiente %} ({{ e.ambiente|lower }}){% endif %}</td>
-      <td class="small">{{ e.ultimo_erro or e.motivo_fim or '' }}</td>
+      <td>{{ e.situacao|lower }}{% if e.ambiente %} ({{ e.ambiente|lower }}){% endif %}
+        {% if e.atrasado and not e.liberado_em and e.situacao == 'PENDENTE' %}<div class="small warning" data-trava="ATRASADO">atrasado, aguardando liberação</div>
+        {% elif e.liberado_em %}<div class="small muted">liberado por {{ e.liberado_por }} em {{ e.liberado_em[:16]|replace('T', ' ') }}</div>{% endif %}
+        {% if e.revisado_em %}<div class="small muted">revisada por {{ e.revisado_por }} em {{ e.revisado_em[:16]|replace('T', ' ') }}</div>{% endif %}</td>
+      <td class="small">{% if e.avaliacao and e.avaliacao.acao == 'ESPERA' and e.avaliacao.espera != 'ATRASADO' %}
+          <strong data-trava="{{ e.avaliacao.espera }}">{{ e.avaliacao.frase }}</strong>
+        {% elif e.avaliacao and e.avaliacao.acao == 'ANULA' %}<strong data-trava="ANULA">Sai como anulado: {{ e.avaliacao.frase }}</strong>
+        {% else %}{{ e.ultimo_erro or e.motivo_fim or '' }}{% endif %}
+        {% if user.role in ['ADMIN','MANAGER'] and e.situacao == 'PENDENTE' and e.evento == 'EXIGENCIA' and not e.revisado_em and not e.bloqueio and not texto_curto %}
+        <form method="post" action="{{ url_for('onr_acompanhamento_revisar', evento_id=e.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button" type="submit">Li o texto: marcar como revisada</button>
+        </form>{% endif %}
+        {% if user.role == 'ADMIN' and e.atrasado and not e.liberado_em and e.situacao == 'PENDENTE' %}
+        <form method="post" action="{{ url_for('onr_acompanhamento_liberar') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="protocolo_id" value="{{ e.protocolo_id }}">
+          <button class="button" type="submit">Liberar os atrasados deste título</button>
+        </form>{% endif %}</td>
       {% if user.role == 'ADMIN' %}
       <td>{% if e.situacao == 'PENDENTE' %}
         <form method="post" action="{{ url_for('onr_acompanhamento_descartar', evento_id=e.id) }}">

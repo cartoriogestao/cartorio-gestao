@@ -1058,6 +1058,26 @@ details.panel.tasks-nova-tarefa{margin-left:auto;margin-right:auto;max-width:960
 .dev-projetos-pendencia-cel { font-size: 0.9rem; max-width: 22rem; line-height: 1.35; }
 .dev-projetos-titulo-cel a { display: inline-block; }
 .dev-projetos-atualizado-cel { white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Projetos — fases, comprovantes e linha do tempo (S006, 26/11/2026) */
+.dev-projetos-filtros { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-end; margin: 0.5rem 0 0.75rem; }
+.dev-projetos-filtros label { min-width: 12rem; }
+.dev-projetos-codigo { display: inline-block; margin-right: 0.35rem; padding: 1px 6px; border-radius: 4px; background: #eef2f4; font-size: 0.8rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dev-projetos-progresso-cel { min-width: 8rem; }
+.dev-projetos-barra { height: 8px; max-width: 12rem; border-radius: 999px; background: #e7ecef; overflow: hidden; margin: 3px 0; }
+.dev-projetos-barra span { display: block; height: 100%; background: #2e7d32; }
+.dev-projetos-texto { white-space: pre-wrap; }
+.dev-projetos-fase { border: 1px solid var(--border, #ddd); border-left: 4px solid #90a4ae; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.75rem; }
+.dev-projetos-fase h3 { font-size: 15px; margin: 0 0 0.4rem; }
+.dev-projetos-fase-em_andamento { border-left-color: #1565c0; }
+.dev-projetos-fase-aguardando { border-left-color: #e65100; }
+.dev-projetos-fase-concluida { border-left-color: #2e7d32; }
+.dev-projetos-fase-dispensada { border-left-color: #b0bec5; opacity: 0.85; }
+.dev-projetos-fase-situacao { margin-left: 0.4rem; padding: 2px 8px; border-radius: 999px; background: #eef2f4; font-size: 11px; font-weight: 700; }
+.dev-projetos-comprovantes ul { margin: 0.3rem 0 0.5rem; padding-left: 1.1rem; }
+.dev-projetos-fase-acoes { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: flex-start; margin-top: 0.5rem; }
+.dev-projetos-fase-acoes details { flex: 1 1 18rem; }
+.dev-projetos-fase-acoes summary { font-size: 13px; font-weight: 600; cursor: pointer; }
+.dev-projetos-mover { display: inline; }
 /* ---- Produtividade rápida (botão global) ---- */
 .prod-rapida{position:fixed;right:18px;bottom:72px;z-index:910;font:inherit}
 .prod-rapida-btn{display:inline-flex;align-items:center;gap:8px;background:#0f3d56;color:#fff;border:0;border-radius:999px;padding:10px 16px;box-shadow:0 4px 14px rgba(15,61,86,.28);cursor:pointer;font-weight:600}

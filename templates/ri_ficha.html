@@ -1957,13 +1957,30 @@
                nenhum ato fica de pé sem selo, em atribuição nenhuma. Caixa
                que não leva a lugar nenhum é pior que caixa nenhuma. #}
           </form>
+          {# O QUADRO FICA ATÉ O SELO, e não só sem dono — T022, 26/11/2026: a
+             abertura de mais de um proprietário não tinha onde pôr o segundo.
+             Este ramo já é o da abertura sem selo; depois dele, trocar ou
+             acrescentar dono é por «Corrigir», com motivo escrito. #}
           {% set _abert2 = (partes or [])|selectattr('ato_id','none')|list %}
-          {% if not _abert2 %}
+          {% if not (m.selo_abertura_texto or '')|trim %}
           <form method="post" class="form-grid" style="padding:4px;margin-top:2px;border-top:1px dashed #bbb"
                 action="{{ url_for('ri_incluir_parte_abertura', matricula_id=m.id) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if _abert2 %}
+            <div class="span2"><strong>Acrescentar outro proprietário da abertura</strong>
+              <small class="muted"> — um por vez, antes de pedir o selo</small></div>
+            <div class="span2 small" data-donos-da-abertura>
+              <small class="muted">Já cadastrados:</small>
+              <ul style="margin:2px 0 4px 18px;padding:0">
+                {% for p in _abert2 %}
+                <li>{{ p.nome }}{% if p.documento_numero %} — {{ p.documento_tipo or '' }} {{ p.documento_numero }}{% endif %}{% if p.fracao %} — fração {{ p.fracao }}{% endif %}</li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% else %}
             <div class="span2"><strong>Cadastrar o proprietário da abertura</strong>
               <small class="muted"> — necessário antes de pedir o selo</small></div>
+            {% endif %}
             <label class="span2">Nome
               <input name="nome" required placeholder="nome completo" autocomplete="off"></label>
             <label>CPF ou CNPJ
@@ -1977,7 +1994,7 @@
                      placeholder="nacionalidade, estado civil, profissão, residência e domicílio"></label>
             <label>Fração do imóvel
               <input name="fracao" autocomplete="off" placeholder="opcional — 50%, 1/4"></label>
-            <div class="span2"><button class="primary">Cadastrar proprietário</button></div>
+            <div class="span2"><button class="primary">{{ 'Acrescentar proprietário' if _abert2 else 'Cadastrar proprietário' }}</button></div>
           </form>
           {% endif %}
 

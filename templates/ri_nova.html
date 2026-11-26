@@ -51,7 +51,7 @@
   {% set cg_passos = [('imovel', 'O imóvel'), ('descricao', 'Descrição')] + ([] if e_acervo else [('proprietario', 'Proprietário')]) + [('abertura', 'Abertura e teor')] %}
 {{ preparar(VERSION) }}
 <style>
-#form-do-ato:has([name=proprietario_nome]:placeholder-shown) .cg-gravar-falta{display:block}
+#form-do-ato:has([data-dono-primeiro] [name=proprietario_nome]:placeholder-shown) .cg-gravar-falta{display:block}
 </style>
 {% endif %}
 <section class="panel">
@@ -97,31 +97,71 @@
     {# PROPRIETARIO DA ABERTURA — 23/09/2026, pedido Beatriz (4018/4019).
        ri_selar_abertura exige ri_partes com ato_id IS NULL. A tela de nova
        matrícula não pedia dono; o painel Partes não deixa incluir à mão. #}
+    {# VÁRIOS PROPRIETÁRIOS — T022, 26/11/2026: a abertura cabia um dono só, e
+       não havia caminho para o segundo. Cada dono é um bloco, no desenho das
+       partes do ato (`_parte_do_ato.html`, `ri_partes_do_ato.js`): os nomes
+       se repetem, a rota os lê por `getlist` e casa os blocos pela posição.
+       O PRIMEIRO BLOCO VEM DO SERVIDOR e não tem «Remover»; o script clona o
+       `<template>` para os outros, e sem ele a tela continua com um dono.
+       O AVISO DA BARRA OLHA SÓ O PRIMEIRO NOME (`data-dono-primeiro`): um
+       segundo bloco em branco não é dono faltando. #}
     {% if not e_acervo %}
-    <label class="span2" data-passo="proprietario">Proprietário / titular da abertura
-      <span class="obrigatorio">— o selo da abertura exige</span>
-      <input name="proprietario_nome" value="{{ form.get('proprietario_nome','') }}"
-             placeholder="nome completo de quem figura como dono na abertura"
-             autocomplete="off">
-    </label>
-    <label data-passo="proprietario">CPF ou CNPJ do proprietário
-      <input name="proprietario_documento" value="{{ form.get('proprietario_documento','') }}"
-             placeholder="somente números ou com pontuação" autocomplete="off">
-    </label>
-    {# A QUALIFICAÇÃO DO PROPRIETÁRIO — LT03, 20/10/2026. Lei 6.015/1973, art.
-       176, § 1º, II, 4, e Código de Normas do MA, art. 479, I: nome,
-       nacionalidade, estado civil, profissão, domicílio. A ficha a imprime ao
-       lado do nome (`RI_FICHA`); sem este campo ela saía só com nome e CPF. #}
-    <label class="span2" data-passo="proprietario">Qualificação do proprietário
-      <input name="proprietario_qualificacao" value="{{ form.get('proprietario_qualificacao','') }}"
-             placeholder="nacionalidade, estado civil, profissão, residência e domicílio"
-             autocomplete="off">
-    </label>
+    {% macro dono_da_abertura(primeiro=false, nome='', doc='', qualificacao='', fracao='') -%}
+    <fieldset class="parte-do-ato" data-parte{% if primeiro %} data-dono-primeiro{% endif %}>
+      <legend>{{ 'Proprietário' if primeiro else 'Outro proprietário' }}</legend>
+      <label>Proprietário / titular da abertura
+        {% if primeiro %}<span class="obrigatorio">— o selo da abertura exige</span>{% endif %}
+        <input name="proprietario_nome" value="{{ nome }}"
+               placeholder="nome completo de quem figura como dono na abertura"
+               autocomplete="off">
+      </label>
+      <label>CPF ou CNPJ do proprietário
+        <input name="proprietario_documento" value="{{ doc }}"
+               placeholder="somente números ou com pontuação" autocomplete="off">
+      </label>
+      {# A FRAÇÃO, opcional, escrita como na ficha (05/11/2026, item f). #}
+      <label>Fração do imóvel
+        <input name="proprietario_fracao" value="{{ fracao }}"
+               placeholder="opcional — 50%, 1/4" autocomplete="off">
+      </label>
+      {# A QUALIFICAÇÃO DO PROPRIETÁRIO — LT03, 20/10/2026. Lei 6.015/1973, art.
+         176, § 1º, II, 4, e Código de Normas do MA, art. 479, I: nome,
+         nacionalidade, estado civil, profissão, domicílio. A ficha a imprime ao
+         lado do nome (`RI_FICHA`); sem este campo ela saía só com nome e CPF. #}
+      <label>Qualificação do proprietário
+        <input name="proprietario_qualificacao" value="{{ qualificacao }}"
+               placeholder="nacionalidade, estado civil, profissão, residência e domicílio"
+               autocomplete="off">
+      </label>
+      {% if not primeiro %}<button type="button" class="ghost" data-remover-parte hidden>Remover</button>{% endif %}
+    </fieldset>
+    {%- endmacro %}
+    {# O QUE VOLTA À TELA: o formulário recusado e o rascunho trazem as listas
+       (`getlist`); o que veio de arquivo é um dicionário, com um dono. #}
+    {% set _ln = form.getlist('proprietario_nome') if form.getlist is defined else [form.get('proprietario_nome', '')] %}
+    {% set _ld = form.getlist('proprietario_documento') if form.getlist is defined else [form.get('proprietario_documento', '')] %}
+    {% set _lq = form.getlist('proprietario_qualificacao') if form.getlist is defined else [form.get('proprietario_qualificacao', '')] %}
+    {% set _lf = form.getlist('proprietario_fracao') if form.getlist is defined else [form.get('proprietario_fracao', '')] %}
+    <section class="partes-do-ato span2" data-partes-do-ato data-passo="proprietario">
+      <div class="partes-cabeca">
+        <strong>Proprietários da abertura</strong>
+        <small class="muted">um bloco por dono · bloco em branco não é gravado</small>
+      </div>
+      {% for i in range([_ln|length, _ld|length, _lq|length, _lf|length, 1]|max) %}
+      {{ dono_da_abertura(loop.first, _ln[i] if i < _ln|length else '', _ld[i] if i < _ld|length else '',
+                          _lq[i] if i < _lq|length else '', _lf[i] if i < _lf|length else '') }}
+      {% endfor %}
+      <template data-modelo-parte>{{ dono_da_abertura() }}</template>
+      <div data-partes-vazias></div>
+      <button type="button" class="ghost" data-acrescentar-parte hidden>+ Acrescentar proprietário</button>
+    </section>
     <div class="notice small span2" data-passo="proprietario">
       Sem o proprietário cadastrado aqui, a matrícula nasce <strong>sem partes</strong>
       e o botão «Selar a abertura» (Identificação → Selar a abertura) recusa
-      pedindo o dono. O painel Partes da ficha <strong>não acrescenta</strong>
-      titular de abertura — ele só corrige o que já está no livro.
+      pedindo o dono. Havendo mais de um dono, acrescente um bloco para cada
+      um, com a fração. Até o selo da abertura, a ficha também acrescenta
+      proprietário (Identificação → Selar a abertura); depois dele, só por
+      «Corrigir», com motivo escrito.
     </div>
     {% endif %}
 

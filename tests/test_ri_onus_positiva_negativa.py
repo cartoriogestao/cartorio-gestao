@@ -157,6 +157,30 @@ def test_negativa_contra_a_ia_exige_justificativa_e_ela_fica():
     assert "AV-5" in d["onus_justificativa"]
 
 
+def test_marcar_onus_e_escolher_negativa_e_recusado():
+    """Caixas pré-marcadas escondidas pelo JS ainda iam no POST — a rota
+    recusa as duas coisas juntas. O quadro desabilita/desmarca ao Negativa."""
+    with pytest.raises(RONIA.OnusError, match="Marcou ônus para transcrever"):
+        _decidir(resultado_onus="NEGATIVA", sugestao=_sugestao(),
+                 marcados=["IA:1"],
+                 justificativa="hipoteca R-2 quitada e baixada pela AV-5")
+
+
+def test_ao_escolher_negativa_o_quadro_desliga_as_caixas_escondidas():
+    """Gerlany (26/11/2026): Negativa só escondia o bloco; as caixas pré-marcadas
+    (SISTEMA/IA) e a transcrição seguiam no POST. O JS desmarca, limpa e
+    `disabled` tira do envio; ao voltar a Positiva, a pré-marcação volta."""
+    js = (Path(__file__).resolve().parent.parent / "templates"
+          / "_onus_decisao.html").read_text(encoding="utf-8")
+    trecho = js[js.index("function camposDoBloco"):js.index("form.addEventListener('submit'")]
+    assert "el.disabled = true" in trecho
+    assert "el.checked = false" in trecho
+    assert "el.value = ''" in trecho
+    assert "el.dataset.preMarcado" in trecho
+    assert "el.dataset.guardado" in trecho
+    assert "onus_transcricao" in trecho and "acao_transcricao" in trecho
+
+
 def test_sugestao_de_antes_de_a_ficha_mudar_nao_conta():
     # vale=False: ato lavrado ou cancelado depois da leitura
     d = _decidir(sugestao=_sugestao(vale=False))

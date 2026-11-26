@@ -203,10 +203,35 @@
           acompanhar();
         }
 
+        // NEGATIVA esconde o bloco, mas caixas pré-marcadas (SISTEMA/IA) ainda
+        // iriam no POST e a rota recusa («Marcou ônus… e escolheu NEGATIVA»).
+        // `disabled` tira do envio; ao voltar a POSITIVA, a pré-marcação volta.
+        function camposDoBloco(b) {
+          return b.querySelectorAll('input[name=onus_item], textarea[name=onus_transcricao], textarea[name=acao_transcricao]');
+        }
         function atualizar() {
           campo.style.display = ehOnus() ? '' : 'none';
           Array.prototype.forEach.call(campo.querySelectorAll('[data-so-positiva]'), function (b) {
-            b.style.display = valor(b.dataset.soPositiva) === 'positiva' ? '' : 'none';
+            var positiva = valor(b.dataset.soPositiva) === 'positiva';
+            b.style.display = positiva ? '' : 'none';
+            Array.prototype.forEach.call(camposDoBloco(b), function (el) {
+              if (el.dataset.fixo === undefined) el.dataset.fixo = el.disabled ? '1' : '0';
+              if (!positiva) {
+                if (el.type === 'checkbox' && el.checked) el.dataset.preMarcado = '1';
+                if (el.tagName === 'TEXTAREA' && el.dataset.guardado === undefined) el.dataset.guardado = el.value;
+                if (el.type === 'checkbox') el.checked = false;
+                if (el.tagName === 'TEXTAREA') el.value = '';
+                el.disabled = true;
+              } else {
+                el.disabled = el.dataset.fixo === '1';
+                if (el.type === 'checkbox' && el.dataset.preMarcado === '1' && el.dataset.fixo !== '1') {
+                  el.checked = true; delete el.dataset.preMarcado;
+                }
+                if (el.tagName === 'TEXTAREA' && el.dataset.guardado !== undefined) {
+                  el.value = el.dataset.guardado; delete el.dataset.guardado;
+                }
+              }
+            });
           });
           var j = document.getElementById('onus-justificativa');
           var contra = (campo.dataset.iaSugeriuOnus === 'POSITIVA' && valor('resultado_onus') === 'negativa')

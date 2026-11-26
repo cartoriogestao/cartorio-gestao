@@ -209,6 +209,15 @@
   <p class="small muted">Não é rotina do dia a dia: o agente de compliance acompanha, e a cor da área continua contando.</p>
   {% elif ck.medido %}<p class="muted small">Nada de débito passado{% if ck.area %} em {{ areas[ck.area] }}{% endif %} na última conferência do gestor.</p>
   {% else %}<p class="muted small">Sem medição: não dá para dizer o que é débito passado.</p>{% endif %}
+  {% if ck.fora.AVISO %}
+  <h3>Rotina automática — aviso na tela <small class="muted">({{ ck.total_fora.AVISO }} achado(s))</small></h3>
+  <ul>
+    {% for x in ck.fora.AVISO %}
+    <li>{{ x.rotulo }} <code class="small">{{ x.regra }}</code> — {{ areas[x.area] }}, {{ x.n }} achado(s). <span class="small muted">{{ x.motivo }}.</span></li>
+    {% endfor %}
+  </ul>
+  <p class="small muted">O sistema faz esta rotina sozinho. Quando um elo para, a faixa do alto da tela avisa a TI, o gestor e o administrador; com tudo funcionando, não há o que conferir à mão.</p>
+  {% endif %}
   {% endif %}
 </section>
 {% if ver_retirados %}

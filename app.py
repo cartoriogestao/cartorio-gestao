@@ -3510,6 +3510,11 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     import cnib_web
     cnib_web.registrar_rotas(app, db, login_required, roles_required,
                              audit, fmt_date)
+    # AS CADEIAS AUTOMÁTICAS (A006): a faixa da TI, do gestor e do administrador
+    # quando o CNIB ou a carga da CENSEC param. Depois do CNIB: aponta para as
+    # telas dele e da automação.
+    import cadeias_automaticas_web
+    cadeias_automaticas_web.registrar_rotas(app, db, login_required, roles_required, audit)
 
     import caixa_web
     caixa_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)

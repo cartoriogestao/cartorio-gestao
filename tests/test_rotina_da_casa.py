@@ -404,6 +404,20 @@ def test_o_que_faltou_conta_e_se_marca_com_atraso(cg_casa):
     assert x["referencias_marcaveis"][0] == ("2026-11-12", "12/11 (sem registro)")
 
 
+def test_ate_hh_mm_nao_atrasa_no_dia_do_cadastro_feito_depois_da_hora(cg_casa):
+    # A carga em lote entra às 14h: o «até 09:00» de hoje não nasce atrasado; o de amanhã, sim.
+    db = cg_casa["db"]
+    rid = _criar(db, horario="até 09:00", agora=datetime(2026, 11, 12, 14, 0))
+    [x] = _do_dia(db, "2026-11-12", agora=datetime(2026, 11, 12, 15, 0))
+    assert x["situacao"] == RT.HOJE and not x["passou_da_hora"]
+    with db.transaction() as con:
+        r = RT.marcar_feito(con, rid, "2026-11-12", resultado="OK", observacao="", por="Fulano",
+                            usuario_id=None, agora=datetime(2026, 11, 12, 15, 30))
+    assert not r["com_atraso"]
+    [y] = _do_dia(db, "2026-11-13", agora=datetime(2026, 11, 13, 9, 1))
+    assert y["situacao"] == RT.ATRASADO and y["passou_da_hora"]
+
+
 def test_ate_hh_mm_atrasa_depois_da_hora(cg_casa):
     db = cg_casa["db"]
     rid = _criar(db, horario="até 09:00", agora=datetime(2026, 11, 12, 7, 0))

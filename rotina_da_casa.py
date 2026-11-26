@@ -654,6 +654,21 @@ def _vale_desde(item: Mapping) -> date | None:
     return _dia(item.get("vale_desde")) or _dia(item.get("criado_em"))
 
 
+def _hora_conta(item: Mapping, prazo: date, vale: date, limite: time | None) -> bool:
+    """O «até HH:MM» conta neste prazo? No dia em que o item passa a valer, só se ele
+    já valia antes dessa hora: o item cadastrado às 14h (a carga em lote, por exemplo)
+    não nasce atrasado no seu «até 09:00». O reativado no dia não tem hora: não conta."""
+    if not limite:
+        return False
+    if prazo > vale:
+        return True
+    try:
+        criado = datetime.fromisoformat(str(item.get("criado_em") or "")[:19])
+    except ValueError:
+        return False
+    return criado.date() == vale and criado.time() <= limite
+
+
 def criar(con, dados: Mapping, *, por: str, agora: datetime | None = None,
           endpoints: Collection[str] | None = None) -> int:
     """Cadastra o item. Devolve o id. Código repetido é recusado. Vale do dia do cadastro."""
@@ -1010,7 +1025,7 @@ def do_dia(con, hoje: date | str, *, area: str | None = None,
         feito = _feito_de(r, nominal, do_item)
         faltas = [nom for nom, _ in janela if not _feito_de(r, nom, do_item)]
         limite = limite_do_horario(r["horario"])
-        passou_da_hora = bool(limite and prazo == hoje and agora.date() == hoje
+        passou_da_hora = bool(prazo == hoje and agora.date() == hoje and _hora_conta(r, prazo, vale, limite)
                               and agora.time() > limite)
         if feito:
             situacao = FEITO
@@ -1106,7 +1121,8 @@ def marcar_feito(con, rotina_id: int, referencia: str, *, resultado: str, observ
                 (int(rotina_id), faixa[0].isoformat(), faixa[1].isoformat())) if faixa else None)
     prazo = marcaveis[ref]
     limite = limite_do_horario(item["horario"])
-    com_atraso = hoje > prazo or bool(limite and hoje == prazo and agora.time() > limite)
+    com_atraso = hoje > prazo or bool(hoje == prazo and _hora_conta(item, prazo, vale, limite)
+                                      and agora.time() > limite)
     novo = []
     if not ja:
         novo = bd.escrever(

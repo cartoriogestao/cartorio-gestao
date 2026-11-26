@@ -881,6 +881,8 @@
         <a href="{{ url_for('caixa') }}">Entrada de caixa</a>
         <a href="{{ url_for('caixa_protocolos') }}">Protocolo geral</a>
         <a href="{{ url_for('at_meu_trabalho') }}">Meu trabalho</a>
+        {# MINHA ROTINA (26/11/2026): a rotina da serventia de quem está logado. #}
+        <a href="{{ url_for('rotina_minha') }}">Minha rotina</a>
         <a href="{{ url_for('at_lista') }}" title="Atendimentos - protocolo geral">Atendimentos</a>
         <a href="{{ url_for('tr_inicio') }}">Treinamento</a>
         <a href="{{ url_for('tr_trilha',trilha='primeiro-dia') }}">Primeiro dia</a>
@@ -947,6 +949,8 @@
         {# A CHECKLIST DE GESTÃO DO DIA (19/11/2026): os achados abertos por
            área do semáforo e as conferências de hoje. #}
         {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('gestor_checklist') }}">Checklist de gestão do dia</a>{% endif %}
+        {# A ROTINA DA SERVENTIA (26/11/2026): o cadastro que a checklist mostra. #}
+        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('rotina_cadastro') }}">Rotina da serventia</a>{% endif %}
         <a href="{{ url_for('gestor_envios') }}">Envios às Centrais</a>
         <a href="{{ url_for('gestor_leituras') }}">Leitura dos textos (IA)</a>
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('gestor_caixas') }}">Caixas para o visto</a>{% endif %}

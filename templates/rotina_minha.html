@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{# MINHA ROTINA (26/11/2026, `rotina_da_casa_web.rotina_minha`): o que a
+   pessoa logada tem para hoje e o atrasado na rotina da serventia, como
+   responsável ou suplente, com o «Como fazer» e o «Feito» — e, embaixo, toda
+   a rotina dela com o próximo vencimento. Para todos os papéis. #}
+{% from '_rotina.html' import lista, como_fazer, dia with context %}
+{% block title %}Minha rotina{% endblock %}
+{% block heading %}<h1>Minha rotina</h1>{% endblock %}
+{% block content %}
+<section class="panel">
+  <p>A <strong>rotina da serventia</strong> de que você é <strong>responsável</strong> ou
+  <strong>suplente</strong>: o que vence hoje e o que ficou atrasado. Abra <strong>Como fazer</strong>
+  para ver o passo a passo, onde se faz, como saber que ficou pronto e o que fazer se der errado.
+  Quando terminar, clique em <strong>Feito</strong> e diga como foi.</p>
+  <p class="small muted">O suplente cobre o responsável na falta dele: o item aparece para os dois, e o primeiro
+  que registrar o «feito» fica registrado.{% if so_ve %} O seu papel confere e não registra «feito».{% endif %}</p>
+</section>
+
+<section class="panel" id="rotina">
+  <div class="panel-head"><h2>Para hoje e atrasados ({{ itens|length }})</h2>
+    <span class="small muted">{{ hoje[8:10] }}/{{ hoje[5:7] }}/{{ hoje[:4] }}</span></div>
+  {% if erro %}
+  <div class="notice critical">Não deu para ler a sua rotina: {{ erro }}. Isto não quer dizer que não há nada para hoje.</div>
+  {% elif not itens %}
+  <p class="muted">{% if toda %}Nada da sua rotina vence hoje nem está atrasado.{% else %}Você não responde por nenhuma rotina da serventia.{% endif %}</p>
+  {% else %}
+  {{ lista(itens, 'minha', '') }}
+  {% endif %}
+</section>
+
+{% if toda %}
+<section class="panel" id="toda">
+  <div class="panel-head"><h2>Toda a minha rotina ({{ toda|length }})</h2></div>
+  <div class="table-wrap">
+  <table>
+    <tr><th>O que fazer</th><th>Área</th><th>Quando</th><th>Você é</th><th>Próximo vencimento</th></tr>
+    {% for r in toda %}
+    <tr>
+      <td><strong>{{ r.titulo }}</strong>{{ como_fazer(r) }}</td>
+      <td class="small">{{ r.area_rotulo }}</td>
+      <td class="small">{{ r.quando }}</td>
+      <td class="small">{{ r.sou }}</td>
+      <td class="small">{% if r.proximo %}{{ dia(r.proximo) }}/{{ r.proximo[:4] }}{% else %}<span class="muted">—</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

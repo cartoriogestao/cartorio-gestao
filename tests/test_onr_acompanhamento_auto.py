@@ -207,6 +207,8 @@ def test_um_registrado_por_protocolo_ato_e_matricula(con, pasta):
     assert linhas[78]["situacao"] == "ENVIADO" and linhas[79]["situacao"] == "ENVIADO"
     assert linhas[80]["situacao"] == "ANULADO" and "repete" in linhas[80]["motivo_fim"]
     assert len(onr.de("InsertStatusAT")) == 2
+    # a medida está na tela da fila
+    assert A.painel(con, amb=W.HOMOLOGACAO)["repetidos"]["repetidos"] == 0   # já anulados
 
 
 def test_ato_cancelado_continua_anulado(con, pasta):

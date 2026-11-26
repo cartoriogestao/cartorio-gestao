@@ -1321,7 +1321,14 @@ def painel(con, *, todos: bool = False, limite: int = 300, amb: str | None = Non
         contagem[linha["situacao"]] = int(linha["n"])
     atrasados = int(bd.valor("""SELECT COUNT(*) FROM onr_at_eventos WHERE situacao='PENDENTE'
                                  AND atrasado=1 AND liberado_em IS NULL""") or 0)
+    try:
+        with bd.ponto_de_retorno("onr_repetidos"):
+            repetidos = registros_repetidos(con)
+    except Exception:                                   # noqa: BLE001 — medida da tela
+        LOG.exception("Acompanhamento do ONR: não deu para medir os registros repetidos")
+        repetidos = None
     return {"eventos": eventos, "contagem": contagem, "atrasados": atrasados,
+            "repetidos": repetidos,
             "auto_desde": _setting(bd, CHAVE_AUTO_DESDE, ""),
             "texto_curto": texto_curto_ligado(bd),
             "retroativo": _setting(bd, CHAVE_RETROATIVO, "0") == "1",

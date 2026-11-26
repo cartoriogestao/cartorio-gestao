@@ -82,6 +82,13 @@
   </form>
   {% endif %}</p>
 
+  {% if repetidos and repetidos.registrados %}
+  <p class="small">«Título registrado» na fila e já enviados: {{ repetidos.registrados }} —
+    {{ repetidos.unicos }} por ato e matrícula; <strong>{{ repetidos.repetidos }} repetem</strong> um
+    anterior e saem como anulados (um andamento por protocolo, ato e matrícula);
+    {{ repetidos.anulariam }} são de ato desfeito ou cancelado.</p>
+  {% endif %}
+
   {% if precisam_de_decisao %}
   <h3>Precisam de decisão ({{ precisam_de_decisao|length }})</h3>
   <p class="small">Títulos que ainda não estão no ONR e cuja fila não tem o «prenotado» (a

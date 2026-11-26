@@ -125,7 +125,8 @@
   <h3>{{ rotina_areas[area] }}
     <small class="muted">{{ lista|selectattr('situacao', 'equalto', 'ATRASADO')|list|length }} atrasado(s),
       {{ lista|rejectattr('situacao', 'in', ['ATRASADO', 'FEITO'])|list|length }} a fazer,
-      {{ lista|selectattr('situacao', 'equalto', 'FEITO')|list|length }} feito(s)</small></h3>
+      {{ lista|selectattr('situacao', 'equalto', 'FEITO')|list|length }} feito(s){% set faltas = lista|sum(attribute='n_sem_registro') %}{% if faltas %},
+      <strong>{{ faltas }} sem registro</strong> nos últimos 30 dias{% endif %}</small></h3>
   {{ lista_da_rotina(lista, 'checklist', ck.area) }}
   {% endfor %}
   {% endif %}

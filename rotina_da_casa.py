@@ -20,43 +20,63 @@ O QUE É, E O QUE NÃO É (G007, 25/11/2026)
     leigo: para que serve, o passo a passo, onde se faz, como saber que ficou
     pronto, o que fazer se der errado, a prova a guardar e a base legal.
 
-QUANDO VENCE (`vencimentos`)
+QUANDO VENCE (`ocorrencias`)
     DIARIA      todo dia útil.
     SEMANAL     nos dias da semana de `dias_semana` (ISO: 1 = segunda … 7 = domingo).
     QUINZENAL   nos dois dias do mês de `dias_mes` ('5,20').
     MENSAL      nos dias de `dias_mes`, OU no Nº dia útil `dia_util` do mês
                 (negativo conta do fim: -1 é o último dia útil).
     TRIMESTRAL, SEMESTRAL, ANUAL
-                nos meses de `meses` (4, 2 e 1 deles), no dia de `dias_mes` ou
-                no Nº dia útil `dia_util`.
-    O dia certo do mês (ou da semana) que cai em sábado, domingo ou feriado
-    passa para o dia útil seguinte, como o prazo; o dia 31 em mês de 30 dias
-    vale o último dia do mês, e o 20º dia útil num mês que tem 19 vale o
-    último. O calendário é o da casa: os feriados nacionais (`ri_schema`) e
-    os locais de Configurações (`ri_feriados_locais`), os mesmos do RI, do
-    Protesto e do gestor. O campo que não é da periodicidade escolhida fica
-    vazio (o «semanal» não guarda dia do mês).
+                nos meses de `meses` (um em cada trimestre, um em cada semestre,
+                um só), no dia de `dias_mes` ou no Nº dia útil `dia_util`.
+    Cada vencimento tem duas datas. A NOMINAL é a da regra (a sexta, o dia
+    30); é ela que o «feito» guarda em `referencia`, e por isso dois
+    vencimentos nunca viram um. O PRAZO é a nominal levada ao dia útil
+    seguinte quando cai em sábado, domingo ou feriado, como o prazo legal; é
+    por ele que o item aparece e atrasa. O dia 31 em mês de 30 dias vale o
+    último dia do mês, e o 20º dia útil num mês que tem 19 vale o último. O
+    calendário é o da casa: os feriados nacionais (`ri_schema`) e os locais
+    de Configurações (`ri_feriados_locais`), os mesmos do RI, do Protesto e do
+    gestor. O campo que não é da periodicidade escolhida fica vazio.
+
+UM «FEITO» POR PERÍODO
+    Na rotina de um vencimento por período — a mensal de um dia só, a
+    trimestral, a semestral e a anual — o «feito» vale pelo PERÍODO (o mês,
+    o trimestre, o semestre, o ano) da sua data nominal. Trocar o dia do item
+    ou cadastrar um feriado novo não solta o feito já registrado. Nas outras
+    (diária, semanal, quinzenal, mensal de vários dias) vale a data nominal.
+
+VALE DESDE O CADASTRO (`vale_desde`)
+    O item cobra só os vencimentos cujo prazo é do dia em que passou a valer
+    em diante: o dia do cadastro, ou o da reativação (o tempo desativado não
+    se cobra). A Conferência é para a rotina do dia, e não para débito
+    passado: o anual de fevereiro cadastrado em novembro aparece no próximo
+    fevereiro, e o cadastro mostra quando.
 
 O QUE APARECE NO DIA (`do_dia`)
-    Cada item ativo aparece desde o seu último vencimento até alguém marcar
-    «Feito» para ele: no dia em que vence, «a fazer»; depois, «atrasado desde
-    dd/mm». O «feito» fica à vista no dia em que foi registrado; o «feito com
-    pendência» fica até o vencimento seguinte, para a pendência não sumir
-    calada. O vencimento anterior ao cadastro do item não acusa atraso: o
-    item aparece «a fazer» (o deste período), e não «atrasado».
+    Cada item ativo aparece desde o vencimento atual (o último cujo prazo já
+    chegou) até alguém marcar «Feito»: no dia, «a fazer hoje»; depois,
+    «atrasado desde dd/mm». Com horário exatamente «até HH:MM», no dia do
+    prazo ele atrasa depois dessa hora. O que faltou não some: o item conta
+    «N sem registro desde dd/mm» — os vencimentos sem «feito» dos últimos
+    `JANELA_DAS_FALTAS` dias, nunca antes de `vale_desde` — e eles também se
+    marcam, com atraso. O «feito» fica à vista no dia em que foi registrado;
+    o «feito com pendência», até o vencimento seguinte.
 
 «FEITO» (`marcar_feito`)
     Grava quem, quando, o resultado (OK, com pendência, não se aplica) e a
-    observação, que é obrigatória fora do OK. O primeiro registro de cada
-    vencimento fica, como o «conferido hoje»: o segundo clique só é avisado de
-    quem já registrou. Marca o responsável, o suplente, o oficial e o gerente;
-    o auditor vê e não grava (M2). A prova em arquivo vai em `attachments`.
+    observação, que é obrigatória fora do OK; e o prazo, e se veio depois
+    dele («registrado com atraso»). Aceita só o vencimento atual e os sem
+    registro da janela. O primeiro registro de cada vencimento (ou período)
+    fica, como o «conferido hoje». Marca o responsável, o suplente, o oficial
+    e o gerente; o auditor vê e não grava (M2), nem responde por rotina.
 
-A CARGA EM LOTE (`importar`)
+A CARGA EM LOTE (`importar`, `importar_e_auditar`)
     É a porta do agente 11: idempotente pelo `codigo`. Cria o que falta,
-    atualiza o que mudou e diz o que já estava igual; o responsável e o
-    suplente chegam como LOGIN. Ou entra tudo, ou nada: um item com defeito
-    devolve todos os defeitos e não grava nenhum.
+    atualiza o que mudou, diz o que já estava igual e devolve à parte o que
+    está desativado (sem mexer nele nem reativá-lo); o responsável e o
+    suplente chegam como LOGIN. Ou entra tudo, ou nada. `importar_e_auditar`
+    abre a transação e grava a auditoria de cada item.
 
 SÓ DOMÍNIO
     Nada aqui conhece o Flask: a rota (`rotina_da_casa_web`) liga os fios e
@@ -65,8 +85,8 @@ SÓ DOMÍNIO
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timedelta
-from typing import Any, Iterable, Mapping
+from datetime import date, datetime, time, timedelta
+from typing import Any, Collection, Iterable, Mapping
 
 import conformidade as CF
 from bd_nativo import banco
@@ -87,8 +107,10 @@ PERIODICIDADES: tuple[tuple[str, str], ...] = (
     ("MENSAL", "Mensal"), ("TRIMESTRAL", "Trimestral"), ("SEMESTRAL", "Semestral"),
     ("ANUAL", "Anual"))
 ROTULO_DA_PERIODICIDADE = dict(PERIODICIDADES)
-#: Quantos meses do ano cada periodicidade «de meses» escolhe.
+#: Quantos meses do ano cada periodicidade «de meses» escolhe — um por fatia do ano.
 MESES_DA_PERIODICIDADE = {"TRIMESTRAL": 4, "SEMESTRAL": 2, "ANUAL": 1}
+#: De quantos em quantos meses é a fatia do ano de cada uma.
+_FATIA_EM_MESES = {"MENSAL": 1, "TRIMESTRAL": 3, "SEMESTRAL": 6, "ANUAL": 12}
 
 OK, COM_PENDENCIA, NAO_SE_APLICA = "OK", "COM_PENDENCIA", "NAO_SE_APLICA"
 RESULTADOS: tuple[tuple[str, str], ...] = (
@@ -108,8 +130,10 @@ NOMES_DOS_MESES: tuple[tuple[int, str], ...] = (
     (11, "novembro"), (12, "dezembro"))
 
 #: A situação do item no dia, na ordem da tela.
-ATRASADO, HOJE, DESDE_O_CADASTRO, FEITO = "ATRASADO", "HOJE", "DESDE_O_CADASTRO", "FEITO"
-ORDEM_DA_SITUACAO = (ATRASADO, HOJE, DESDE_O_CADASTRO, FEITO)
+ATRASADO, HOJE, FEITO = "ATRASADO", "HOJE", "FEITO"
+ORDEM_DA_SITUACAO = (ATRASADO, HOJE, FEITO)
+#: Só por compatibilidade: com `vale_desde`, nenhum item sai mais nesta situação.
+DESDE_O_CADASTRO = "DESDE_O_CADASTRO"
 
 #: Quem cadastra, edita, desativa e reativa (o TI passa como o ADMIN, `papeis`).
 QUEM_CADASTRA = ("ADMIN", "MANAGER")
@@ -117,11 +141,13 @@ QUEM_CADASTRA = ("ADMIN", "MANAGER")
 QUEM_VE_O_CADASTRO = ("ADMIN", "MANAGER", "AUDITOR")
 #: Quem marca «feito» em qualquer item; os outros, só no item de que respondem.
 QUEM_MARCA_TUDO = ("ADMIN", "MANAGER")
-#: Quem nunca marca, nem no item em que está como responsável.
+#: Quem nunca marca, nem responde por rotina.
 QUEM_SO_VE = ("AUDITOR",)
 
-#: Até onde se procura o último vencimento: um ano e um pouco (o anual).
+#: Até onde se procura o vencimento atual e o próximo: um ano e um pouco (o anual).
 JANELA_DIAS = 400
+#: Até quantos dias atrás se contam (e se marcam) os vencimentos sem registro.
+JANELA_DAS_FALTAS = 30
 
 MOTIVO_MINIMO, MOTIVO_MAXIMO = 3, 300
 OBSERVACAO_MINIMA, OBSERVACAO_MAXIMA = 3, 1000
@@ -130,6 +156,8 @@ TITULO_MAXIMO, TEXTO_MAXIMO = 200, 8000
 _CODIGO = re.compile(r"^[A-Z0-9][A-Z0-9_.\-]{1,59}$")
 _ENDPOINT = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,99}$")
 _NUMERACAO = re.compile(r"^\s*(?:\d{1,2}\s*[.)º°-]|[-•*])\s+")
+#: O horário que o sistema entende: exatamente «até HH:MM». O resto é texto livre.
+_ATE_HORA = re.compile(r"^até (\d{1,2}):(\d{2})$", re.IGNORECASE)
 
 #: Os campos do cadastro, na ordem do formulário.
 CAMPOS = ("codigo", "area", "titulo", "para_que", "como_fazer", "pronto_quando",
@@ -219,25 +247,31 @@ def _dia(valor: Any) -> date | None:
         return None
 
 
-def vencimentos(item: Mapping, de: date, ate: date, *,
-                feriados: set[date] | None = None) -> list[date]:
-    """Os dias em que o item vence entre `de` e `ate`, inclusive. Só calcula.
+def _dia_util_do_item(item: Mapping) -> int | None:
+    bruto = item.get("dia_util")
+    return int(bruto) if bruto not in (None, "") else None
 
-    `item` é a linha do cadastro (ou o dict normalizado): `periodicidade`,
-    `dias_semana`, `dias_mes`, `dia_util` e `meses`. `feriados` são os locais
-    (os nacionais `eh_dia_util` já conhece).
+
+def ocorrencias(item: Mapping, de: date, ate: date, *,
+                feriados: set[date] | None = None) -> list[tuple[date, date]]:
+    """Os vencimentos do item cujo PRAZO cai entre `de` e `ate`, inclusive. Só calcula.
+
+    Devolve [(nominal, prazo)], na ordem do prazo (e da nominal). A nominal é a
+    data da regra; o prazo, a nominal levada ao dia útil seguinte. Dois
+    vencimentos podem ter o mesmo prazo (a sexta feriado cai na segunda, que
+    também vence): são dois, e cada um pede o seu «feito».
     """
     feriados = feriados or set()
     de, ate = _dia(de), _dia(ate)
     if de is None or ate is None or ate < de:
         return []
     periodicidade = str(item.get("periodicidade") or "").upper()
-    achados: set[date] = set()
+    achados: set[tuple[date, date]] = set()
     if periodicidade == "DIARIA":
         dia = de
         while dia <= ate:
             if eh_dia_util(dia, feriados):
-                achados.add(dia)
+                achados.add((dia, dia))
             dia += timedelta(days=1)
     elif periodicidade == "SEMANAL":
         semana = set(_numeros(item.get("dias_semana")))
@@ -245,14 +279,13 @@ def vencimentos(item: Mapping, de: date, ate: date, *,
         dia = de - timedelta(days=15)
         while dia <= ate:
             if dia.isoweekday() in semana:
-                achados.add(_util_a_partir(dia, feriados))
+                achados.add((dia, _util_a_partir(dia, feriados)))
             dia += timedelta(days=1)
     elif periodicidade in ("QUINZENAL", "MENSAL") or periodicidade in MESES_DA_PERIODICIDADE:
         meses = (set(range(1, 13)) if periodicidade in ("QUINZENAL", "MENSAL")
                  else set(_numeros(item.get("meses"))))
         dias = _numeros(item.get("dias_mes"))
-        dia_util = item.get("dia_util")
-        dia_util = int(dia_util) if dia_util not in (None, "") else None
+        dia_util = _dia_util_do_item(item)
         inicio = de - timedelta(days=40)
         ano, mes = inicio.year, inicio.month
         while (ano, mes) <= (ate.year, ate.month):
@@ -260,38 +293,84 @@ def vencimentos(item: Mapping, de: date, ate: date, *,
                 if dia_util:
                     certo = _n_esimo_dia_util(ano, mes, dia_util, feriados)
                     if certo:
-                        achados.add(certo)
+                        achados.add((certo, certo))
                 else:
                     ultimo = _ultimo_dia_do_mes(ano, mes)
                     for d in dias:
-                        achados.add(_util_a_partir(date(ano, mes, min(d, ultimo)), feriados))
+                        nominal = date(ano, mes, min(d, ultimo))
+                        achados.add((nominal, _util_a_partir(nominal, feriados)))
             ano, mes = (ano + 1, 1) if mes == 12 else (ano, mes + 1)
-    return sorted(d for d in achados if de <= d <= ate)
+    return sorted((o for o in achados if de <= o[1] <= ate), key=lambda o: (o[1], o[0]))
 
 
-#: As janelas em que se procura o vencimento, da menor para a maior: o diário
-#: acha na primeira, e só o anual precisa da última.
-_JANELAS = (10, 45, JANELA_DIAS)
+def vencimentos(item: Mapping, de: date, ate: date, *,
+                feriados: set[date] | None = None) -> list[date]:
+    """Os PRAZOS em que o item vence entre `de` e `ate` (sem repetir). Só calcula."""
+    return sorted({prazo for _, prazo in ocorrencias(item, de, ate, feriados=feriados)})
 
 
-def ultimo_vencimento(item: Mapping, hoje: date, *, feriados: set[date] | None = None) -> date | None:
-    """O vencimento mais recente até hoje, inclusive. Só calcula."""
+def ocorrencia_atual(item: Mapping, hoje: date, *, feriados: set[date] | None = None,
+                     desde: date | None = None) -> tuple[date, date] | None:
+    """O vencimento atual: o último cujo prazo já chegou (e não é anterior a
+    `desde`). (nominal, prazo), ou None. Só calcula."""
     hoje = _dia(hoje)
-    for janela in _JANELAS:
-        lista = vencimentos(item, hoje - timedelta(days=janela), hoje, feriados=feriados)
+    desde = _dia(desde)
+    for janela in (10, 45, JANELA_DIAS):
+        inicio = hoje - timedelta(days=janela)
+        if desde and inicio < desde:
+            inicio = desde
+        lista = ocorrencias(item, inicio, hoje, feriados=feriados)
         if lista:
             return lista[-1]
+        if desde and inicio == desde:
+            return None
     return None
 
 
-def proximo_vencimento(item: Mapping, hoje: date, *, feriados: set[date] | None = None) -> date | None:
-    """O próximo vencimento a partir de hoje, inclusive. Só calcula."""
+def proxima_ocorrencia(item: Mapping, hoje: date, *, feriados: set[date] | None = None,
+                       desde: date | None = None) -> tuple[date, date] | None:
+    """O próximo vencimento, de hoje (e de `desde`) em diante. Só calcula."""
     hoje = _dia(hoje)
-    for janela in _JANELAS:
-        lista = vencimentos(item, hoje, hoje + timedelta(days=janela), feriados=feriados)
+    inicio = max(hoje, _dia(desde) or hoje)
+    for janela in (10, 45, JANELA_DIAS):
+        lista = ocorrencias(item, inicio, inicio + timedelta(days=janela), feriados=feriados)
         if lista:
             return lista[0]
     return None
+
+
+def por_periodo(item: Mapping) -> bool:
+    """O «feito» deste item vale pelo período? (um vencimento por mês, trimestre,
+    semestre ou ano). Só calcula."""
+    periodicidade = str(item.get("periodicidade") or "").upper()
+    if periodicidade in MESES_DA_PERIODICIDADE:
+        return True
+    if periodicidade == "MENSAL":
+        return bool(_dia_util_do_item(item)) or len(_numeros(item.get("dias_mes"))) == 1
+    return False
+
+
+def periodo(item: Mapping, nominal: date) -> tuple[date, date] | None:
+    """O período (primeiro e último dia) a que a data nominal pertence, no item
+    de um vencimento por período; None nos outros. Só calcula."""
+    if not por_periodo(item):
+        return None
+    fatia = _FATIA_EM_MESES[str(item.get("periodicidade")).upper()]
+    primeiro_mes = ((nominal.month - 1) // fatia) * fatia + 1
+    ultimo_mes = primeiro_mes + fatia - 1
+    return (date(nominal.year, primeiro_mes, 1),
+            date(nominal.year, ultimo_mes, _ultimo_dia_do_mes(nominal.year, ultimo_mes)))
+
+
+def limite_do_horario(horario: Any) -> time | None:
+    """A hora de «até HH:MM» (exatamente assim), ou None. Só calcula."""
+    achado = _ATE_HORA.match(" ".join(str(horario or "").split()))
+    if not achado:
+        return None
+    hora, minuto = int(achado.group(1)), int(achado.group(2))
+    if hora > 23 or minuto > 59:
+        return None
+    return time(hora, minuto)
 
 
 def _ordinal(n: int) -> str:
@@ -320,8 +399,7 @@ def descrever_quando(item: Mapping) -> str:
     dias_semana = dict(DIAS_DA_SEMANA)
     nomes_meses = dict(NOMES_DOS_MESES)
     dias = _numeros(item.get("dias_mes"))
-    dia_util = item.get("dia_util")
-    dia_util = int(dia_util) if dia_util not in (None, "") else None
+    dia_util = _dia_util_do_item(item)
     if dia_util:
         no_dia = _do_dia_util(dia_util)
     elif dias:
@@ -437,7 +515,7 @@ def normalizar(dados: Mapping) -> dict:
                          "com https:// (ex.: o portal da Central).")
     n["onde_url"] = url
     horario = _uma_linha(dados.get("horario")) or None
-    if horario and len(horario) > 40:
+    if horario and len(horario) > 80:
         problemas.append("O horário é curto (ex.: «até 09:00»).")
     n["horario"] = horario
 
@@ -469,10 +547,16 @@ def normalizar(dados: Mapping) -> dict:
                              "Nº dia útil (ex.: 5, ou -1 para o último).")
         n["dias_mes"], n["dia_util"] = dias_mes, dia_util
         if per in MESES_DA_PERIODICIDADE:
-            quantos = MESES_DA_PERIODICIDADE[per]
-            if not meses or len(meses.split(",")) != quantos:
+            quantos, fatia = MESES_DA_PERIODICIDADE[per], _FATIA_EM_MESES[per]
+            lista = _numeros(meses) if meses else []
+            if len(lista) != quantos:
                 problemas.append(f"Na rotina {ROTULO_DA_PERIODICIDADE[per].lower()}, marque "
                                  f"{quantos} {'mês' if quantos == 1 else 'meses'} do ano.")
+            elif len({(m - 1) // fatia for m in lista}) != quantos:
+                fatia_nome = "trimestre" if per == "TRIMESTRAL" else "semestre"
+                problemas.append(f"Na rotina {ROTULO_DA_PERIODICIDADE[per].lower()}, marque um mês "
+                                 f"em cada {fatia_nome} (ex.: "
+                                 f"{'janeiro, abril, julho e outubro' if per == 'TRIMESTRAL' else 'junho e dezembro'}).")
             n["meses"] = meses
 
     for campo in ("responsavel_id", "suplente_id"):
@@ -493,20 +577,26 @@ def normalizar(dados: Mapping) -> dict:
 
 def _pessoa(con, *, uid: int | None = None, login: str | None = None) -> dict | None:
     bd = banco(con)
+    colunas = ("SELECT id, username, full_name, role, active, COALESCE(eh_robo, 0) AS eh_robo "
+               "FROM users WHERE ")
     if uid is not None:
-        return bd.um("SELECT id, username, full_name, active, COALESCE(eh_robo, 0) AS eh_robo "
-                     "FROM users WHERE id = %s", (uid,))
-    return bd.um("SELECT id, username, full_name, active, COALESCE(eh_robo, 0) AS eh_robo "
-                 "FROM users WHERE username = %s", (login,))
+        return bd.um(colunas + "id = %s", (uid,))
+    return bd.um(colunas + "username = %s", (login,))
 
 
 def _conferir_pessoa(linha: dict | None, quem: str, papel: str) -> str | None:
+    """A frase da recusa da pessoa como responsável ou suplente, ou None. Só calcula."""
+    rotulo = papel.capitalize()
     if not linha:
-        return f"{papel.capitalize()}: {quem} não existe."
+        return f"{rotulo}: {quem} não existe."
+    nome = linha.get("full_name") or quem
     if not int(linha["active"] or 0):
-        return f"{papel.capitalize()}: {quem} está inativo."
+        return f"{rotulo}: {nome} está inativo; escolha outra pessoa."
     if int(linha["eh_robo"] or 0):
-        return f"{papel.capitalize()}: {quem} é conta de robô; a rotina é de uma pessoa."
+        return f"{rotulo}: {nome} é conta de robô; a rotina é de uma pessoa."
+    if str(linha.get("role") or "").upper() in QUEM_SO_VE:
+        return (f"{rotulo}: {nome} é auditor — o auditor confere e não faz rotina; "
+                "escolha outra pessoa.")
     return None
 
 
@@ -519,6 +609,16 @@ def _conferir_pessoas(con, n: dict) -> None:
                 problemas.append(erro)
     if problemas:
         raise RotinaError(problemas)
+
+
+def _conferir_tela(n: dict, endpoints: Collection[str] | None) -> str | None:
+    """Com a lista das telas da casa, a tela «onde fazer» tem de estar nela."""
+    if endpoints is None or not n.get("onde_endpoint"):
+        return None
+    if n["onde_endpoint"] not in endpoints:
+        return (f"A tela «{n['onde_endpoint']}» não existe no sistema: corrija «onde_endpoint» "
+                "ou deixe-o vazio e use «onde_url».")
+    return None
 
 
 # ------------------------------------------------------------------ o cadastro
@@ -550,16 +650,25 @@ def _ler(con, onde: str = "TRUE", parametros: tuple = ()) -> list[dict]:
              ORDER BY r.area, r.ordem, r.prioridade, r.titulo, r.id""", parametros)
 
 
-def criar(con, dados: Mapping, *, por: str, agora: datetime | None = None) -> int:
-    """Cadastra o item. Devolve o id. Código repetido é recusado."""
+def _vale_desde(item: Mapping) -> date | None:
+    return _dia(item.get("vale_desde")) or _dia(item.get("criado_em"))
+
+
+def criar(con, dados: Mapping, *, por: str, agora: datetime | None = None,
+          endpoints: Collection[str] | None = None) -> int:
+    """Cadastra o item. Devolve o id. Código repetido é recusado. Vale do dia do cadastro."""
+    agora = agora or datetime.now()
     n = normalizar(dados)
+    erro = _conferir_tela(n, endpoints)
+    if erro:
+        raise RotinaError(erro)
     _conferir_pessoas(con, n)
     bd = banco(con)
     if bd.um(f"SELECT id FROM {TABELA} WHERE codigo = %s", (n["codigo"],)):
         raise RotinaError(f"Já existe rotina com o código {n['codigo']}: escolha outro, ou "
                           "edite a que existe.")
-    colunas = list(CAMPOS) + ["criado_em", "criado_por"]
-    valores = [n[c] for c in CAMPOS] + [_agora(agora), por]
+    colunas = list(CAMPOS) + ["vale_desde", "criado_em", "criado_por"]
+    valores = [n[c] for c in CAMPOS] + [agora.date().isoformat(), _agora(agora), por]
     linhas = bd.escrever(
         f"INSERT INTO {TABELA} ({', '.join(colunas)}) VALUES "
         f"({', '.join(['%s'] * len(colunas))}) RETURNING id", tuple(valores))
@@ -573,7 +682,7 @@ def _o_que_mudou(atual: Mapping, novo: Mapping, campos: Iterable[str]) -> list[s
 
 
 def atualizar(con, rotina_id: int, dados: Mapping, *, por: str,
-              agora: datetime | None = None) -> list[str]:
+              agora: datetime | None = None, endpoints: Collection[str] | None = None) -> list[str]:
     """Muda o item. Devolve os campos que mudaram (vazio: nada mudou, nada grava).
 
     O que não vem em `dados` fica como está. O código não muda: é a chave da
@@ -590,6 +699,9 @@ def atualizar(con, rotina_id: int, dados: Mapping, *, por: str,
     junto.update({c: v for c, v in dados.items() if c in CAMPOS})
     junto["codigo"] = atual["codigo"]
     n = normalizar(junto)
+    erro = _conferir_tela(n, endpoints)
+    if erro:
+        raise RotinaError(erro)
     _conferir_pessoas(con, n)
     mudou = _o_que_mudou(atual, n, [c for c in CAMPOS if c != "codigo"])
     if not mudou:
@@ -622,20 +734,25 @@ def desativar(con, rotina_id: int, *, por: str, motivo: str,
 
 
 def reativar(con, rotina_id: int, *, por: str, agora: datetime | None = None) -> dict:
-    """Devolve o item à rotina. Devolve {gravou, codigo, motivo_anterior}."""
+    """Devolve o item à rotina, valendo de hoje: o tempo desativado não se cobra.
+    Devolve {gravou, codigo, motivo_anterior, vale_desde}."""
+    agora = agora or datetime.now()
     atual = uma(con, rotina_id)
     if not atual:
         raise RotinaError("Rotina não encontrada.")
     if int(atual["ativo"] or 0):
         return {"gravou": False, "codigo": atual["codigo"]}
     banco(con).escrever(
-        f"UPDATE {TABELA} SET ativo = 1, motivo_desativacao = NULL, atualizado_em = %s, "
-        f"atualizado_por = %s WHERE id = %s", (_agora(agora), por, int(rotina_id)))
+        f"UPDATE {TABELA} SET ativo = 1, motivo_desativacao = NULL, vale_desde = %s, "
+        f"atualizado_em = %s, atualizado_por = %s WHERE id = %s",
+        (agora.date().isoformat(), _agora(agora), por, int(rotina_id)))
     return {"gravou": True, "codigo": atual["codigo"],
-            "motivo_anterior": atual["motivo_desativacao"]}
+            "motivo_anterior": atual["motivo_desativacao"],
+            "vale_desde": agora.date().isoformat()}
 
 
-def importar(con, itens: list[dict], *, por: str, agora: datetime | None = None) -> dict:
+def importar(con, itens: list[dict], *, por: str, agora: datetime | None = None,
+             endpoints: Collection[str] | None = None) -> dict:
     """A carga em lote, idempotente pelo `codigo`. Ou grava tudo, ou nada.
 
     Cada item é um dict com os campos de `CAMPOS_DA_CARGA`: o responsável e o
@@ -643,17 +760,22 @@ def importar(con, itens: list[dict], *, por: str, agora: datetime | None = None)
     lista ou texto («1,3»), e o `como_fazer`, como lista de passos ou texto de
     um passo por linha. No item NOVO, o campo ausente vale o padrão; no item
     que JÁ EXISTE, só o que veio se compara e grava (para apagar, mande vazio).
-    Campo desconhecido, login inexistente ou inativo e código repetido no
-    lote são recusados — com todos os defeitos de uma vez, sem gravar nada.
+    O item que existe DESATIVADO não se mexe nem se reativa: vai para
+    `inativos`. Com `endpoints` (as telas que existem), `onde_endpoint` tem de
+    estar entre elas. Campo desconhecido, login inexistente, inativo, de robô
+    ou de auditor e código repetido no lote são recusados — com todos os
+    defeitos de uma vez, sem gravar nada.
 
     Devolve {"criados": [(codigo, id)], "atualizados": [(codigo, id)],
-    "iguais": [(codigo, id)], "campos": {codigo: [campos que mudaram]}}.
-    Quem chama grava a auditoria (ROTINA_CRIADA / ROTINA_ALTERADA).
+    "iguais": [(codigo, id)], "inativos": [(codigo, id)],
+    "campos": {codigo: [campos que mudaram]}}. A auditoria fica com quem
+    chama — ou use `importar_e_auditar`.
     """
     problemas: list[str] = []
     planos: list[tuple[str, dict, dict | None]] = []
     vistos: set[str] = set()
     logins: dict[str, int | None] = {}
+    bd = banco(con)
     for i, bruto in enumerate(itens or [], start=1):
         if not isinstance(bruto, Mapping):
             problemas.append(f"Item {i}: não é um registro (dict).")
@@ -690,7 +812,6 @@ def importar(con, itens: list[dict], *, por: str, agora: datetime | None = None)
                 continue
             dados[campo] = logins[login.lower()]
         atual = None
-        bd = banco(con)
         if codigo and bd.tem_tabela(TABELA):
             achado = bd.um(f"SELECT id FROM {TABELA} WHERE codigo = %s", (codigo,))
             atual = uma(con, achado["id"]) if achado else None
@@ -698,7 +819,11 @@ def importar(con, itens: list[dict], *, por: str, agora: datetime | None = None)
         junto.update(dados)
         try:
             n = normalizar(junto)
-            _conferir_pessoas(con, n)     # o responsável que já estava pode ter saído
+            erro = _conferir_tela(n, endpoints)
+            if erro:
+                raise RotinaError(erro)
+            if atual is None or int(atual["ativo"] or 0):
+                _conferir_pessoas(con, n)     # o responsável que já estava pode ter saído
         except RotinaError as erro:
             problemas.extend(f"{rotulo}: {p}" for p in erro.problemas)
             continue
@@ -706,10 +831,14 @@ def importar(con, itens: list[dict], *, por: str, agora: datetime | None = None)
     if problemas:
         raise RotinaError(problemas)
 
-    saida: dict[str, Any] = {"criados": [], "atualizados": [], "iguais": [], "campos": {}}
+    saida: dict[str, Any] = {"criados": [], "atualizados": [], "iguais": [], "inativos": [],
+                             "campos": {}}
     for codigo, n, atual in planos:
         if atual is None:
             saida["criados"].append((codigo, criar(con, n, por=por, agora=agora)))
+            continue
+        if not int(atual["ativo"] or 0):
+            saida["inativos"].append((codigo, int(atual["id"])))
             continue
         mudou = atualizar(con, atual["id"], n, por=por, agora=agora)
         if mudou:
@@ -718,6 +847,32 @@ def importar(con, itens: list[dict], *, por: str, agora: datetime | None = None)
         else:
             saida["iguais"].append((codigo, int(atual["id"])))
     return saida
+
+
+def importar_e_auditar(db, itens: list[dict], *, por: str, agente: str, a_mando_de: str,
+                       origem: str, endpoints: Collection[str] | None = None,
+                       agora: datetime | None = None) -> dict:
+    """A carga do agente: `importar` numa transação, e a auditoria de cada item.
+
+    Grava ROTINA_CRIADA e ROTINA_ALTERADA por `db.log`, sem usuário logado
+    (`agente` e `a_mando_de` dizem quem age e a mando de quem), com a origem
+    da carga, o código, o título, a área, a periodicidade e, na alteração, os
+    campos. A auditoria vem depois do COMMIT (`db.log` abre a sua conexão).
+    Devolve o mesmo dicionário de `importar`.
+    """
+    with db.transaction() as con:
+        resultado = importar(con, itens, por=por, agora=agora, endpoints=endpoints)
+        linhas = {rid: uma(con, rid)
+                  for _, rid in resultado["criados"] + resultado["atualizados"]}
+    for acao, chave in (("ROTINA_CRIADA", "criados"), ("ROTINA_ALTERADA", "atualizados")):
+        for codigo, rid in resultado[chave]:
+            linha = linhas.get(rid) or {}
+            detalhes = {"origem": origem, "codigo": codigo, "titulo": linha.get("titulo"),
+                        "area": linha.get("area"), "periodicidade": linha.get("periodicidade")}
+            if acao == "ROTINA_ALTERADA":
+                detalhes["campos"] = resultado["campos"].get(codigo, [])
+            db.log(None, por, acao, TABELA, rid, detalhes, agente=agente, a_mando_de=a_mando_de)
+    return resultado
 
 
 # ------------------------------------------------------------------ o dia
@@ -734,28 +889,31 @@ def pode_marcar(item: Mapping, papel: str, usuario_id: int | None) -> bool:
         int(x) for x in (item.get("responsavel_id"), item.get("suplente_id")) if x}
 
 
-def _feitos(con, pares: list[tuple[int, str]]) -> dict[tuple[int, str], dict]:
+def _feitos(con, limites: dict[int, date]) -> dict[int, list[dict]]:
+    """Os «feitos» de cada item com referência a partir do limite dele. SÓ LÊ."""
     bd = banco(con)
-    if not pares or not bd.tem_tabela(TABELA_FEITOS):
+    if not limites or not bd.tem_tabela(TABELA_FEITOS):
         return {}
-    ids = sorted({p[0] for p in pares})
-    refs = sorted({p[1] for p in pares})
+    menor = min(limites.values())
     linhas = bd.ler(
-        f"""SELECT id, rotina_id, referencia, feito_em, feito_por, usuario_id, resultado,
-                   observacao FROM {TABELA_FEITOS}
-             WHERE rotina_id = ANY(%s) AND referencia = ANY(%s)""", (ids, refs))
-    queridos = set(pares)
-    saida = {}
+        f"""SELECT id, rotina_id, referencia, prazo, com_atraso, feito_em, feito_por, usuario_id,
+                   resultado, observacao FROM {TABELA_FEITOS}
+             WHERE rotina_id = ANY(%s) AND referencia >= %s ORDER BY id""",
+        (sorted(limites), menor.isoformat()))
+    saida: dict[int, list[dict]] = {}
     for r in linhas:
-        chave = (int(r["rotina_id"]), str(r["referencia"]))
-        if chave in queridos:
-            saida[chave] = {"id": int(r["id"]), "por": r["feito_por"],
-                            "em": str(r["feito_em"])[:16], "resultado": r["resultado"],
-                            "resultado_rotulo": ROTULO_DO_RESULTADO.get(r["resultado"], r["resultado"]),
-                            "observacao": r["observacao"] or "", "usuario_id": r["usuario_id"],
-                            "anexos": []}
-    if saida and bd.tem_tabela("attachments"):
-        por_id = {f["id"]: f for f in saida.values()}
+        rid = int(r["rotina_id"])
+        ref = _dia(r["referencia"])
+        if ref is None or ref < limites[rid]:
+            continue
+        saida.setdefault(rid, []).append({
+            "id": int(r["id"]), "referencia": ref, "por": r["feito_por"],
+            "em": str(r["feito_em"])[:16], "resultado": r["resultado"],
+            "resultado_rotulo": ROTULO_DO_RESULTADO.get(r["resultado"], r["resultado"]),
+            "observacao": r["observacao"] or "", "usuario_id": r["usuario_id"],
+            "com_atraso": bool(int(r["com_atraso"] or 0)), "anexos": []})
+    por_id = {f["id"]: f for lista in saida.values() for f in lista}
+    if por_id and bd.tem_tabela("attachments"):
         for a in bd.ler("SELECT id, entity_id, original_name FROM attachments "
                         "WHERE entity_type = %s AND entity_id = ANY(%s) ORDER BY id",
                         (TIPO_DO_ANEXO, sorted(por_id))):
@@ -764,7 +922,18 @@ def _feitos(con, pares: list[tuple[int, str]]) -> dict[tuple[int, str], dict]:
     return saida
 
 
-def _para_tela(r: Mapping, hoje: date) -> dict:
+def _feito_de(item: Mapping, nominal: date, feitos: list[dict]) -> dict | None:
+    """O «feito» que cumpre este vencimento: o do mesmo período, ou o da mesma data."""
+    faixa = periodo(item, nominal)
+    for f in feitos:
+        if faixa and faixa[0] <= f["referencia"] <= faixa[1]:
+            return f
+        if not faixa and f["referencia"] == nominal:
+            return f
+    return None
+
+
+def _para_tela(r: Mapping) -> dict:
     """O item como a tela o mostra (sem situação). Só calcula."""
     return {
         "id": int(r["id"]), "codigo": r["codigo"], "area": r["area"],
@@ -785,65 +954,84 @@ def _para_tela(r: Mapping, hoje: date) -> dict:
         "prioridade_rotulo": ROTULO_DA_PRIORIDADE.get(int(r["prioridade"] or 2), ""),
         "ordem": int(r["ordem"] or 0), "ativo": bool(int(r["ativo"] or 0)),
         "motivo_desativacao": r["motivo_desativacao"] or "",
+        "vale_desde": (_vale_desde(r) or date.today()).isoformat(),
     }
 
 
-def do_dia(con, hoje: date | str, *, area: str | None = None,
-           usuario_id: int | None = None) -> list[dict]:
-    """Os itens do dia: os que vencem hoje e os vencidos sem «feito». SÓ LÊ.
+def _dd_mm(dia: date) -> str:
+    return f"{dia:%d/%m}"
 
-    Cada item traz `referencia` (o vencimento que se cumpre, AAAA-MM-DD),
-    `situacao` (ATRASADO, HOJE, DESDE_O_CADASTRO ou FEITO), `feito` (quem,
-    quando, resultado, observação e anexos, ou None) e `anterior_sem_registro`
-    (o vencimento anterior que ficou sem «feito», ou None). `area` filtra a
-    área; `usuario_id`, os itens de que a pessoa é responsável ou suplente.
-    No banco em que a tabela ainda não existe, a lista vem vazia — e o GET
-    não a cria.
+
+def do_dia(con, hoje: date | str, *, area: str | None = None,
+           usuario_id: int | None = None, agora: datetime | None = None) -> list[dict]:
+    """Os itens do dia: o vencimento atual sem «feito» e o que faltou. SÓ LÊ.
+
+    Cada item traz o vencimento atual — `referencia` (a data nominal, que o
+    «feito» guarda) e `prazo` —, a `situacao` (ATRASADO, HOJE ou FEITO), o
+    `feito` dele (ou None), as `faltas` (as datas nominais sem «feito» dos
+    últimos `JANELA_DAS_FALTAS` dias, nunca antes de `vale_desde`) e as
+    `referencias_marcaveis` [(data, rótulo)] que o «Feito» aceita. Item cujo
+    primeiro vencimento ainda não chegou não aparece. `area` filtra a área;
+    `usuario_id`, os itens de que a pessoa é responsável ou suplente (0 não é
+    «todos»). `agora` decide o «até HH:MM» do dia (padrão: o relógio, quando
+    `hoje` é hoje). No banco em que a tabela ainda não existe, a lista vem
+    vazia — e o GET não a cria.
     """
     hoje = _dia(hoje) or date.today()
+    agora = agora or datetime.now()
     onde, parametros = ["r.ativo = 1"], []
     if area:
         onde.append("r.area = %s")
         parametros.append(area)
-    if usuario_id:
+    if usuario_id is not None:
         onde.append("(r.responsavel_id = %s OR r.suplente_id = %s)")
         parametros += [int(usuario_id), int(usuario_id)]
     linhas = _ler(con, " AND ".join(onde), tuple(parametros))
     if not linhas:
         return []
     feriados = feriados_da_casa(con)
-    planos, pares = [], []
+    inicio_faltas = hoje - timedelta(days=JANELA_DAS_FALTAS)
+    planos, limites = [], {}
     for r in linhas:
-        ref = ultimo_vencimento(r, hoje, feriados=feriados)
-        if ref is None:
+        vale = _vale_desde(r) or hoje
+        atual = ocorrencia_atual(r, hoje, feriados=feriados, desde=vale)
+        if atual is None:
             continue
-        anterior = ultimo_vencimento(r, ref - timedelta(days=1), feriados=feriados)
-        planos.append((r, ref, anterior))
-        pares.append((int(r["id"]), ref.isoformat()))
-        if anterior:
-            pares.append((int(r["id"]), anterior.isoformat()))
-    feitos = _feitos(con, pares)
+        janela = [o for o in ocorrencias(r, max(vale, inicio_faltas), hoje, feriados=feriados)
+                  if o != atual]
+        nominais = [atual[0]] + [o[0] for o in janela]
+        menor = min(periodo(r, d)[0] if por_periodo(r) else d for d in nominais)
+        planos.append((r, vale, atual, janela))
+        limites[int(r["id"])] = menor
+    feitos = _feitos(con, limites)
     saida = []
-    for r, ref, anterior in planos:
-        criado = _dia(r["criado_em"]) or hoje
-        feito = feitos.get((int(r["id"]), ref.isoformat()))
+    for r, vale, (nominal, prazo), janela in planos:
+        do_item = feitos.get(int(r["id"]), [])
+        feito = _feito_de(r, nominal, do_item)
+        faltas = [nom for nom, _ in janela if not _feito_de(r, nom, do_item)]
+        limite = limite_do_horario(r["horario"])
+        passou_da_hora = bool(limite and prazo == hoje and agora.date() == hoje
+                              and agora.time() > limite)
         if feito:
-            dia_do_feito = _dia(feito["em"])
-            if not (ref == hoje or dia_do_feito == hoje or feito["resultado"] == COM_PENDENCIA):
-                continue
             situacao = FEITO
-        elif ref == hoje:
-            situacao = HOJE
-        elif ref < criado:
-            situacao = DESDE_O_CADASTRO
-        else:
+            fica = (prazo == hoje or _dia(feito["em"]) == hoje
+                    or feito["resultado"] == COM_PENDENCIA or faltas)
+            if not fica:
+                continue
+        elif prazo < hoje or passou_da_hora:
             situacao = ATRASADO
-        sem_registro = (anterior if anterior and anterior >= criado
-                        and (int(r["id"]), anterior.isoformat()) not in feitos else None)
-        item = _para_tela(r, hoje)
-        item.update(referencia=ref.isoformat(), situacao=situacao, feito=feito,
-                    dias_de_atraso=(hoje - ref).days if situacao == ATRASADO else 0,
-                    anterior_sem_registro=sem_registro.isoformat() if sem_registro else None)
+        else:
+            situacao = HOJE
+        marcaveis = [] if feito else [(nominal.isoformat(), f"{_dd_mm(nominal)} (deste vencimento)")]
+        marcaveis += [(d.isoformat(), f"{_dd_mm(d)} (sem registro)") for d in reversed(faltas)]
+        item = _para_tela(r)
+        item.update(referencia=nominal.isoformat(), prazo=prazo.isoformat(), situacao=situacao,
+                    feito=feito, dias_de_atraso=(hoje - prazo).days if situacao == ATRASADO else 0,
+                    limite_hora=f"{limite:%H:%M}" if limite else None,
+                    passou_da_hora=passou_da_hora,
+                    faltas=[d.isoformat() for d in faltas], n_sem_registro=len(faltas),
+                    sem_registro_desde=faltas[0].isoformat() if faltas else None,
+                    referencias_marcaveis=marcaveis)
         saida.append(item)
     saida.sort(key=lambda x: (ORDEM_DA_SITUACAO.index(x["situacao"]), x["prioridade"],
                               x["ordem"], x["titulo"], x["id"]))
@@ -863,11 +1051,16 @@ def marcar_feito(con, rotina_id: int, referencia: str, *, resultado: str, observ
                  papel: str | None = None) -> dict:
     """Registra o «feito» de um vencimento. Devolve {gravou, id, por, em, ...}.
 
-    O primeiro registro do vencimento fica: o segundo devolve `gravou=False`
-    com quem já registrou. COM_PENDENCIA e NAO_SE_APLICA exigem observação.
+    `referencia` é a data NOMINAL do vencimento: a atual ou uma das sem
+    registro dos últimos `JANELA_DAS_FALTAS` dias, nunca antes de `vale_desde`.
+    O primeiro registro do vencimento (ou do período, no item de um vencimento
+    por período) fica: o segundo devolve `gravou=False` com quem já
+    registrou. COM_PENDENCIA e NAO_SE_APLICA exigem observação. O registro
+    depois do prazo (ou da hora do «até HH:MM») fica marcado `com_atraso`.
     Com `papel` (o efetivo), confere também se a pessoa marca este item.
     """
     agora = agora or datetime.now()
+    hoje = agora.date()
     item = uma(con, rotina_id)
     if not item:
         raise RotinaError("Rotina não encontrada.")
@@ -879,10 +1072,23 @@ def marcar_feito(con, rotina_id: int, referencia: str, *, resultado: str, observ
     ref = _dia(referencia)
     if ref is None or str(referencia or "")[:10] != ref.isoformat():
         raise RotinaError("A data do vencimento não se lê.")
-    if ref > agora.date():
+    vale = _vale_desde(item) or hoje
+    if ref > hoje:
         raise RotinaError("Não se marca «feito» num vencimento que ainda não chegou.")
-    if ref not in vencimentos(item, ref, ref, feriados=feriados_da_casa(con)):
-        raise RotinaError(f"{ref:%d/%m/%Y} não é dia de vencimento desta rotina.")
+    feriados = feriados_da_casa(con)
+    marcaveis: dict[date, date] = {}
+    atual = ocorrencia_atual(item, hoje, feriados=feriados, desde=vale)
+    if atual:
+        marcaveis[atual[0]] = atual[1]
+    for nominal, prazo in ocorrencias(item, max(vale, hoje - timedelta(days=JANELA_DAS_FALTAS)),
+                                      hoje, feriados=feriados):
+        marcaveis.setdefault(nominal, prazo)
+    if ref not in marcaveis:
+        if ref < vale:
+            raise RotinaError(f"{ref:%d/%m/%Y} é anterior a {vale:%d/%m/%Y}, quando esta rotina "
+                              "passou a valer: não se marca.")
+        raise RotinaError(f"{ref:%d/%m/%Y} não é um vencimento que se marque aqui: só o atual "
+                          f"e os sem registro dos últimos {JANELA_DAS_FALTAS} dias.")
     resultado = _uma_linha(resultado).upper()
     if resultado not in ROTULO_DO_RESULTADO:
         raise RotinaError("Escolha o resultado: " + ", ".join(ROTULO_DO_RESULTADO.values()) + ".")
@@ -893,22 +1099,42 @@ def marcar_feito(con, rotina_id: int, referencia: str, *, resultado: str, observ
     if len(texto) > OBSERVACAO_MAXIMA:
         raise RotinaError(f"A observação é curta: até {OBSERVACAO_MAXIMA} letras.")
     bd = banco(con)
-    novo = bd.escrever(
-        f"""INSERT INTO {TABELA_FEITOS} (rotina_id, referencia, feito_em, feito_por,
-                                         usuario_id, resultado, observacao)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (rotina_id, referencia) DO NOTHING RETURNING id""",
-        (int(rotina_id), ref.isoformat(), _agora(agora), por, usuario_id, resultado, texto))
-    linha = bd.um(f"""SELECT id, feito_em, feito_por, resultado, observacao FROM {TABELA_FEITOS}
-                       WHERE rotina_id = %s AND referencia = %s""",
-                  (int(rotina_id), ref.isoformat()))
-    return {"gravou": bool(novo), "id": int(linha["id"]), "codigo": item["codigo"],
-            "titulo": item["titulo"], "referencia": ref.isoformat(),
-            "por": linha["feito_por"], "em": str(linha["feito_em"])[:16],
-            "resultado": linha["resultado"], "observacao": linha["observacao"] or ""}
+    colunas = "id, referencia, prazo, com_atraso, feito_em, feito_por, resultado, observacao"
+    faixa = periodo(item, ref)
+    ja = (bd.um(f"""SELECT {colunas} FROM {TABELA_FEITOS} WHERE rotina_id = %s
+                     AND referencia BETWEEN %s AND %s ORDER BY id LIMIT 1""",
+                (int(rotina_id), faixa[0].isoformat(), faixa[1].isoformat())) if faixa else None)
+    prazo = marcaveis[ref]
+    limite = limite_do_horario(item["horario"])
+    com_atraso = hoje > prazo or bool(limite and hoje == prazo and agora.time() > limite)
+    novo = []
+    if not ja:
+        novo = bd.escrever(
+            f"""INSERT INTO {TABELA_FEITOS} (rotina_id, referencia, prazo, com_atraso, feito_em,
+                                             feito_por, usuario_id, resultado, observacao)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (rotina_id, referencia) DO NOTHING RETURNING id""",
+            (int(rotina_id), ref.isoformat(), prazo.isoformat(), int(com_atraso), _agora(agora),
+             por, usuario_id, resultado, texto))
+        ja = bd.um(f"SELECT {colunas} FROM {TABELA_FEITOS} WHERE rotina_id = %s "
+                   "AND referencia = %s", (int(rotina_id), ref.isoformat()))
+    return {"gravou": bool(novo), "id": int(ja["id"]), "codigo": item["codigo"],
+            "titulo": item["titulo"], "referencia": str(ja["referencia"]),
+            "prazo": str(ja["prazo"] or ""), "com_atraso": bool(int(ja["com_atraso"] or 0)),
+            "por": ja["feito_por"], "em": str(ja["feito_em"])[:16],
+            "resultado": ja["resultado"], "observacao": ja["observacao"] or ""}
 
 
 # ------------------------------------------------------------------ as listas
+
+
+def proximo_prazo(con, item: Mapping, hoje: date | str | None = None) -> date | None:
+    """O prazo do próximo vencimento que o item cobra (de hoje e de `vale_desde`
+    em diante). SÓ LÊ."""
+    hoje = _dia(hoje) or date.today()
+    proxima = proxima_ocorrencia(item, hoje, feriados=feriados_da_casa(con),
+                                 desde=_vale_desde(item))
+    return proxima[1] if proxima else None
 
 
 def listar(con, hoje: date | str | None = None, *, area: str | None = None,
@@ -934,19 +1160,20 @@ def listar(con, hoje: date | str | None = None, *, area: str | None = None,
     if bd.tem_tabela(TABELA_FEITOS):
         for f in bd.ler(
                 f"""SELECT DISTINCT ON (rotina_id) rotina_id, referencia, feito_em, feito_por,
-                           resultado FROM {TABELA_FEITOS} WHERE rotina_id = ANY(%s)
+                           resultado, com_atraso FROM {TABELA_FEITOS} WHERE rotina_id = ANY(%s)
                      ORDER BY rotina_id, referencia DESC, id DESC""",
                 ([int(r["id"]) for r in linhas],)):
             ultimos[int(f["rotina_id"])] = {
                 "referencia": f["referencia"], "em": str(f["feito_em"])[:16],
-                "por": f["feito_por"],
+                "por": f["feito_por"], "com_atraso": bool(int(f["com_atraso"] or 0)),
                 "resultado_rotulo": ROTULO_DO_RESULTADO.get(f["resultado"], f["resultado"])}
     ordem_per = [p for p, _ in PERIODICIDADES]
     saida = []
     for r in linhas:
-        item = _para_tela(r, hoje)
-        proximo = proximo_vencimento(r, hoje, feriados=feriados) if item["ativo"] else None
-        item.update(proximo=proximo.isoformat() if proximo else None,
+        item = _para_tela(r)
+        proxima = (proxima_ocorrencia(r, hoje, feriados=feriados, desde=_vale_desde(r))
+                   if item["ativo"] else None)
+        item.update(proximo=proxima[1].isoformat() if proxima else None,
                     ultimo_feito=ultimos.get(int(r["id"])),
                     criado_em=str(r["criado_em"])[:16], criado_por=r["criado_por"],
                     atualizado_em=str(r["atualizado_em"] or "")[:16] or None,
@@ -969,9 +1196,9 @@ def da_pessoa(con, usuario_id: int, hoje: date | str | None = None) -> list[dict
     feriados = feriados_da_casa(con) if linhas else set()
     saida = []
     for r in linhas:
-        item = _para_tela(r, hoje)
-        proximo = proximo_vencimento(r, hoje, feriados=feriados)
-        item["proximo"] = proximo.isoformat() if proximo else None
+        item = _para_tela(r)
+        proxima = proxima_ocorrencia(r, hoje, feriados=feriados, desde=_vale_desde(r))
+        item["proximo"] = proxima[1].isoformat() if proxima else None
         item["sou"] = "responsável" if r["responsavel_id"] == int(usuario_id) else "suplente"
         saida.append(item)
     saida.sort(key=lambda x: (x["proximo"] or "9999", x["prioridade"], x["titulo"]))
@@ -979,10 +1206,36 @@ def da_pessoa(con, usuario_id: int, hoje: date | str | None = None) -> list[dict
 
 
 def pessoas(con) -> list[dict]:
-    """Quem pode responder por uma rotina: as pessoas ativas (sem robô). SÓ LÊ."""
+    """Quem pode responder por uma rotina: as pessoas ativas, sem robô e sem
+    auditor. SÓ LÊ."""
     return banco(con).ler(
         "SELECT id, username, full_name FROM users WHERE active = 1 "
-        "AND COALESCE(eh_robo, 0) = 0 ORDER BY full_name COLLATE public.cg_nocase, id")
+        "AND COALESCE(eh_robo, 0) = 0 AND UPPER(COALESCE(role, '')) <> ALL(%s) "
+        "ORDER BY full_name COLLATE public.cg_nocase, id", (list(QUEM_SO_VE),))
+
+
+def pessoa_do_formulario(con, uid: Any) -> dict | None:
+    """A pessoa que o item já tem e não está em `pessoas` (inativa, auditor ou
+    robô): ela aparece no formulário marcada, para o servidor pedir outra em
+    vez de apagá-la calado. SÓ LÊ."""
+    try:
+        uid = int(str(uid).strip())
+    except (TypeError, ValueError):
+        return None
+    linha = _pessoa(con, uid=uid)
+    if not linha:
+        return None
+    motivo = _conferir_pessoa(linha, "", "")
+    if not motivo:
+        return None
+    if not int(linha["active"] or 0):
+        marca = "inativo"
+    elif str(linha.get("role") or "").upper() in QUEM_SO_VE:
+        marca = "auditor"
+    else:
+        marca = "robô"
+    return {"id": int(linha["id"]), "username": linha["username"],
+            "full_name": linha["full_name"], "marca": marca}
 
 
 def contar(con, *, ativas: bool = True) -> int:

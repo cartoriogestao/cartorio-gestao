@@ -3394,8 +3394,9 @@ def _montar_app(test_config: dict | None = None) -> Flask:
                 con, leitura, nome=usuario_nome(), user_id=usuario_id() or 0)
 
     def _rotina_e_de_quem_pede(row) -> bool:
-        """A prova do «feito»: quem vê a checklist vê todas; os outros, só a
-        do item de que são responsáveis ou suplentes."""
+        """A prova do «feito»: quem vê a checklist vê todas; os outros, a do
+        item de que são responsáveis ou suplentes — e quem registrou o feito
+        continua vendo a sua, mesmo depois da troca do responsável."""
         import gestor_checklist as CK
         import rotina_da_casa as RT
         if PAP.equivale_a(current_user(), CK.QUEM_VE):
@@ -3403,10 +3404,13 @@ def _montar_app(test_config: dict | None = None) -> Flask:
         uid = usuario_id()
         with db.connect() as con:
             linha = banco(con).um(
-                "SELECT r.responsavel_id, r.suplente_id FROM ge_rotina_feitos f "
+                "SELECT r.responsavel_id, r.suplente_id, f.usuario_id FROM ge_rotina_feitos f "
                 "JOIN ge_rotina r ON r.id = f.rotina_id WHERE f.id = %s",
                 (int(row["entity_id"]),))
-        return bool(linha and uid) and RT.pode_marcar(linha, "USER", uid)
+        if not (linha and uid):
+            return False
+        return (str(linha["usuario_id"] or "") == str(uid)
+                or RT.pode_marcar(linha, "USER", uid))
 
     DONO_DO_ANEXO = {
         "NT_LEITURA": _leitura_das_notas_e_de_quem_pede,

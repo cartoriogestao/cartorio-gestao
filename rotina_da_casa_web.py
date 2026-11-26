@@ -23,7 +23,11 @@ O «FEITO» NÃO MEXE NO SEMÁFORO
 AUDITORIA EM TODA ESCRITA
     ROTINA_CRIADA, ROTINA_ALTERADA, ROTINA_DESATIVADA, ROTINA_REATIVADA e
     ROTINA_FEITA, sempre com o código do item. `audit()` abre a transação
-    dele: chama-se depois do `with db.transaction()`.
+    dele: chama-se depois do `with db.transaction()`. O «feito» vai à
+    auditoria LOGO depois do COMMIT, antes de guardar o arquivo da prova: o
+    arquivo que falha (disco cheio, pasta sem permissão) não deixa feito sem
+    trilha nem a tela em erro — vira aviso e ROTINA_PROVA_FALHOU; o que entra
+    vira ROTINA_PROVA_ANEXADA.
 """
 from __future__ import annotations
 
@@ -70,8 +74,8 @@ def preparar(itens: list[dict], *, papel: str, usuario_id: int | None,
     da tela onde se faz (só para quem a abre; endereço que não se monta some)."""
     nomes = dict(telas_do_menu())
     for x in itens:
-        x["pode_marcar"] = (RT.pode_marcar(x, papel, usuario_id)
-                            and x.get("situacao", RT.HOJE) != RT.FEITO and x.get("ativo", True))
+        x["pode_marcar"] = (RT.pode_marcar(x, papel, usuario_id) and x.get("ativo", True)
+                            and bool(x.get("referencias_marcaveis")))
         x["onde_link"], x["onde_rotulo"] = None, None
         endpoint = x.get("onde_endpoint")
         if endpoint:
@@ -141,8 +145,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     def _formulario(item: dict | None, valores: dict, problemas: list[str]):
         with db.connect() as con:
             pessoas = RT.pessoas(con)
+            # A PESSOA QUE O ITEM JÁ TEM e saiu da lista (inativa, auditor):
+            # aparece marcada, para o servidor pedir outra em vez de apagá-la.
+            ids = {int(p["id"]) for p in pessoas}
+            fora = {}
+            for campo in ("responsavel_id", "suplente_id"):
+                extra = RT.pessoa_do_formulario(con, valores.get(campo))
+                if extra and extra["id"] not in ids:
+                    fora[extra["id"]] = extra
         return render_template(
             "rotina_form.html", item=item, v=valores, problemas=problemas, pessoas=pessoas,
+            pessoas_fora=list(fora.values()),
             areas=RT.AREAS, periodicidades=RT.PERIODICIDADES, dias_semana=RT.DIAS_DA_SEMANA,
             meses=RT.NOMES_DOS_MESES, prioridades=RT.PRIORIDADES, telas=telas_do_menu(),
             semana_marcada={int(x) for x in str(valores.get("dias_semana") or "").split(",") if x.strip().isdigit()},
@@ -196,11 +209,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             with db.transaction() as con:
                 rotina_id = RT.criar(con, valores, por=usuario_nome())
                 item = RT.uma(con, rotina_id)
+                primeiro = RT.proximo_prazo(con, item)
         except RT.RotinaError as recusa:
             return _formulario(None, valores, recusa.problemas)
         audit("ROTINA_CRIADA", "ge_rotina", rotina_id, _detalhes(item))
-        flash(f"Rotina «{item['titulo']}» cadastrada. Ela aparece na Checklist do dia e em "
-              "«Minha rotina» de quem responde por ela, a partir do vencimento.", "success")
+        flash(f"Rotina «{item['titulo']}» cadastrada. Ela vale de hoje em diante: o que venceu "
+              "antes não é cobrado." + (
+                  f" O primeiro vencimento é {primeiro:%d/%m/%Y}; a partir dele ela aparece na "
+                  "Checklist do dia e em «Minha rotina» de quem responde por ela."
+                  if primeiro else ""), "success")
         return redirect(url_for("rotina_cadastro", area=item["area"]) + f"#rotina-{rotina_id}")
 
     @app.route("/administrativo/rotina/<int:rotina_id>/editar", methods=["GET", "POST"])
@@ -273,8 +290,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             abort(404)
         if r["gravou"]:
             audit("ROTINA_REATIVADA", "ge_rotina", rotina_id,
-                  {"codigo": r["codigo"], "motivo_anterior": r["motivo_anterior"]})
-            flash(f"Rotina {r['codigo']} reativada.", "success")
+                  {"codigo": r["codigo"], "motivo_anterior": r["motivo_anterior"],
+                   "vale_desde": r["vale_desde"]})
+            flash(f"Rotina {r['codigo']} reativada. Ela vale de hoje em diante: o tempo em que "
+                  "esteve desativada não é cobrado.", "success")
         else:
             flash(f"A rotina {r['codigo']} já estava ativa.", "info")
         return _voltar_ao_cadastro()
@@ -312,23 +331,36 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             flash(str(recusa), "warning")
             return _voltar_do_feito(rotina_id)
         arquivo = request.files.get("prova_arquivo")
+        tem_arquivo = bool(arquivo and arquivo.filename)
         if not r["gravou"]:
             flash(f"«{r['titulo']}» já tinha sido registrado por {r['por']} "
                   f"({str(r['em'])[8:10]}/{str(r['em'])[5:7]} às {str(r['em'])[11:16]})."
-                  + (" O arquivo enviado não foi guardado." if arquivo and arquivo.filename else ""),
-                  "info")
+                  + (" O arquivo enviado não foi guardado." if tem_arquivo else ""), "info")
             return _voltar_do_feito(rotina_id)
-        anexo_id = None
-        if arquivo and arquivo.filename and archive_root is not None:
-            pasta = archive_root() / "gestao" / "rotina" / f"feito_{int(r['id'])}"
-            info = save_upload(arquivo, pasta)
-            anexo_id = db.add_attachment(RT.TIPO_DO_ANEXO, int(r["id"]), info, uid,
-                                         "Prova da rotina da serventia")
+        # A TRILHA PRIMEIRO: o feito já está gravado, e a auditoria não espera o arquivo.
         audit("ROTINA_FEITA", "ge_rotina", rotina_id,
-              {"codigo": r["codigo"], "referencia": r["referencia"], "resultado": r["resultado"],
-               "observacao": r["observacao"], "feito_id": r["id"], "anexo_id": anexo_id})
-        flash(f"«{r['titulo']}»: {RT.ROTULO_DO_RESULTADO[r['resultado']].lower()}, registrado.",
-              "success")
+              {"codigo": r["codigo"], "referencia": r["referencia"], "prazo": r["prazo"],
+               "com_atraso": r["com_atraso"], "resultado": r["resultado"],
+               "observacao": r["observacao"], "feito_id": r["id"], "com_prova": tem_arquivo})
+        flash(f"«{r['titulo']}»: {RT.ROTULO_DO_RESULTADO[r['resultado']].lower()}, registrado"
+              + (" com atraso" if r["com_atraso"] else "") + ".", "success")
+        if tem_arquivo and archive_root is not None:
+            try:
+                pasta = archive_root() / "gestao" / "rotina" / f"feito_{int(r['id'])}"
+                info = save_upload(arquivo, pasta)
+                anexo_id = db.add_attachment(RT.TIPO_DO_ANEXO, int(r["id"]), info, uid,
+                                             "Prova da rotina da serventia")
+            except Exception as falha:                     # noqa: BLE001 — o feito fica, o arquivo não
+                audit("ROTINA_PROVA_FALHOU", "ge_rotina", rotina_id,
+                      {"codigo": r["codigo"], "feito_id": r["id"],
+                       "erro": (str(falha) or falha.__class__.__name__)[:300]})
+                flash("O «feito» ficou registrado, mas o arquivo da prova não foi guardado "
+                      f"({str(falha) or falha.__class__.__name__}). Guarde a prova de outro jeito "
+                      "e avise a TI.", "warning")
+            else:
+                audit("ROTINA_PROVA_ANEXADA", "ge_rotina", rotina_id,
+                      {"codigo": r["codigo"], "feito_id": r["id"], "anexo_id": anexo_id,
+                       "sha256": info.get("sha256")})
         return _voltar_do_feito(rotina_id)
 
     # ------------------------------------------------------------- minha rotina

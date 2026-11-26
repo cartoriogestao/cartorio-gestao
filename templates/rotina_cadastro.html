@@ -44,7 +44,7 @@
   <h4>{{ rot_per }} <small class="muted">({{ itens|length }})</small></h4>
   <div class="table-wrap">
   <table>
-    <tr><th>O que fazer</th><th>Quando</th><th>Quem faz</th><th>Próximo</th><th>Último «feito»</th>{% if pode %}<th></th>{% endif %}</tr>
+    <tr><th>O que fazer</th><th>Quando</th><th>Quem faz</th><th>Próximo vencimento</th><th>Último «feito»</th>{% if pode %}<th></th>{% endif %}</tr>
     {% for r in itens %}
     <tr id="rotina-{{ r.id }}">
       <td><strong>{{ r.titulo }}</strong> <small class="muted">{{ r.codigo }}</small>
@@ -53,8 +53,8 @@
         {{ como_fazer(r) }}</td>
       <td class="small">{{ r.quando }}</td>
       <td class="small">{{ quem(r) }}</td>
-      <td class="small">{% if r.proximo %}{{ dia(r.proximo) }}/{{ r.proximo[:4] }}{% else %}<span class="muted">—</span>{% endif %}</td>
-      <td class="small">{% if r.ultimo_feito %}{{ dia(r.ultimo_feito.referencia) }}: {{ r.ultimo_feito.resultado_rotulo|lower }}<br><span class="muted">{{ r.ultimo_feito.por }}</span>{% else %}<span class="muted">nunca</span>{% endif %}</td>
+      <td class="small">{% if r.proximo %}{{ dia(r.proximo) }}/{{ r.proximo[:4] }}{% else %}<span class="muted">—</span>{% endif %}{% if r.ativo %}<br><span class="muted">vale desde {{ dia(r.vale_desde) }}/{{ r.vale_desde[:4] }}</span>{% endif %}</td>
+      <td class="small">{% if r.ultimo_feito %}{{ dia(r.ultimo_feito.referencia) }}: {{ r.ultimo_feito.resultado_rotulo|lower }}{% if r.ultimo_feito.com_atraso %} <span class="muted">(com atraso)</span>{% endif %}<br><span class="muted">{{ r.ultimo_feito.por }}</span>{% else %}<span class="muted">nunca</span>{% endif %}</td>
       {% if pode %}<td class="small">
         {% if r.ativo %}
         <a href="{{ url_for('rotina_editar', rotina_id=r.id) }}">Editar</a>

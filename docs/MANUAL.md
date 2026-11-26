@@ -1845,22 +1845,33 @@ A prática de atos e o trabalho do balcão não entram: vão para as tarefas.
   linha), onde se faz (uma tela do sistema ou um site), como saber que ficou pronto, o
   que fazer se der errado, a prova a guardar e a base legal; quando vence (diária;
   semanal, nos dias da semana; quinzenal, em dois dias do mês; mensal, num dia do mês
-  ou no Nº dia útil, e -1 é o último; trimestral, semestral e anual, nos meses e no
-  dia); e o responsável e o suplente. O dia que cai em sábado, domingo ou feriado passa
-  para o dia útil seguinte, com os feriados de Configurações. Desativar pede o motivo e
-  não apaga nada; **Reativar** traz de volta.
+  ou no Nº dia útil, e -1 é o último; trimestral, semestral e anual, um mês em cada
+  trimestre ou semestre, ou um só, e o dia); e o responsável e o suplente (o auditor
+  confere e não responde por rotina). O dia que cai em sábado, domingo ou feriado passa
+  para o dia útil seguinte, com os feriados de Configurações. A lista mostra o **próximo
+  vencimento** de cada item.
+- **A rotina vale do cadastro em diante**: o que venceu antes não é cobrado, e o item
+  aparece a partir do primeiro vencimento. Desativar pede o motivo e não apaga nada;
+  **Reativar** traz de volta valendo do dia, sem cobrar o tempo desativado.
 - **Checklist de gestão do dia**: no alto de cada área vem o bloco **Rotina do dia**,
-  antes dos achados, com o que vence hoje e o atrasado («atrasado desde dd/mm»). Abra
-  **Como fazer** para o passo a passo, e clique **Feito** ao terminar: diga como foi
-  (tudo certo, com pendência, não se aplica — fora do «tudo certo», a observação é
-  obrigatória) e, se quiser, anexe a prova. O primeiro registro de cada vencimento fica.
-  O «feito com pendência» continua à vista até o vencimento seguinte. **Feito não
-  resolve achado nem muda a cor da área.**
+  antes dos achados, com o que vence hoje e o atrasado («atrasado desde dd/mm»). Com o
+  horário escrito exatamente «até HH:MM», o item atrasa depois dessa hora; outro texto
+  só se mostra. O que faltou não some: o item diz «N sem registro desde dd/mm» (os
+  últimos 30 dias), e o cabeçalho da área soma. Abra **Como fazer** para o passo a
+  passo, e clique **Feito** ao terminar: escolha o vencimento (o atual, ou um dos sem
+  registro), diga como foi (tudo certo, com pendência, não se aplica — fora do «tudo
+  certo», a observação é obrigatória) e, se quiser, anexe a prova. O registro depois do
+  prazo fica «registrado com atraso». O primeiro registro de cada vencimento fica; na
+  rotina de um vencimento por mês, trimestre, semestre ou ano, vale um por período,
+  mesmo que o dia mude. O «feito com pendência» continua à vista até o vencimento
+  seguinte. **Feito não resolve achado nem muda a cor da área.**
 - **Trabalho → Minha rotina** (todos, também o escrevente): o que a pessoa tem para hoje
   e o atrasado, como responsável ou suplente, com o mesmo **Como fazer** e o mesmo
   **Feito**, e embaixo toda a rotina dela com o próximo vencimento.
 - Toda escrita vai à **Auditoria**: ROTINA_CRIADA, ROTINA_ALTERADA, ROTINA_DESATIVADA,
-  ROTINA_REATIVADA e ROTINA_FEITA, com o código do item.
+  ROTINA_REATIVADA e ROTINA_FEITA, com o código do item; a prova anexada vai como
+  ROTINA_PROVA_ANEXADA, e o arquivo que não se guardou, como ROTINA_PROVA_FALHOU (o
+  feito fica registrado, e a tela avisa).
 
 **Controles do oficial**
 

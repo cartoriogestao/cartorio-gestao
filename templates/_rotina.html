@@ -32,19 +32,23 @@
 </details>
 {% endmacro %}
 
+{# A SITUAÇÃO DO VENCIMENTO ATUAL. `referencia` é a data nominal (a da regra) e
+   `prazo` a do dia útil; quando diferem, a tela diz as duas. As faltas são os
+   vencimentos sem registro dos últimos 30 dias, desde que a rotina vale. #}
 {% macro situacao(r) %}
-  {% if r.situacao == 'ATRASADO' %}<span class="badge critica">atrasado desde {{ dia(r.referencia) }}</span>
+  {% if r.situacao == 'ATRASADO' and r.passou_da_hora %}<span class="badge critica">atrasado: era até {{ r.limite_hora }}</span>
+  {% elif r.situacao == 'ATRASADO' %}<span class="badge critica">atrasado desde {{ dia(r.prazo) }}</span>
     <small class="muted">há {{ r.dias_de_atraso }} dia(s)</small>
-  {% elif r.situacao == 'HOJE' %}<span class="badge alta">a fazer hoje</span>
-  {% elif r.situacao == 'DESDE_O_CADASTRO' %}<span class="badge alta">a fazer</span>
-    <small class="muted">o deste período venceu em {{ dia(r.referencia) }}, antes do cadastro</small>
+  {% elif r.situacao == 'HOJE' %}<span class="badge alta">a fazer hoje</span>{% if r.limite_hora %} <small class="muted">até {{ r.limite_hora }}</small>{% endif %}
   {% elif r.situacao == 'FEITO' and r.feito %}
     <span class="badge {{ 'ok' if r.feito.resultado == rotina_ok else 'alta' }}">{{ r.feito.resultado_rotulo|lower }}</span>
     <small>por {{ r.feito.por }}{% if r.feito.em[:10] != hoje_da_rotina %} em {{ dia(r.feito.em) }}{% endif %} às {{ r.feito.em[11:16] }}</small>
+    {% if r.feito.com_atraso %}<br><small class="badge alta">registrado com atraso</small>{% endif %}
     {% if r.feito.observacao %}<br><small class="muted">{{ r.feito.observacao }}</small>{% endif %}
     {% for a in r.feito.anexos %}<br><small><a href="{{ url_for('attachment_download', attachment_id=a.id) }}">prova: {{ a.nome }}</a></small>{% endfor %}
   {% endif %}
-  {% if r.anterior_sem_registro %}<br><small class="muted">o de {{ dia(r.anterior_sem_registro) }} ficou sem registro</small>{% endif %}
+  {% if r.referencia and r.prazo and r.referencia != r.prazo %}<br><small class="muted">vencimento de {{ dia(r.referencia) }}, que caiu em dia sem expediente</small>{% endif %}
+  {% if r.n_sem_registro %}<br><span class="badge critica">{{ r.n_sem_registro }} sem registro desde {{ dia(r.sem_registro_desde) }}</span>{% endif %}
 {% endmacro %}
 
 {% macro feito(r, voltar, area) %}
@@ -52,7 +56,10 @@
   <details class="rotina-marcar" id="feito-{{ r.id }}"><summary class="small">Feito</summary>
   <form method="post" action="{{ url_for('rotina_feito', rotina_id=r.id) }}" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <input type="hidden" name="referencia" value="{{ r.referencia }}">
+    {% if r.referencias_marcaveis|length > 1 %}
+    <label class="small">Qual vencimento
+      <select name="referencia">{% for iso, rotulo in r.referencias_marcaveis %}<option value="{{ iso }}">{{ rotulo }}</option>{% endfor %}</select></label>
+    {% else %}{% for iso, rotulo in r.referencias_marcaveis %}<input type="hidden" name="referencia" value="{{ iso }}">{% endfor %}{% endif %}
     <input type="hidden" name="voltar" value="{{ voltar }}">
     <input type="hidden" name="area" value="{{ area or '' }}">
     <label class="small">Como foi
@@ -62,10 +69,10 @@
     <label class="small">Prova em arquivo (opcional)
       <input type="file" name="prova_arquivo"></label>
     <button type="submit" class="small">Registrar o feito</button>
-    <p class="small muted">Grava quem fez e quando, para o vencimento de {{ dia(r.referencia) }}. Não mexe nos achados do gestor nem na cor da área.</p>
+    <p class="small muted">Grava quem fez e quando{% if r.referencias_marcaveis|length == 1 %}, para o vencimento de {{ dia(r.referencias_marcaveis[0][0]) }}{% endif %}; depois do prazo, fica «registrado com atraso». Não mexe nos achados do gestor nem na cor da área.</p>
   </form>
   </details>
-  {% elif r.situacao != 'FEITO' %}<span class="muted small">—</span>{% endif %}
+  {% elif r.situacao != 'FEITO' or r.n_sem_registro %}<span class="muted small">—</span>{% endif %}
 {% endmacro %}
 
 {% macro lista(itens, voltar, area) %}

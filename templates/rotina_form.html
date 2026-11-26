@@ -78,7 +78,8 @@
       {% for n, nome in meses %}<label class="checkbox-label"><input type="checkbox" name="meses" value="{{ n }}" {% if n in meses_marcados %}checked{% endif %}> {{ nome }}</label>{% endfor %}
     </fieldset>
     <label>Horário <small class="muted">(opcional) — ex.: até 09:00</small>
-      <input name="horario" maxlength="40" value="{{ v.horario or '' }}"></label>
+      <input name="horario" maxlength="80" value="{{ v.horario or '' }}"></label>
+    <p class="small muted">Escrito exatamente «até HH:MM» (ex.: até 09:00), o item passa a atrasado depois dessa hora no dia do vencimento. Outro texto («na abertura e no fim do expediente») só se mostra.</p>
   </fieldset>
 
   <fieldset>
@@ -87,12 +88,15 @@
       <select name="responsavel_id">
         <option value="">— ninguém ainda (só aparece na Checklist do dia) —</option>
         {% for p in pessoas %}<option value="{{ p.id }}" {% if (v.responsavel_id|string) == (p.id|string) %}selected{% endif %}>{{ p.full_name }} ({{ p.username }})</option>{% endfor %}
+        {% for p in pessoas_fora %}{% if (v.responsavel_id|string) == (p.id|string) %}<option value="{{ p.id }}" selected>{{ p.full_name }} ({{ p.username }}) ({{ p.marca }})</option>{% endif %}{% endfor %}
       </select></label>
     <label>Suplente <small class="muted">— quem cobre o responsável na falta dele</small>
       <select name="suplente_id">
         <option value="">— ninguém —</option>
         {% for p in pessoas %}<option value="{{ p.id }}" {% if (v.suplente_id|string) == (p.id|string) %}selected{% endif %}>{{ p.full_name }} ({{ p.username }})</option>{% endfor %}
+        {% for p in pessoas_fora %}{% if (v.suplente_id|string) == (p.id|string) %}<option value="{{ p.id }}" selected>{{ p.full_name }} ({{ p.username }}) ({{ p.marca }})</option>{% endif %}{% endfor %}
       </select></label>
+    {% if pessoas_fora %}<p class="small muted">Quem aparece como «(inativo)» ou «(auditor)» não pode responder pela rotina: escolha outra pessoa antes de gravar.</p>{% endif %}
     <label>Prioridade
       <select name="prioridade">
         {% for n, nome in prioridades %}<option value="{{ n }}" {% if (v.prioridade|string) == (n|string) %}selected{% endif %}>{{ nome }}</option>{% endfor %}

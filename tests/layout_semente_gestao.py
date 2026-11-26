@@ -860,9 +860,9 @@ def _rotina_da_serventia(casa) -> None:
             "codigo": "ENSAIO_FIN_GUIA", "area": "FINANCEIRO", "titulo": "Pagar a guia do fundo",
             "como_fazer": "Gere a guia.\nPague.\nAnexe o comprovante.", "periodicidade": "MENSAL",
             "dia_util": 5}, por="ensaio", agora=desde)
-        referencia = RT.ultimo_vencimento(RT.uma(con, diario), date.today(),
-                                          feriados=RT.feriados_da_casa(con))
-        RT.marcar_feito(con, diario, referencia.isoformat(), resultado="COM_PENDENCIA",
+        nominal, _prazo = RT.ocorrencia_atual(RT.uma(con, diario), date.today(),
+                                              feriados=RT.feriados_da_casa(con), desde=desde)
+        RT.marcar_feito(con, diario, nominal.isoformat(), resultado="COM_PENDENCIA",
                         observacao="Cópia de ensaio com aviso", por="ensaio", usuario_id=None)
     for rotina_id in (diario, mensal):
         casa.pagina("rotina_editar", rotina_id=rotina_id)

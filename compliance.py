@@ -67,7 +67,7 @@ CORTE = "2026-09-10"
 
 GRAVIDADES = ("CRITICO", "NAO_MEDIU", "ATENCAO")
 #: As origens de linha que são acervo trazido, e não ato desta casa (as mesmas do gestor).
-ORIGENS_DO_ACERVO = ("EOFICIO", "ARQUIVO", "IMPORTACAO")
+ORIGENS_DO_ACERVO = ("EOFICIO", "ARQUIVO", "IMPORTACAO", "ACERVO")
 AREAS = {
     "AGENTES": "Fiscalização dos agentes",
     "INFORMACOES": "Informações prestadas às Centrais e órgãos",

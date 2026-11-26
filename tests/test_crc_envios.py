@@ -196,6 +196,42 @@ def test_marcar_como_enviado_tira_da_lista(casa):
     assert lotes[0]["nota"] == "site da CRC, hoje de manhã"
 
 
+def test_marcar_como_enviado_nao_marca_o_retido(casa):
+    """**O retido não estava no arquivo** (RC005/RC006, 26/11/2026): o lote 4
+    marcou 58 assentos com 50 no XML, e o duplicado sem número saiu da fila
+    sem nunca ter subido. A marca manual usa a régua do envio pelo web
+    service: só o que `montar` põe no arquivo."""
+    con = _con(casa)
+    bom = _assento(con, "MARIA ÍSIS", numero=1)
+    ruim = _assento(con, "SEM MATRÍCULA", numero=2, matricula="")
+    assert {r["assento_id"] for r in CRC.montar(con, [bom, ruim], cns="000000")[
+        "retidos"]} == {ruim}, "o caso de teste precisa de um retido e um bom"
+    html = _token_html(casa)
+    r = casa["cliente"].post(
+        "/rcpn/crc/marcar-enviado", data=_campos(html, [bom, ruim], nota="site"),
+        follow_redirects=True)
+    texto = _liso(r.get_data(as_text=True))
+    assert "1 assento(s) marcado(s) como já enviados" in texto
+    assert "1 assento(s) retido(s) NÃO foram marcados" in texto
+
+    con2 = _con(casa)
+    assert [a["id"] for a in CRC.pendentes_de_carga(con2)] == [ruim]
+    lotes = CRCENVIOS.historico_de_envios(con2)
+    assert len(lotes) == 1 and lotes[0]["quantos"] == 1
+    assert [a["id"] for a in CRCENVIOS.assentos_do_lote(con2, lotes[0]["id"])] == [bom]
+
+
+def test_marcar_como_enviado_so_com_retidos_nao_grava_lote(casa):
+    con = _con(casa)
+    ruim = _assento(con, "SEM MATRÍCULA", matricula="")
+    html = _token_html(casa)
+    r = casa["cliente"].post(
+        "/rcpn/crc/marcar-enviado", data=_campos(html, [ruim]),
+        follow_redirects=True)
+    assert "Nenhum assento marcado" in _liso(r.get_data(as_text=True))
+    assert CRCENVIOS.historico_de_envios(_con(casa)) == []
+
+
 def test_marcar_como_enviado_sem_escolher_nada_avisa(casa):
     html = _token_html(casa)
     r = casa["cliente"].post(

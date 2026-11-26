@@ -75,14 +75,22 @@ def nascimento(con, *, local_ibge=1, **kw):
         **kw)
 
 
-def obito(con, *, bens="NAO", **kw):
+def obito(con, *, bens="NAO", natureza=1, estado_civil="solteiro", **kw):
+    # O TIPO DA MORTE E O ESTADO CIVIL entraram na régua da CRC em 26/11/2026
+    # (RC006): a Central recusa o óbito com os dois em branco.
+    ibge = {"numero_do": "98765"}
+    if natureza is not None:
+        ibge["natureza_obito"] = natureza
+    falecido = {"papel": "FALECIDO", "nome": "ANTONIO EXEMPLO", "sexo": "M"}
+    if estado_civil is not None:
+        falecido["estado_civil"] = estado_civil
     return RC.lavrar_assento(
         con, especie="OBITO", nome="ANTONIO EXEMPLO", sv=SV, agora=AGORA,
         data_extenso=EXTENSO, data_fato="2026-10-12",
         termo_dados={"local_fato_nome": "Hospital Municipal"},
-        ibge={"numero_do": "98765"},
+        ibge=ibge,
         marcas_do_obito=({"obito_possui_bens": bens} if bens else None),
-        pessoas=[{"papel": "FALECIDO", "nome": "ANTONIO EXEMPLO", "sexo": "M"},
+        pessoas=[falecido,
                  {"papel": "MAE", "nome": "IGNORADO"},
                  {"papel": "PAI", "nome": "IGNORADO"},
                  {"papel": "DECLARANTE", "nome": "PEDRO EXEMPLO"}],
@@ -122,6 +130,20 @@ def test_obito_sem_deixou_bens_e_recusado_e_cita_o_campo_e_a_crc():
     texto = str(erro.value)
     assert "possuía bens" in texto
     assert "CRC" in texto
+
+
+def test_obito_sem_tipo_da_morte_nem_estado_civil_se_lavra_e_a_carga_o_retem():
+    """RC006 (26/11/2026): a CRC recusou óbitos com «TIPO_MORTE inexistente» e
+    «ESTADO_CIVIL inexistente». Os dois em branco não recusam a lavratura (o
+    bebê, a pessoa não identificada, o tardio): quem os retém é a carga da
+    CRC, com o motivo."""
+    import crc_carga as CRCM
+    con = banco()
+    assento_id = obito(con, natureza=None, estado_civil=None)["assento_id"]
+    faltas = " | ".join(f for r in CRCM.montar(con, [assento_id], cns="")["retidos"]
+                        for f in r["faltas"])
+    assert "o tipo da morte" in faltas
+    assert "o estado civil do falecido" in faltas
 
 
 def test_a_recusa_desfaz_tudo_e_nao_consome_numero():

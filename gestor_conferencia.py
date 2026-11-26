@@ -67,7 +67,33 @@ BACKUP_COMPLETO_DIAS_TOLERADOS = 7
 
 GRAVIDADES = ("CRITICO", "VENCIDO", "NAO_MEDIU", "PRAZO", "ATENCAO")
 
-ORIGENS_DO_ACERVO = ("EOFICIO", "ARQUIVO", "IMPORTACAO")
+#: As origens que são ACERVO trazido, e não ato lavrado nesta casa.
+#:
+#: **`ACERVO` ENTROU EM 26/11/2026 (RC006).** É a origem do lançamento direto do
+#: livro de papel (16/11/2026), e ele grava a data da DIGITAÇÃO em `data_ato`:
+#: um casamento celebrado em 1958 entrou com a data de 16/11/2026 e
+#: virou «ato novo» no SIRC, na CRC e no dado obrigatório do RCPN — sete
+#: achados falsos na checklist do Registro Civil. A data sozinha não separa o
+#: acervo do ato novo; a origem separa. `rc_funai` já tinha a mesma lista
+#: (RC004), e `compliance.ORIGENS_DO_ACERVO` é cópia desta, com teste.
+ORIGENS_DO_ACERVO = ("EOFICIO", "ARQUIVO", "IMPORTACAO", "ACERVO")
+
+
+def assentos_fora_da_cobranca(con) -> set[int]:
+    """Os assentos que as regras do ato novo (SIRC, CRC) não cobram. Só lê.
+
+    São dois: o do ACERVO (`ORIGENS_DO_ACERVO`), que sobe por lote do acervo,
+    e não com o prazo do ato novo; e o assento ATIVO SEM NÚMERO DE TERMO, que
+    não chegou a ser lavrado — mandá-lo ao SIRC seria informação inexata
+    (§ 4º do art. 225), e quem cobra a decisão sobre ele é o `RCPN_INACABADO`
+    do agente do RCPN, CRÍTICO. As listas de `sirc_remessa` e `crc_carga` não
+    mudam: elas são as da carga, e o acervo continua nelas.
+    """
+    marcas = ",".join(["%s"] * len(ORIGENS_DO_ACERVO))
+    return {int(r["id"]) for r in banco(con).ler(
+        f"""SELECT id FROM rc_assentos
+             WHERE COALESCE(origem,'') IN ({marcas}) OR numero IS NULL""",
+        ORIGENS_DO_ACERVO)}
 
 DESTINOS_DO_OBITO = (
     ("OBITO_TRE", "ao juiz eleitoral"),
@@ -197,8 +223,11 @@ def _competencias_enviadas(con, central) -> set[str]:
 def regra_sirc(con, hoje: date) -> list[dict]:
     import sirc_remessa
     enviados = _referencias_enviadas(con, "SIRC")
+    fora = assentos_fora_da_cobranca(con)
     saida = []
     for p in sirc_remessa.pendentes_de_remessa(con):
+        if int(p.get("assento_id") or 0) in fora:
+            continue
         datas = [_dia(a.get("data_ato")) for a in p.get("atos") or []]
         ultima = max([d for d in datas if d] or [_dia(p.get("data_ato"))]
                      or [None], default=None)
@@ -314,8 +343,15 @@ def regra_crc(con, hoje: date) -> list[dict]:
     # O ACERVO NÃO VIRA TAREFA: até 06/10 ele entrava como um achado só («N
     # assentos do acervo fora da carga»), e o corte do oficial o tirou — sobe
     # por lote, quando ele mandar, e não por cobrança.
+    #
+    # O ACERVO SE SEPARA PELA ORIGEM, E NÃO SÓ PELA DATA (26/11/2026): o
+    # lançamento direto do livro grava a data da digitação. Ver
+    # `assentos_fora_da_cobranca`, a mesma régua do SIRC.
+    fora = assentos_fora_da_cobranca(con)
     saida = []
     for p in crc_carga.pendentes_de_carga(con):
+        if int(p["id"]) in fora:
+            continue
         lavrado = _dia(p.get("data_ato"))
         if lavrado is None or antes_do_corte(lavrado):
             continue

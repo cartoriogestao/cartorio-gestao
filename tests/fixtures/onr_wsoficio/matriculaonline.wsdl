@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cópia MÍNIMA do contrato público do WSOfício do ONR, matriculaonline.asmx?wsdl (produção), para os testes da RI013 B0 (25/11/2026). Tirada só a ligação SOAP 1.2, que o cliente não usa; tipos, operações, ligação SOAP 1.1 e endereço estão como vieram. SHA-256 do original: 69dcab7ed97072a274b608243a580879e60d0a853f0a62d774b6f166604c8cc8 -->
+<wsdl:definitions xmlns:s="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/" xmlns:http="http://schemas.xmlsoap.org/wsdl/http/" xmlns:mime="http://schemas.xmlsoap.org/wsdl/mime/" xmlns:tns="http://tempuri.org/WSOficio" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:tm="http://microsoft.com/wsdl/mime/textMatching/" xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/" targetNamespace="http://tempuri.org/WSOficio" xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">
+  <wsdl:types>
+    <s:schema elementFormDefault="qualified" targetNamespace="http://tempuri.org/WSOficio">
+      <s:element name="ObterXmlSolicitacoes">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="oRequest" type="tns:MatriculaOnline_WSReq" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="MatriculaOnline_WSReq">
+        <s:sequence>
+          <s:element minOccurs="0" maxOccurs="1" name="Hash" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="Protocolo" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="DataInicial" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="DataFinal" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="idPedido" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:element name="ObterXmlSolicitacoesResponse">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="ObterXmlSolicitacoesResult" type="tns:MatriculaOnline_WSResp" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:complexType name="MatriculaOnline_WSResp">
+        <s:sequence>
+          <s:element minOccurs="1" maxOccurs="1" name="RETORNO" type="s:boolean" />
+          <s:element minOccurs="1" maxOccurs="1" name="CODIGOERRO" type="s:int" />
+          <s:element minOccurs="0" maxOccurs="1" name="ERRODESCRICAO" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="Xml" type="s:string" />
+          <s:element minOccurs="0" maxOccurs="1" name="LinhaDigitavel" type="s:string" />
+        </s:sequence>
+      </s:complexType>
+      <s:element name="ObterXmlSolicitacoesV2">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="oRequest" type="tns:MatriculaOnline_WSReq" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+      <s:element name="ObterXmlSolicitacoesV2Response">
+        <s:complexType>
+          <s:sequence>
+            <s:element minOccurs="0" maxOccurs="1" name="ObterXmlSolicitacoesV2Result" type="tns:MatriculaOnline_WSResp" />
+          </s:sequence>
+        </s:complexType>
+      </s:element>
+    </s:schema>
+  </wsdl:types>
+  <wsdl:message name="ObterXmlSolicitacoesSoapIn">
+    <wsdl:part name="parameters" element="tns:ObterXmlSolicitacoes" />
+  </wsdl:message>
+  <wsdl:message name="ObterXmlSolicitacoesSoapOut">
+    <wsdl:part name="parameters" element="tns:ObterXmlSolicitacoesResponse" />
+  </wsdl:message>
+  <wsdl:message name="ObterXmlSolicitacoesV2SoapIn">
+    <wsdl:part name="parameters" element="tns:ObterXmlSolicitacoesV2" />
+  </wsdl:message>
+  <wsdl:message name="ObterXmlSolicitacoesV2SoapOut">
+    <wsdl:part name="parameters" element="tns:ObterXmlSolicitacoesV2Response" />
+  </wsdl:message>
+  <wsdl:portType name="matriculaonlineSoap">
+    <wsdl:operation name="ObterXmlSolicitacoes">
+      <wsdl:input message="tns:ObterXmlSolicitacoesSoapIn" />
+      <wsdl:output message="tns:ObterXmlSolicitacoesSoapOut" />
+    </wsdl:operation>
+    <wsdl:operation name="ObterXmlSolicitacoesV2">
+      <wsdl:input message="tns:ObterXmlSolicitacoesV2SoapIn" />
+      <wsdl:output message="tns:ObterXmlSolicitacoesV2SoapOut" />
+    </wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="matriculaonlineSoap" type="tns:matriculaonlineSoap">
+    <soap:binding transport="http://schemas.xmlsoap.org/soap/http" />
+    <wsdl:operation name="ObterXmlSolicitacoes">
+      <soap:operation soapAction="http://tempuri.org/WSOficio/ObterXmlSolicitacoes" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="ObterXmlSolicitacoesV2">
+      <soap:operation soapAction="http://tempuri.org/WSOficio/ObterXmlSolicitacoesV2" style="document" />
+      <wsdl:input>
+        <soap:body use="literal" />
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" />
+      </wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="matriculaonline">
+    <wsdl:port name="matriculaonlineSoap" binding="tns:matriculaonlineSoap">
+      <soap:address location="https://wsoficio.onr.org.br/matriculaonline.asmx" />
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

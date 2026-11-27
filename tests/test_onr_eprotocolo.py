@@ -3,7 +3,8 @@
 
 O QUE ESTES TESTES GUARDAM
     **Só leitura.** Toda chamada que sai é `Login`, `List` ou `Get`; os `Set*`
-    do serviço nem estão no contrato do módulo.
+    do serviço estão no contrato desde a RI013 B0 (25/11/2026), mas a sessão
+    os recusa (`ESPERAM_O_PODE_DO_TITULAR`).
     **A ordem dos campos é a do WSDL de produção** (quando o contrato está na
     árvore, como nos outros serviços do WSOficio), e os nomes que o leitor usa
     existem nos tipos de resposta.
@@ -207,8 +208,12 @@ def test_os_metodos_sao_so_de_leitura_e_do_eprotocolo():
     for m in LEITURAS:
         assert m in W.CAMPOS and W.SERVICO_DO_METODO[m] == "eprotocolo"
         assert re.match(r"^(List|Get)", m)
+    # RI013 B0 (25/11/2026): os `Set*` entraram no contrato do módulo, mas a
+    # sessão os recusa — esperam o «pode» do titular e a homologação.
     assert not [m for m, s in W.SERVICO_DO_METODO.items()
-                if s == "eprotocolo" and not re.match(r"^(List|Get)", m)]
+                if s == "eprotocolo" and not re.match(r"^(List|Get)", m)
+                and m not in W.ESPERAM_O_PODE_DO_TITULAR and m != "ContratoXMLtoPDF"]
+    assert not set(LEITURAS) & W.ESPERAM_O_PODE_DO_TITULAR
     assert W.SERVICOS["eprotocolo"] == "eprotocolo.asmx"
 
 

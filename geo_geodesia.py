@@ -198,6 +198,19 @@ def para_sirgas(pontos: Iterable[Sequence[float]], sistema: dict) -> list[Ponto]
             for p in pontos]
 
 
+# --------------------------------------------------------------- graus, minutos e segundos
+
+def dms_para_graus(graus: float, minutos: float, segundos: float, *, negativo: bool = False) -> float:
+    """Graus, minutos e segundos em graus decimais. `GeoErro` se minuto ou segundo passam de 59,999….
+
+    O sinal vem à parte (`negativo`) porque «-00°30'00"» é meio grau ao sul, e o `-0` do número perderia o sinal.
+    """
+    if not (0 <= minutos < 60 and 0 <= segundos < 60 and graus >= 0):
+        raise GeoErro(f"Coordenada que não existe: {graus:g}° {minutos:g}' {segundos:g}\".")
+    valor = float(graus) + float(minutos) / 60.0 + float(segundos) / 3600.0
+    return -valor if negativo else valor
+
+
 # --------------------------------------------------------------- distância e área geodésicas
 
 def distancia_m(a: Ponto, b: Ponto) -> float:

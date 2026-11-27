@@ -60,6 +60,26 @@
       Arquivo em SAD 69 ou Córrego Alegre é recusado (converta no QGIS para SIRGAS 2000).</small></div>
   </form>
 </section>
+
+<section class="panel" id="memorial">
+  <div class="panel-head"><span>Extrair do memorial da matrícula</span>
+    <span class="small muted">vértices com Longitude e Latitude em graus, minutos e segundos, no teor da ficha</span></div>
+  <div style="padding:12px">
+    <form method="post" action="{{ url_for('ri_geo_memorial') }}" class="form-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Matrícula <input name="matricula" maxlength="40" autocomplete="off" required placeholder="ex.: 4015"></label>
+      <div><button class="button primary">Extrair do memorial</button></div>
+    </form>
+    <form method="post" action="{{ url_for('ri_geo_memorial_lote') }}" style="margin-top:8px"
+          onsubmit="return confirm('Ler o memorial de todas as matrículas abertas que o têm? Entram como PENDENTES; nada é adotado.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button">Extrair de todas as matrículas abertas que têm memorial</button></form>
+    <p class="small muted">O sistema lê o texto e guarda cada gleba como <strong>PENDENTE</strong>, com o texto-fonte e os vértices
+      como vieram. Sistema de coordenadas: SIRGAS 2000; texto em <strong>SAD 69 ou Córrego Alegre é recusado</strong> (converta no
+      QGIS). Matrícula com mais de uma gleba vira um polígono por gleba, marcado «conferir» — vértices de glebas diferentes nunca
+      se juntam. A área medida aparece ao lado da registrada. Quem adota é a pessoa.</p>
+  </div>
+</section>
 {% endif %}
 
 {% macro achados(linha) %}
@@ -68,18 +88,23 @@
 
 <section class="panel" id="pendentes">
   <div class="panel-head"><span>Pendentes de adoção</span>
-    {% if pode_gravar and pendentes %}<form method="post" action="{{ url_for('ri_geo_adotar_sugestoes') }}" style="display:inline">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button">Adotar as sugestões sem erro</button></form>{% endif %}</div>
+    {% if pode_gravar and pendentes %}<span>
+      <form method="post" action="{{ url_for('ri_geo_adotar_sugestoes') }}" style="display:inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button">Adotar as sugestões sem erro</button></form>
+      <form method="post" action="{{ url_for('ri_geo_adotar_memoriais') }}" style="display:inline"
+            onsubmit="return confirm('Adotar só os memoriais sem nenhum aviso (área que bate, sem sobreposição, uma gleba só)? Os outros ficam para você.')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="button">Adotar os memoriais sem aviso</button></form></span>{% endif %}</div>
   <div style="padding:12px">
   {% if not pendentes %}<p class="muted">Nada pendente.</p>{% else %}
   <table class="table">
-    <thead><tr><th>#</th><th>Origem</th><th>Matrícula sugerida</th><th>Área geodésica</th><th>Conferência</th><th></th></tr></thead>
+    <thead><tr><th>#</th><th>Origem</th><th>Matrícula sugerida</th><th>Área geodésica</th><th>Registrada na ficha</th><th>Conferência</th><th></th></tr></thead>
     <tbody>{% for g in pendentes %}
       <tr>
         <td><a href="{{ url_for('ri_geo_ver', geometria_id=g.id) }}">{{ g.id }}</a></td>
         <td class="small">{{ rotulo_da_origem.get(g.origem, g.origem) }}<br>{{ g.arquivo_nome or '' }}{% if g.matricula_declarada %}<br>arquivo diz: {{ g.matricula_declarada }}{% endif %}</td>
         <td>{{ g.rotulo or '—' }}</td>
         <td>{{ '{:,.4f}'.format(g.areas.geodesica_ha).replace(',', 'X').replace('.', ',').replace('X', '.') }} ha</td>
+        <td class="{{ 'danger' if g.areas.bate == False else '' }}">{% if g.areas.registrada_ha is not none %}{{ '%.4f'|format(g.areas.registrada_ha) }} ha<br><small>{{ '%+.2f'|format(g.areas.diferenca_pct) }}%{% if g.areas.bate == False %} — não bate{% endif %}</small>{% else %}—{% endif %}</td>
         <td>{{ achados(g) }}</td>
         <td>{% if pode_gravar and not g.com_erro %}
           <form method="post" action="{{ url_for('ri_geo_adotar', geometria_id=g.id) }}" class="stack">

@@ -5,7 +5,10 @@
 O QUE A TELA FAZ (a conta e a regra são de `ri_geo.py`)
     - IMPORTA um arquivo (GeoPackage, Shapefile em `.zip`, GeoJSON ou a parcela baixada do SIGEF) e guarda os
       polígonos como PENDENTES, com a origem;
-    - ADOTA cada polígono para uma matrícula (ou em lote, as sugestões do atributo do arquivo);
+    - EXTRAI o memorial do teor de uma matrícula (ou de todas as abertas que o têm) e guarda cada gleba como
+      PENDENTE, com a origem «memorial da matrícula N», o texto-fonte e os vértices como vieram;
+    - ADOTA cada polígono para uma matrícula (ou em lote: as sugestões do atributo do arquivo sem erro, e os
+      memoriais **sem nenhum aviso**);
     - MOSTRA a área geodésica ao lado da registrada, o fechamento, os cruzamentos e as sobreposições, e desenha o
       mosaico;
     - GERA o `.gpkg` e o Shapefile com os atributos do Mapa — só o ADMIN baixa, porque o arquivo leva o nome de
@@ -167,6 +170,86 @@ def registrar_rotas(app, db, login_required, roles_required, audit) -> None:
             flash(aviso, "warning")
         return redirect(url_for("ri_geo"))
 
+    def _a_matricula(texto) -> dict:
+        """A ficha que o número digitado nomeia; recusa (frase pronta) a que não existe e a que está em dois livros."""
+        with db.connect() as con:
+            fichas = RG.achar_matriculas(con, texto)
+        if not fichas:
+            raise RG.GeoImportError(f"Não achei a matrícula «{str(texto or '').strip()}».")
+        if len(fichas) > 1:
+            raise RG.GeoImportError("Há mais de uma ficha com este número (livros "
+                                    f"{', '.join(str(f['livro']) for f in fichas)}): o sistema não escolhe por você.")
+        return fichas[0]
+
+    @app.route("/registro-imoveis/mapa/memorial", methods=["POST"])
+    @login_required
+    @roles_required(*QUEM_GRAVA)
+    def ri_geo_memorial():
+        """Extrai o memorial do teor de UMA matrícula e guarda as glebas como PENDENTES. Não adota nenhuma."""
+        if not GEO.biblioteca_disponivel():
+            flash("A biblioteca de geodésia não está instalada nesta máquina: não dá para medir os polígonos.", "danger")
+            return redirect(url_for("ri_geo"))
+        cfg = RG.configuracao(db)
+        nome, nome_id = quem()
+        try:
+            ficha = _a_matricula(request.form.get("matricula"))
+            with db.transaction() as con:
+                resumo = RG.extrair_memorial(con, ficha["id"], quem=nome, quem_id=nome_id, agora=db.now(),
+                                             tolerancia_fechamento_m=cfg["tolerancia_fechamento_m"])
+        except (RG.GeoImportError, GEO.GeoErro) as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("ri_geo"))
+        audit("RI_GEO_MEMORIAL_EXTRAIDO", "RI_GEO_IMPORTACAO", resumo["importacao_id"],
+              {"matricula": resumo["matricula"], "sha256": resumo["sha256"], "glebas": resumo["glebas"],
+               "poligonos": resumo["geometrias"], "com_erro": resumo["com_erro"]})
+        flash(f"Matrícula {resumo['matricula']}: {len(resumo['geometrias'])} gleba(s) do memorial guardada(s) como "
+              f"PENDENTES ({resumo['com_erro']} com erro). Nenhuma foi adotada: confira e adote.", "success")
+        for aviso in resumo["avisos"][:10]:
+            flash(aviso, "warning")
+        return redirect(url_for("ri_geo") + "#pendentes")
+
+    @app.route("/registro-imoveis/mapa/memorial-lote", methods=["POST"])
+    @login_required
+    @roles_required(*QUEM_GRAVA)
+    def ri_geo_memorial_lote():
+        """Extrai o memorial de TODAS as matrículas abertas que o têm. Só guarda PENDENTES: adoção é ato da pessoa."""
+        if not GEO.biblioteca_disponivel():
+            flash("A biblioteca de geodésia não está instalada nesta máquina: não dá para medir os polígonos.", "danger")
+            return redirect(url_for("ri_geo"))
+        cfg = RG.configuracao(db)
+        nome, nome_id = quem()
+        with db.transaction() as con:
+            saida = RG.extrair_memoriais_em_lote(con, quem=nome, quem_id=nome_id, agora=db.now(),
+                                                 tolerancia_fechamento_m=cfg["tolerancia_fechamento_m"])
+        audit("RI_GEO_MEMORIAL_EM_LOTE", "RI_GEO_IMPORTACAO", None,
+              {"matriculas": len(saida["extraidas"]), "poligonos": saida["poligonos"],
+               "recusadas": len(saida["recusadas"])})
+        flash(f"{len(saida['extraidas'])} matrícula(s) com memorial extraída(s), {saida['poligonos']} polígono(s) "
+              f"PENDENTE(S); {len(saida['recusadas'])} não deram polígono. Nenhum foi adotado.", "success")
+        motivos: dict[str, int] = {}
+        for r in saida["recusadas"]:
+            chave = r["motivo"].split(":", 1)[-1].strip()[:110]
+            motivos[chave] = motivos.get(chave, 0) + 1
+        for motivo, quantas in sorted(motivos.items(), key=lambda m: -m[1])[:6]:
+            flash(f"{quantas} matrícula(s): {motivo}", "warning")
+        return redirect(url_for("ri_geo") + "#pendentes")
+
+    @app.route("/registro-imoveis/mapa/adotar-memoriais", methods=["POST"])
+    @login_required
+    @roles_required(*QUEM_GRAVA)
+    def ri_geo_adotar_memoriais():
+        """Adota, em lote, só os memoriais SEM NENHUM AVISO (área que bate, sem sobreposição, uma gleba só)."""
+        cfg = RG.configuracao(db)
+        nome, nome_id = quem()
+        with db.transaction() as con:
+            saida = RG.adotar_memoriais_sem_aviso(con, cfg, quem=nome, quem_id=nome_id, agora=db.now())
+        audit("RI_GEO_ADOTADO_EM_LOTE", "RI_GEOMETRIA", None,
+              {"origem": "MEMORIAL", "adotadas": saida["adotadas"],
+               "deixadas": [{"id": d["id"], "motivo": d["motivo"]} for d in saida["deixadas"]]})
+        flash(f"{len(saida['adotadas'])} memorial(is) sem aviso adotado(s); {len(saida['deixadas'])} ficaram para "
+              f"a sua conferência.", "success")
+        return redirect(url_for("ri_geo"))
+
     @app.route("/registro-imoveis/mapa/<int:geometria_id>")
     @login_required
     @roles_required(*QUEM_LE)
@@ -189,6 +272,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit) -> None:
             vizinhas = banco(con).ler("SELECT id, geom_wkb_hex FROM ri_geometrias WHERE id = ANY(%s)",
                                       ([s["id"] for s in sobrepostas] or [0],))
             historico = RG.da_matricula(con, geo["matricula_id"])["historico"] if geo["matricula_id"] else []
+        atributos = json.loads(geo["origem_atributos"] or "{}")
+        memorial = None
+        if geo["origem"] == "MEMORIAL":      # o texto-fonte e os vértices têm tela própria, não a lista de atributos
+            memorial = {"vertices": atributos.pop("vertices", []), "texto": atributos.pop("texto_fonte", "")}
         itens = [{"geometria": geometria, "rotulo": geo["rotulo"] or "este polígono", "cor": "#c0392b"}]
         nomes = {s["id"]: s["matricula"] for s in sobrepostas}
         itens += [{"geometria": RG._geometria_do_wkb_hex(v["geom_wkb_hex"]), "rotulo": f"matrícula {nomes[v['id']]}",
@@ -196,7 +283,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit) -> None:
         return render_template(
             "ri_geo_ver.html", g=geo, achados=RG.achados_da_linha(geo), areas=RG.comparar_areas(
                 geo, cfg["divergencia_area_pct"]), sobrepostas=sobrepostas, desenho=svg_do_mosaico(itens),
-            atributos=json.loads(geo["origem_atributos"] or "{}"), historico=historico, RG=RG, cfg=cfg,
+            atributos=atributos, memorial=memorial, historico=historico, RG=RG, cfg=cfg,
             pode_gravar=_papel_grava(), rotulo_da_origem=RG.ROTULO_DA_ORIGEM,
             biblioteca=GEO.biblioteca_disponivel())
 

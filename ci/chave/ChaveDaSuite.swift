@@ -30,6 +30,7 @@ struct Pedido: Codable {
     var modo: String = "auto"
     var ate: Double? = nil
     var agenda: [Janela] = [Janela(dias: [0, 1, 2, 3, 4], inicio: "08:00", fim: "18:00")]
+    var prioridade_ia: Bool? = nil
 }
 
 struct Estado: Decodable {
@@ -46,6 +47,8 @@ struct Estado: Decodable {
     var vm_gb: Double
     var proxima_troca: String?
     var aviso: String
+    var ia_em_uso: Bool?
+    var prioridade_ia: Bool?
 }
 
 func lerPedido() -> Pedido {
@@ -156,6 +159,12 @@ final class Chave: ObservableObject {
         salvar(p)
     }
 
+    func mudar(prioridade: Bool) {
+        var p = lerPedido()
+        p.prioridade_ia = prioridade
+        salvar(p)
+    }
+
     func salvar(agenda: [Janela]) {
         var p = lerPedido()
         p.agenda = agenda
@@ -248,11 +257,14 @@ struct Menu_: View {
         if let e = chave.estado {
             Text(situacao(e))
             Text(memoria(e))
-            if let t = e.proxima_troca, let d = formatoHora(t) {
+            if e.motivo == "IA em uso (prioridade)" {
+                Text("IA em uso, com prioridade: a suíte volta quando o modelo sair da memória")
+            } else if let t = e.proxima_troca, let d = formatoHora(t) {
                 Text("Muda para \(e.desejada == "ia" ? "a suíte" : "a IA") \(quando(d)) — \(e.motivo)")
             } else {
                 Text(e.motivo)
             }
+            if e.ia_em_uso == true { Text("IA em uso: há modelo carregado no Ollama") }
             if !e.aviso.isEmpty { Text("⚠︎ " + e.aviso) }
         }
         if !chave.mensagem.isEmpty { Text(chave.mensagem) }
@@ -260,6 +272,9 @@ struct Menu_: View {
         Toggle("Automático (agenda)", isOn: modo("auto"))
         Toggle("Suíte sempre", isOn: modo("suite"))
         Toggle("IA sempre", isOn: modo("ia"))
+        Toggle("IA tem prioridade quando estiver em uso", isOn: Binding(
+            get: { chave.pedido.prioridade_ia == true },
+            set: { chave.mudar(prioridade: $0) }))
         Menu("IA agora, por…") {
             ForEach([1.0, 2.0, 4.0, 8.0], id: \.self) { h in
                 Button("\(Int(h)) h") { chave.mudar(modo: "ia", horas: h) }

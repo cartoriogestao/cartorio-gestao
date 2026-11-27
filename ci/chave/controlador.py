@@ -12,6 +12,12 @@
 # Quem escolhe a posição é o pedido (pedido.json), que o app da barra de menus grava:
 #   - «auto»: segue a agenda (as janelas da IA); fora delas, suíte;
 #   - «suite» ou «ia»: fixo, até mudar (ou até `ate`, quando o pedido tem prazo).
+#   - `prioridade_ia` (27/11/2026): com a IA EM USO (o Ollama com modelo carregado), a
+#     posição é «ia» — passa por cima da agenda e do «suite» fixo; só um «suite» com
+#     prazo (`ate`), que é o «agora preciso da suíte», fica valendo. O Ollama descarrega
+#     o modelo depois de 30 min parado, e a chave volta sozinha.
+#   Com a VM ligada e o Qwen carregado, o Mac de 36 GB foi para o swap e o Qwen caiu de
+#   39 para ~1 token/s: os pesos dele estavam no disco.
 #
 # Este programa roda como root (LaunchDaemon br.cartoriogestao.ci-chave), porque os
 # serviços da suíte são do sistema. Por isso ele NÃO executa nada do pedido: só lê três
@@ -28,6 +34,7 @@ import stat
 import subprocess
 import sys
 import time
+import urllib.request
 from typing import List, Optional, Tuple
 
 PEDIDO = "/Users/Shared/CartorioGestao/chave-da-suite/pedido.json"
@@ -40,6 +47,8 @@ COLIMA = "/opt/homebrew/bin/colima"
 SERVICO_VM = "br.cartoriogestao.ci-colima"
 SERVICO_EXECUTOR = "br.cartoriogestao.ci-executor"
 PLIST = "/Library/LaunchDaemons/{}.plist"
+# Só o `models` da resposta importa (lista vazia = nenhum modelo carregado).
+OLLAMA_PS = "http://127.0.0.1:11434/api/ps"
 
 # Sem pedido (ou com pedido estragado): a IA no expediente, a suíte no resto.
 AGENDA_PADRAO = [{"dias": [0, 1, 2, 3, 4], "inicio": "08:00", "fim": "18:00"}]
@@ -53,9 +62,10 @@ NOMES_DOS_DIAS = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
 # ---------------------------------------------------------------------------
 class Pedido:
     def __init__(self, modo: str = "auto", ate: Optional[float] = None,
-                 agenda: Optional[list] = None, aviso: str = ""):
+                 agenda: Optional[list] = None, aviso: str = "", prioridade_ia: bool = False):
         self.modo = modo
         self.ate = ate
+        self.prioridade_ia = prioridade_ia
         self.agenda = agenda if agenda is not None else [dict(j) for j in AGENDA_PADRAO]
         self.aviso = aviso
 
@@ -103,12 +113,14 @@ def ler_pedido(texto: Optional[str]) -> Pedido:
     ate = bruto.get("ate")
     if ate is not None and (isinstance(ate, bool) or not isinstance(ate, (int, float))):
         ate = None
+    prioridade = bruto.get("prioridade_ia") is True  # só o booleano; o resto vale «não»
     agenda_bruta = bruto.get("agenda", AGENDA_PADRAO)
     if not isinstance(agenda_bruta, list) or len(agenda_bruta) > 20:
-        return Pedido(modo=modo, ate=ate, aviso="agenda inválida; vale a agenda padrão")
+        return Pedido(modo=modo, ate=ate, aviso="agenda inválida; vale a agenda padrão",
+                      prioridade_ia=prioridade)
     agenda = [j for j in (_janela(b) for b in agenda_bruta) if j]
     aviso = "" if len(agenda) == len(agenda_bruta) else "uma janela da agenda não confere e foi ignorada"
-    return Pedido(modo=modo, ate=ate, agenda=agenda, aviso=aviso)
+    return Pedido(modo=modo, ate=ate, agenda=agenda, aviso=aviso, prioridade_ia=prioridade)
 
 
 def ler_arquivo_do_pedido(caminho: str = PEDIDO) -> Optional[str]:
@@ -147,26 +159,30 @@ def na_janela_da_ia(agenda: List[dict], agora: dt.datetime) -> bool:
     return False
 
 
-def posicao_desejada(pedido: Pedido, agora: dt.datetime) -> Tuple[str, str]:
-    """('suite' | 'ia', por quê)."""
-    if pedido.modo in ("suite", "ia"):
-        if pedido.ate is None:
-            return pedido.modo, "fixo pelo app"
-        if agora.timestamp() < pedido.ate:
-            fim = dt.datetime.fromtimestamp(pedido.ate).strftime("%H:%M")
-            return pedido.modo, "pelo app até " + fim
+def posicao_desejada(pedido: Pedido, agora: dt.datetime, ia_em_uso: bool = False) -> Tuple[str, str]:
+    """('suite' | 'ia', por quê). A ordem: modo com prazo, IA em uso com prioridade,
+    modo fixo, agenda."""
+    com_prazo = pedido.modo in ("suite", "ia") and pedido.ate is not None
+    if com_prazo and agora.timestamp() < pedido.ate:
+        fim = dt.datetime.fromtimestamp(pedido.ate).strftime("%H:%M")
+        return pedido.modo, "pelo app até " + fim
+    if pedido.prioridade_ia and ia_em_uso:
+        return "ia", "IA em uso (prioridade)"
+    if pedido.modo in ("suite", "ia") and pedido.ate is None:
+        return pedido.modo, "fixo pelo app"
     if na_janela_da_ia(pedido.agenda, agora):
         return "ia", "agenda: janela da IA"
     return "suite", "agenda: fora da janela da IA"
 
 
-def proxima_troca(pedido: Pedido, agora: dt.datetime) -> Optional[dt.datetime]:
-    """Quando a posição desejada muda de novo (procura de minuto em minuto, até 8 dias)."""
-    atual = posicao_desejada(pedido, agora)[0]
+def proxima_troca(pedido: Pedido, agora: dt.datetime, ia_em_uso: bool = False) -> Optional[dt.datetime]:
+    """Quando a posição desejada muda de novo pelo relógio (procura de minuto em minuto,
+    até 8 dias), supondo que a IA continue como está agora."""
+    atual = posicao_desejada(pedido, agora, ia_em_uso)[0]
     t = agora.replace(second=0, microsecond=0)
     for _ in range(8 * 24 * 60):
         t += dt.timedelta(minutes=1)
-        if posicao_desejada(pedido, t)[0] != atual:
+        if posicao_desejada(pedido, t, ia_em_uso)[0] != atual:
             return t
     return None
 
@@ -221,14 +237,53 @@ def _servico_carregado(rotulo: str) -> bool:
     return _rodar("/bin/launchctl", "print", "system/" + rotulo).returncode == 0
 
 
-def observar() -> Tuple[Situacao, float]:
-    procs = _processos_do_ci()
-    vm = [rss for rss, cmd in procs if "Virtualization.VirtualMachine" in cmd]
-    rodando = any("Runner.Worker" in cmd for _, cmd in procs)
+def _processos_do_ci_com_pid() -> List[Tuple[int, int, str]]:
+    r = _rodar("/bin/ps", "-U", USUARIO_CI, "-o", "pid=,rss=,command=")
+    linhas = []
+    for linha in r.stdout.splitlines():
+        partes = linha.strip().split(None, 2)
+        if len(partes) == 3 and partes[0].isdigit() and partes[1].isdigit():
+            linhas.append((int(partes[0]), int(partes[1]), partes[2]))
+    return linhas
+
+
+def observar() -> Tuple[Situacao, float, List[int]]:
+    procs = _processos_do_ci_com_pid()
+    vm = [(pid, rss) for pid, rss, cmd in procs if "Virtualization.VirtualMachine" in cmd]
+    rodando = any("Runner.Worker" in cmd for _, _, cmd in procs)
     s = Situacao(vm_ligada=_servico_carregado(SERVICO_VM) or bool(vm),
                  executor_ligado=_servico_carregado(SERVICO_EXECUTOR),
                  suite_rodando=rodando)
-    return s, round(sum(vm) / 1048576, 1)
+    return s, round(sum(rss for _, rss in vm) / 1048576, 1), [pid for pid, _ in vm]
+
+
+def ia_em_uso(url: str = OLLAMA_PS) -> bool:
+    """Há modelo carregado no Ollama? Ollama fora do ar, lento ou resposta estranha: não."""
+    try:
+        with urllib.request.urlopen(url, timeout=1.5) as r:
+            dados = json.loads(r.read(1024 * 1024))
+    except Exception:
+        return False
+    return isinstance(dados, dict) and isinstance(dados.get("models"), list) and bool(dados["models"])
+
+
+# A prioridade que a chave deu à VM (pid -> baixa?): só mexe quando muda.
+_prioridade_da_vm = {}  # type: dict
+
+
+def ajustar_prioridade_da_vm(pids: List[int], baixa: bool, registrar) -> None:
+    """Enquanto a IA espera a suíte terminar, a VM roda em segundo plano (QoS «background»
+    e nice 10): cede CPU e disco à IA. Não devolve memória — isso só o desligar faz."""
+    for pid in pids:
+        if _prioridade_da_vm.get(pid) == baixa:
+            continue
+        _rodar("/usr/sbin/taskpolicy", "-b" if baixa else "-B", "-p", str(pid))
+        _rodar("/usr/bin/renice", "10" if baixa else "0", "-p", str(pid))
+        _prioridade_da_vm[pid] = baixa
+        registrar("VM (pid {}) em prioridade {}".format(pid, "baixa" if baixa else "normal"))
+    for pid in list(_prioridade_da_vm):
+        if pid not in pids:
+            del _prioridade_da_vm[pid]
 
 
 def _ligar(rotulo: str) -> None:
@@ -298,10 +353,11 @@ def descrever_agenda(agenda: List[dict]) -> str:
 def um_passo(simular: bool = False) -> str:
     agora = dt.datetime.now()
     pedido = ler_pedido(ler_arquivo_do_pedido())
-    desejada, motivo = posicao_desejada(pedido, agora)
-    s, vm_gb = observar()
+    ia = ia_em_uso()
+    desejada, motivo = posicao_desejada(pedido, agora, ia)
+    s, vm_gb, vm_pids = observar()
     acoes, momento = decidir(desejada, s)
-    troca = proxima_troca(pedido, agora)
+    troca = proxima_troca(pedido, agora, ia)
     estado = {
         "atualizado": agora.isoformat(timespec="seconds"),
         "modo": pedido.modo, "ate": pedido.ate, "agenda": pedido.agenda,
@@ -311,16 +367,19 @@ def um_passo(simular: bool = False) -> str:
         "suite_rodando": s.suite_rodando, "vm_gb": vm_gb,
         "proxima_troca": troca.isoformat(timespec="minutes") if troca else None,
         "aviso": pedido.aviso, "acoes": acoes,
+        "ia_em_uso": ia, "prioridade_ia": pedido.prioridade_ia,
+        "vm_prioridade_baixa": momento == "esperando",
     }
     if simular:
         print(json.dumps(estado, ensure_ascii=False, indent=1))
         return momento
+    ajustar_prioridade_da_vm(vm_pids, momento == "esperando", registrar)
     gravar_estado(estado)
     for acao in acoes:
         registrar("{} ({}; {})".format(acao, desejada, motivo))
         agir(acao, registrar)
     if acoes:  # o estado já com o resultado, para o app não mostrar o passo anterior
-        s, vm_gb = observar()
+        s, vm_gb, _ = observar()
         estado.update(vm_ligada=s.vm_ligada, executor_ligado=s.executor_ligado,
                       suite_rodando=s.suite_rodando, vm_gb=vm_gb, acoes=[],
                       momento=decidir(desejada, s)[1])

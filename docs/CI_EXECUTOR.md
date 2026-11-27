@@ -96,6 +96,15 @@ janelas, por dia e hora). Padrão: IA de segunda a sexta, 8h–18h; suíte no re
 Com a suíte em andamento, **Interromper a suíte agora…** cancela a rodada no GitHub e a põe
 de volta na fila assim que o executor sai do ar; ela roda do começo quando a chave voltar.
 
+**IA tem prioridade quando estiver em uso** (campo `prioridade_ia` do pedido): com um modelo
+carregado no Ollama (`GET 127.0.0.1:11434/api/ps` com `models` não vazio), a posição é IA —
+por cima da agenda e do «Suíte sempre»; só «Suíte agora, por…» (modo com prazo) fica valendo.
+O Ollama descarrega o modelo após 30 min parado, e a chave volta sozinha. Enquanto a suíte em
+andamento termina, a VM roda em segundo plano (`taskpolicy -b` e `renice 10`): cede CPU e
+disco, mas não memória — essa só volta quando a VM desliga. Motivo (medido em 27/11/2026): com
+a VM ligada e o Qwen 8B carregado, o Mac de 36 GB foi para o swap e o Qwen caiu de 39 para
+~1 token/s.
+
 | Peça | Onde | O que faz |
 |---|---|---|
 | `ci/chave/controlador.py` | LaunchDaemon `br.cartoriogestao.ci-chave` (root) | a cada 5 s lê o pedido, decide a posição e liga/desliga os dois serviços (`launchctl enable/disable` + `bootstrap/bootout`: o desligado não volta nem depois de reiniciar o Mac); publica o estado |

@@ -130,3 +130,49 @@ def test_arquivo_do_pedido_em_pasta_aberta_e_recusado(tmp_path):
     assert C.ler_arquivo_do_pedido(str(pasta / "pedido.json")) is None
     os.chmod(pasta, 0o755)
     assert C.ler_arquivo_do_pedido(str(pasta / "pedido.json")) == '{"modo": "ia"}'
+
+
+# --- a prioridade da IA (27/11/2026) ----------------------------------------
+def test_prioridade_so_vale_com_o_booleano():
+    assert pedido(prioridade_ia=True).prioridade_ia is True
+    assert pedido(prioridade_ia="sim").prioridade_ia is False
+    assert pedido(prioridade_ia=1).prioridade_ia is False
+    assert C.ler_pedido(None).prioridade_ia is False
+
+
+def test_ia_em_uso_com_prioridade_passa_por_cima_da_agenda_e_do_fixo():
+    sabado = em(5, "10:00")  # fora da janela da IA
+    assert C.posicao_desejada(pedido(prioridade_ia=True), sabado, True) == ("ia", "IA em uso (prioridade)")
+    assert C.posicao_desejada(pedido(modo="suite", prioridade_ia=True), sabado, True)[0] == "ia"
+
+
+def test_suite_com_prazo_vale_sobre_a_prioridade():
+    p = pedido(modo="suite", ate=em(5, "12:00").timestamp(), prioridade_ia=True)
+    assert C.posicao_desejada(p, em(5, "11:00"), True) == ("suite", "pelo app até 12:00")
+    assert C.posicao_desejada(p, em(5, "12:00"), True)[0] == "ia"  # o prazo venceu
+
+
+def test_sem_prioridade_ou_sem_ia_em_uso_segue_a_agenda():
+    sabado = em(5, "10:00")
+    assert C.posicao_desejada(pedido(prioridade_ia=False), sabado, True)[0] == "suite"
+    assert C.posicao_desejada(pedido(prioridade_ia=True), sabado, False)[0] == "suite"
+
+
+def test_proxima_troca_com_a_ia_em_uso_e_prioridade_nao_tem_hora():
+    assert C.proxima_troca(pedido(prioridade_ia=True), em(5, "10:00"), True) is None
+
+
+def test_ollama_fora_do_ar_e_sem_ia_em_uso():
+    assert C.ia_em_uso("http://127.0.0.1:9/api/ps") is False
+
+
+def test_resposta_do_ollama(monkeypatch):
+    class Resp:
+        def __init__(self, corpo): self.corpo = corpo
+        def read(self, n): return self.corpo
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+    for corpo, esperado in [(b'{"models":[{"name":"qwen3:8b"}]}', True), (b'{"models":[]}', False),
+                            (b'{"models":"x"}', False), (b'[]', False), (b'nao e json', False)]:
+        monkeypatch.setattr(C.urllib.request, "urlopen", lambda *a, **k: Resp(corpo))
+        assert C.ia_em_uso() is esperado

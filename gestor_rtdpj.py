@@ -509,6 +509,39 @@ def regra_livro(con, hoje: date) -> list[dict]:
     return saida
 
 
+def _dispensado_pelo_oficial(bd, protocolo_id: int) -> bool:
+    """O protocolo foi encerrado como ENTREGUE pelo oficial, ou a mando dele.
+
+    «Entregue + ajuste na regra» — o oficial, 27/11/2026, sobre o protocolo
+    2026.09.17: a cobrança que ELE dispensa não é mais achado. A prova é a
+    auditoria do encerramento (`PROTOCOLO_ENCERRAR`, a mesma da rota do
+    caixa): o último encerrar/reabrir do protocolo é um encerrar, e quem
+    gravou é ADMIN ou declarou agir a mando de um ADMIN (`a_mando_de`, a
+    conta do robô). Encerrado no balcão por outra pessoa, sem cobrar, continua
+    achado: é exatamente o que a Gestão existe para ver.
+    """
+    if not (_tem_tabela(bd, "audit_logs") and _tem_tabela(bd, "users")
+            and _tem_colunas(bd, "users", "role")):
+        return False
+    ultimo = bd.um(
+        """SELECT action, user_id, {mando} AS a_mando_de FROM audit_logs
+            WHERE action IN ('PROTOCOLO_ENCERRAR', 'PROTOCOLO_REABRIR')
+              AND entity_type = 'PROTOCOLO' AND CAST(entity_id AS TEXT) = %s
+            ORDER BY id DESC LIMIT 1""".format(
+            mando="a_mando_de" if _tem_colunas(bd, "audit_logs", "a_mando_de")
+            else "NULL"),
+        (str(int(protocolo_id)),))
+    if not ultimo or ultimo["action"] != "PROTOCOLO_ENCERRAR":
+        return False
+    admins = bd.ler("SELECT id, full_name FROM users WHERE role = 'ADMIN'")
+    if ultimo["user_id"] is not None and int(ultimo["user_id"]) in {
+            int(a["id"]) for a in admins}:
+        return True
+    mando = " ".join(str(ultimo["a_mando_de"] or "").split()).casefold()
+    return bool(mando) and mando in {
+        " ".join(str(a["full_name"] or "").split()).casefold() for a in admins}
+
+
 def regra_sem_pagamento(con, hoje: date) -> list[dict]:
     """Protocolo do RCPJ/RTD com item já gasto por ato e nada quitado. É
     achado da Gestão, e não acusação: a casa também cobra por lançamento à
@@ -535,6 +568,8 @@ def regra_sem_pagamento(con, hoje: date) -> list[dict]:
         devidos = [u for u in usados
                    if not int(u["quitado"] or 0) and u["lancamento_id"] is None]
         if not devidos:
+            continue
+        if p["situacao"] == "ENTREGUE" and _dispensado_pelo_oficial(bd, int(p["id"])):
             continue
         valor = sum(_centavos(u["valor_total"]) for u in devidos)
         saida.append(_achado(

@@ -69,8 +69,9 @@ def con(tmp_path):
         CREATE TABLE audit_logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, user_id INTEGER,
             username_snapshot TEXT, action TEXT, entity_type TEXT,
-            entity_id INTEGER, details TEXT, ip_address TEXT);
-        CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT);
+            entity_id INTEGER, details TEXT, ip_address TEXT, a_mando_de TEXT);
+        CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, full_name TEXT,
+                            role TEXT);
     """)
     RGS.init_rg_schema(c)
     return c
@@ -255,6 +256,54 @@ def test_o_protocolo_com_selo_gasto_e_sem_pagamento_e_achado_da_gestao(con):
     assert achados[0]["setor"] == GRT.SETOR_GESTAO
     assert "R$ 144,75" in achados[0]["titulo"]
     assert GRT.SEM_PAGAMENTO in GRT.REGRAS_SEM_TAREFA
+
+
+def _encerrar(con, *, user_id, a_mando_de=None, acao="PROTOCOLO_ENCERRAR",
+              situacao="ENTREGUE"):
+    con.execute("UPDATE cx_protocolos SET situacao = ? WHERE id = 1", (situacao,))
+    con.execute("""INSERT INTO audit_logs (ts, user_id, action, entity_type,
+                       entity_id, details, a_mando_de)
+                   VALUES ('2026-10-09T10:00:00', ?, ?, 'PROTOCOLO', 1, '{}', ?)""",
+                (user_id, acao, a_mando_de))
+
+
+def _pessoas(con):
+    con.executescript("""
+        INSERT INTO users (id, full_name, role) VALUES (1, 'Mario Exemplo dos Santos', 'ADMIN');
+        INSERT INTO users (id, full_name, role) VALUES (2, 'Escrevente Exemplo', 'USER');
+        INSERT INTO users (id, full_name, role) VALUES (9, 'agente de ia', 'USER');
+    """)
+
+
+def test_a_cobranca_que_o_oficial_dispensa_deixa_de_ser_achado(con):
+    o_caso_da_santa_isabel(con)
+    _pessoas(con)
+    _encerrar(con, user_id=1)
+    assert GRT.regra_sem_pagamento(con, HOJE) == []
+
+
+def test_o_robo_a_mando_do_oficial_tambem_dispensa(con):
+    o_caso_da_santa_isabel(con)
+    _pessoas(con)
+    _encerrar(con, user_id=9, a_mando_de="Mario  Exemplo dos Santos")
+    assert GRT.regra_sem_pagamento(con, HOJE) == []
+
+
+def test_entregue_pelo_balcao_sem_cobrar_continua_achado(con):
+    o_caso_da_santa_isabel(con)
+    _pessoas(con)
+    _encerrar(con, user_id=2)
+    assert len(GRT.regra_sem_pagamento(con, HOJE)) == 1
+    _encerrar(con, user_id=9, a_mando_de="Escrevente Exemplo")
+    assert len(GRT.regra_sem_pagamento(con, HOJE)) == 1
+
+
+def test_reaberto_depois_da_dispensa_volta_a_ser_achado(con):
+    o_caso_da_santa_isabel(con)
+    _pessoas(con)
+    _encerrar(con, user_id=1)
+    _encerrar(con, user_id=1, acao="PROTOCOLO_REABRIR", situacao="A_PAGAR")
+    assert len(GRT.regra_sem_pagamento(con, HOJE)) == 1
 
 
 def test_o_numero_repetido_do_acervo_aparece_e_nao_vira_tarefa(con):

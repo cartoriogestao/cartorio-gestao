@@ -162,6 +162,7 @@ ROTULOS = {
     "CAIXA_DIFERENCA": "Caixas com diferença sem justificativa",
     "CAIXA_ABERTO": "Caixas esquecidos abertos",
     "FECHAMENTO_DO_MES": "Fechamento do mês: selos × caixa",
+    "REPASSE_DE_TERCEIRO": "Valor de outro cartório com o lançamento desfeito no caixa",
     "PLD_COAF": "PLD/COAF — casos que esperam análise ou comunicação",
     "IDENTIDADE_DOS_ROBOS": "Robôs e rotinas que não dizem quem são nem a mando de quem",
 }

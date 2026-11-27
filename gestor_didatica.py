@@ -266,6 +266,12 @@ GUIA: dict[str, tuple[str, list[str]]] = {
         "Os selos usados no mês não batem com as entradas do caixa no mês.",
         ["Compare em Relatórios → Selos e no Caixa do mês; explique a diferença "
          "(depósito em outro dia, ato gratuito, cobrança esquecida)."]),
+    "REPASSE_DE_TERCEIRO": (
+        "O cliente pagou aqui a certidão que outro cartório emite (materialização "
+        "pedida pela CRC), e o lançamento desse valor foi desfeito no caixa com o "
+        "pedido ainda aberto no saldo de repasse da CRC.",
+        ["Abra Registro Civil → Materializar certidão → Saldo de repasse da CRC.",
+         "Encerre o pedido com o motivo (ele já não conta no saldo)."]),
     "BACKUP": (
         "O backup completo está atrasado.",
         ["Rode FERRAMENTAS/BACKUP_AGORA.cmd no servidor (ele também espelha fora)."]),

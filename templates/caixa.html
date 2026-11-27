@@ -73,7 +73,9 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>Natureza
       <select name="natureza">
-        {% for cod, (sentido, rotulo) in NATUREZAS.items() %}
+        {# O valor de terceiro (F010) não se lança aqui: nasce na tela da
+           materialização, ligado ao pedido e ao repasse. #}
+        {% for cod, (sentido, rotulo) in NATUREZAS_DO_BALCAO.items() %}
           {% if cod != 'ESTORNO' %}<option value="{{ cod }}">{{ rotulo }} ({{ sentido|lower }})</option>{% endif %}
         {% endfor %}
       </select></label>
@@ -174,6 +176,10 @@
                 <button class="small">emitir recibo</button>
               </form>
             {% endif %}
+            {% if l.natureza in NATUREZAS_SO_DO_SISTEMA %}
+            <span class="small muted">valor de terceiro — corrige-se pela
+              <a href="{{ url_for('rcpn_materializacao_repasses') }}">tela do saldo da CRC</a></span>
+            {% else %}
             <details style="display:inline-block;vertical-align:top">
               <summary class="small">alterar</summary>
               <form method="post" class="form-grid" style="margin-top:8px;min-width:340px">
@@ -182,7 +188,7 @@
                 <label>Valor <input name="valor" value="{{ l.valor }}" required></label>
                 <label>Natureza
                   <select name="natureza">
-                    {% for cod, (sent, rot) in NATUREZAS.items() %}
+                    {% for cod, (sent, rot) in NATUREZAS_DO_BALCAO.items() %}
                       {% if cod != 'ESTORNO' %}
                       <option value="{{ cod }}" {% if l.natureza == cod %}selected{% endif %}>{{ rot }}</option>
                       {% endif %}
@@ -206,6 +212,7 @@
                   <span class="small muted">O valor anterior fica no histórico.</span></div>
               </form>
             </details>
+            {% endif %}
             <form method="post" style="display:inline"
                   onsubmit="return confirm('Estornar este lançamento? Ele continua na lista, marcado.')">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

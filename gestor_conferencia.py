@@ -1802,12 +1802,19 @@ def regra_fechamento_do_mes(con, hoje: date) -> list[dict]:
             selos[g] = selos.get(g, 0.0) + lido["total"]
         caixa = 0.0
         sem_protocolo = 0
+        # O VALOR DE TERCEIRO DA MATERIALIZAÇÃO (F010, 25/11/2026) fica fora:
+        # nenhum selo o declara (é o que o OUTRO cartório cobra), e somado ao
+        # caixa ele viraria diferença sem explicação. A devolução dele também.
+        import rc_materializacao_repasse as RMR
+        devolucoes = RMR.ids_de_devolucao(con)
         for lanc in banco(con).ler(
-                """SELECT valor, sentido, protocolo_id FROM cx_lancamentos
+                """SELECT id, valor, sentido, natureza, protocolo_id FROM cx_lancamentos
                     WHERE data ILIKE %s AND data >= %s
                       AND COALESCE(estornado,0) = 0 AND COALESCE(excluido,0) = 0
                     ORDER BY id""",
                 (comp + "%", IMPLANTACAO)):
+            if lanc["natureza"] == RMR.NATUREZA or int(lanc["id"]) in devolucoes:
+                continue
             v, sentido, prot = lanc["valor"], lanc["sentido"], lanc["protocolo_id"]
             caixa += _reais(v) * (1 if (sentido or "ENTRADA") == "ENTRADA" else -1)
             sem_protocolo += prot is None
@@ -1827,6 +1834,21 @@ def regra_fechamento_do_mes(con, hoje: date) -> list[dict]:
             "de que atribuição são. Pode ser gratuidade sem a marca no selo, ou "
             "dinheiro recebido por outro caminho — conferir.", None, ""))
     return saida
+
+
+def regra_repasse_de_terceiro(con, hoje: date) -> list[dict]:
+    """O valor de outro cartório com o lançamento desfeito e o pedido aberto.
+
+    F010 (25/11/2026), solução B da CR004: o cliente paga aqui a certidão que o
+    outro cartório emite, e esse dinheiro forma o saldo de repasse da CRC. Não
+    há prazo (a CRC cobra do saldo dela, e recarregar é decisão do oficial):
+    o aviso é o lançamento desfeito com o pedido aberto. A frase mora em
+    `rc_materializacao_repasse.achados`."""
+    import rc_materializacao_repasse as RMR
+    return [_achado(a["chave"], "REPASSE_DE_TERCEIRO", a["gravidade"], "GESTAO",
+                    a["titulo"], a["detalhe"], a["prazo"],
+                    "Dinheiro de terceiro que passou pela casa (CR004/F010)")
+            for a in RMR.achados(con, hoje=hoje.isoformat())]
 
 
 def regra_identidade_dos_robos(con, hoje: date) -> list[dict]:
@@ -1914,6 +1936,7 @@ REGRAS: tuple[tuple[str, Callable], ...] = (
     # camada 3 — o dinheiro
     ("CAIXA", regra_caixa),
     ("FECHAMENTO_DO_MES", regra_fechamento_do_mes),
+    ("REPASSE_DE_TERCEIRO", regra_repasse_de_terceiro),
     # o agente de cargas do RI (09/10/2026)
     ("ONR_CARGAS", regra_onr_cargas),
     # o agente de cargas do RCPN (09/10/2026)

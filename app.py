@@ -3664,6 +3664,12 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     import protesto_repasse_web
     protesto_repasse_web.registrar_rotas(app, db, login_required,
                                          roles_required, audit)
+    # O VALOR DE TERCEIRO DA MATERIALIZAÇÃO (F010, 25/11/2026), no molde do
+    # repasse ao apresentante: o que o cliente paga para o outro cartório entra
+    # no caixa fora da receita e sai pelo repasse, com comprovante.
+    import rc_materializacao_repasse_web
+    rc_materializacao_repasse_web.registrar_rotas(app, db, login_required,
+                                                  roles_required, audit)
     # O PIX DO PROTESTO (29/10/2026): só é pagamento com o comprovante e o
     # crédito conferido. As telas apontam para `protesto_titulo`, e a ficha
     # dele lê o PIX pelo `context_processor` daqui.

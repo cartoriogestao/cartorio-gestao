@@ -189,7 +189,7 @@ def apurar_mes(con, ano: int, mes: int) -> dict:
                "troco": 0.0, "gratuitos": [0, 0.0], "excluidos": [0, 0.0],
                "estornos": [0, 0.0], "incoerentes": [], "sem_atrib": 0,
                "saidas": {"qtd": 0, "total": 0.0, "por_natureza": {}},
-               "outras_entradas": [0, 0.0]}
+               "outras_entradas": [0, 0.0], "valores_de_terceiros": [0, 0.0]}
     lans = bd.ler(
         # O «nº» DO USO É O id DO DEPÓSITO, e não o número impresso
         # (DP2026.09.7): medido em 06/10/2026, «Uso do depósito prévio nº 10»
@@ -238,6 +238,15 @@ def apurar_mes(con, ano: int, mes: int) -> dict:
         r["sem_atrib"] += atr == "sem identificação"
         if lan["natureza"] == "DEPOSITO_PREVIO":
             chave = "Depósito prévio lançado no caixa"
+            r["entrou"][chave] = r["entrou"].get(chave, 0.0) + valor
+            continue
+        # O VALOR DE TERCEIRO (F010, 25/11/2026): o dinheiro do outro cartório
+        # na materialização (saldo de repasse da CRC). Bloco próprio, fora
+        # da receita e fora das «outras entradas», para ninguém o somar a nada.
+        if str(lan["natureza"] or "").upper() == "VALOR_DE_TERCEIRO":
+            r["valores_de_terceiros"][0] += 1
+            r["valores_de_terceiros"][1] += valor
+            chave = "Valores de terceiros (repasse a outro cartório — não são receita)"
             r["entrou"][chave] = r["entrou"].get(chave, 0.0) + valor
             continue
         # OUTRA ENTRADA (e qualquer natureza que não seja RECEBIMENTO): o

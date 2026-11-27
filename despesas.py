@@ -129,6 +129,13 @@ CATEGORIAS: dict[str, tuple[str, str]] = {
     # fica fora do Livro Diário e do SIAFERJ, como o repasse de fundo.
     "REPASSE_APRESENTANTE": ("Repasse ao apresentante — título pago no Protesto",
                              REPASSE),
+    # O ENVIO À CRC DO SALDO DE REPASSE DA MATERIALIZAÇÃO (F010, 25/11/2026):
+    # o que o cliente pagou pela certidão que outro cartório emite, mandado à
+    # CRC para completar o saldo com que ela paga o outro cartório. Dinheiro de
+    # terceiro que passou pela casa (`rc_materializacao_repasse`): fora do
+    # Livro Diário e do SIAFERJ, como o repasse ao apresentante.
+    "REPASSE_SERVENTIA_CRC": ("Repasse a outra serventia — CRC (materialização)",
+                              REPASSE),
 }
 
 BOLETO, ARRECADACAO, PIX_COPIA_E_COLA, PIX_CHAVE, MANUAL = (

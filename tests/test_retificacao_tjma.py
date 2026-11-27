@@ -116,11 +116,14 @@ def test_o_georreferenciamento_acrescenta_a_certificacao_do_incra():
 # ------------------------------------------------ os prazos
 
 
-def test_todos_os_prazos_sao_em_dias_uteis_menos_o_do_sigef():
-    """O art. 620 § 2º escreve «30 (trinta) dias», sem qualificar. Inventar
-    «úteis» ali daria à serventia mais prazo do que a norma deu."""
+def test_todos_os_prazos_sao_em_dias_uteis_menos_o_do_sigef_e_as_contrarrazoes():
+    """O art. 620 § 2º escreve «30 (trinta) dias», e o 600 § 5º «10 (dez)
+    dias», sem qualificar. Inventar «úteis» ali daria mais prazo do que a norma
+    deu. O recurso do § 4º, logo acima, é «10 (dez) dias úteis»."""
     corridos = [p["chave"] for p in RT.PRAZOS if not p["uteis"]]
-    assert corridos == ["SIGEF"]
+    assert corridos == ["CONTRARRAZOAR", "SIGEF"]
+    assert RT.prazo("RECORRER")["uteis"] is True
+    assert RT.prazo("RECORRER")["dias"] == 10
 
 
 def test_o_prazo_do_sigef_e_da_serventia_e_de_trinta_dias():

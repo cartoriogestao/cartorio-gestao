@@ -90,6 +90,24 @@
      como «acabou» erraria — e erraria contra quem não foi ouvido.</p>
 </div>
 
+<h2>Os caminhos da impugnação — art. 600</h2>
+<p class="small muted">Fundada ou infundada é decisão <strong>do oficial</strong>,
+   fundamentada; o sistema guarda o caminho e conta os prazos.</p>
+<table>
+  <thead><tr><th>Artigo</th><th>O quê</th></tr></thead>
+  <tbody>
+  {% for c in norma.CAMINHOS_DA_IMPUGNACAO %}
+    <tr><td class="small">{{ c.artigo }}</td><td>{{ c.o_que }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p><strong>Considera-se infundada a impugnação</strong> (art. 600, § 6º):</p>
+<ul>
+{% for h in norma.HIPOTESES_DE_IMPUGNACAO_INFUNDADA %}
+  <li>{{ h.inciso }} — {{ h.o_que }}</li>
+{% endfor %}
+</ul>
+
 <h2>Como se notifica — art. 598</h2>
 <p class="small muted">É uma <strong>ordem</strong>, e não uma lista de opções:
    o edital só cabe «caso frustradas as tentativas anteriores».</p>

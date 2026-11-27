@@ -268,6 +268,24 @@ PRAZOS: tuple[dict, ...] = (
      "de_quem": "AS_PARTES",
      "o_que": "Formalizar a transação amigável ou agendar a mediação — "
               "prorrogável, a pedido, uma única vez por mais 15 dias úteis"},
+    {"chave": "TRANSACAO_PRORROGADA", "artigo": "art. 600, § 2º", "dias": 15,
+     "uteis": True, "de_quem": "AS_PARTES",
+     "o_que": "A prorrogação da transação, a pedido — UMA ÚNICA VEZ, contada "
+              "do fim do prazo original"},
+    # O RECURSO E AS CONTRARRAZOES DA IMPUGNACAO INFUNDADA — e os dois NAO
+    # contam igual, porque o paragrafo nao os escreve igual: o § 4o diz «10
+    # (dez) dias uteis»; o § 5o diz «10 (dez) dias», sem qualificar. E a regra
+    # do SIGEF: inventar «uteis» onde o artigo nao escreveu daria a parte mais
+    # prazo do que a norma deu.
+    {"chave": "RECORRER", "artigo": "art. 600, § 4º", "dias": 10, "uteis": True,
+     "de_quem": "IMPUGNANTE",
+     "o_que": "Recorrer da rejeição de plano da impugnação infundada, contado "
+              "da intimação do impugnante; sem recurso, o procedimento "
+              "prossegue"},
+    {"chave": "CONTRARRAZOAR", "artigo": "art. 600, § 5º", "dias": 10,
+     "uteis": False, "de_quem": "REQUERENTE",
+     "o_que": "O interessado apresenta, querendo, contrarrazões ao recurso; "
+              "depois os autos vão ao Juiz corregedor permanente"},
     {"chave": "SUSCITAR_DUVIDA", "artigo": "art. 604, § 2º", "dias": 15,
      "uteis": True, "de_quem": "REQUERENTE",
      "o_que": "Requerer, fundamentadamente, que o oficial suscite dúvida, se o "
@@ -295,6 +313,76 @@ IMPUGNACAO_ATRASADA_ENTRA = {
     "artigo": "art. 599, § 3º",
     "o_que": "Mesmo apresentada fora de prazo, MAS ANTES DA AVERBAÇÃO da "
              "retificação, a impugnação será recebida e processada.",
+}
+
+
+# ------------------------------------------------- os caminhos da impugnação
+#
+# Art. 600. Sao tres, e QUEM ESCOLHE O CAMINHO E O OFICIAL — esta lista so o
+# mostra. Fundada ou infundada e materia de direito (art. 604 e § 4o: «decisao
+# fundamentada»), e o sistema nao classifica impugnacao nenhuma.
+CAMINHOS_DA_IMPUGNACAO: tuple[dict, ...] = (
+    {"artigo": "art. 600",
+     "o_que": "Oferecida impugnação fundamentada, o oficial intima o "
+              "requerente e o profissional que assinou a planta e o memorial "
+              "para se manifestarem em 5 dias úteis."},
+    {"artigo": "art. 600, § 1º",
+     "o_que": "Ouvidos os dois, o oficial tenta a mediação ou a conciliação."},
+    {"artigo": "art. 600, § 2º",
+     "o_que": "Pedida a transação amigável pelo requerente ou pelo "
+              "profissional: 15 dias úteis para formalizá-la ou agendar a "
+              "sessão, prorrogáveis UMA ÚNICA VEZ, a pedido, por mais 15."},
+    {"artigo": "art. 600, § 3º",
+     "o_que": "Impugnação fundada, com a controvérsia mantida ou impedimento "
+              "constatado: os autos vão ao Juiz corregedor permanente, "
+              "FICANDO PRORROGADOS OS EFEITOS DA PRENOTAÇÃO."},
+    {"artigo": "art. 600, § 4º",
+     "o_que": "Impugnação infundada: o oficial a rejeita DE PLANO, por "
+              "decisão fundamentada; sem recurso em 10 dias úteis da "
+              "intimação do impugnante, o procedimento prossegue."},
+    {"artigo": "art. 600, § 5º",
+     "o_que": "Com recurso: apresentadas as razões, o interessado é intimado "
+              "para contrarrazões em 10 dias, e os autos vão ao Juiz "
+              "corregedor permanente com as informações complementares do "
+              "oficial."},
+    {"artigo": "art. 601",
+     "o_que": "A remessa ao Juiz é ato fundamentado, com as informações dos "
+              "assentamentos sobre o imóvel e os confinantes, certidões "
+              "atualizadas das matrículas e cópias de plantas e croquis."},
+)
+
+# Art. 600, § 6o — o que a norma CONSIDERA infundado. E APOIO, e nao regra:
+# o oficial marca a hipotese que fundamenta a SUA decisao, e o texto dele e
+# obrigatorio. O inciso V existe justamente para dizer que a lista nao fecha —
+# «pautado pelos criterios da prudencia e da razoabilidade».
+HIPOTESES_DE_IMPUGNACAO_INFUNDADA: tuple[dict, ...] = (
+    {"inciso": "I", "artigo": "art. 600, § 6º, I",
+     "o_que": "Já examinada e refutada em casos iguais ou semelhantes pelo "
+              "Juiz corregedor permanente ou pela Corregedoria Geral do Foro "
+              "Extrajudicial"},
+    {"inciso": "II", "artigo": "art. 600, § 6º, II",
+     "o_que": "O interessado se limita a dizer que a retificação avança sobre "
+              "a sua propriedade sem indicar, de forma plausível, onde e de que "
+              "forma"},
+    {"inciso": "III", "artigo": "art. 600, § 6º, III",
+     "o_que": "Não contém exposição, ainda que sumária, dos motivos da "
+              "discordância"},
+    {"inciso": "IV", "artigo": "art. 600, § 6º, IV",
+     "o_que": "Ventila matéria absolutamente estranha à retificação"},
+    {"inciso": "V", "artigo": "art. 600, § 6º, V",
+     "o_que": "O oficial, pautado pelos critérios da prudência e da "
+              "razoabilidade, assim a reputa"},
+)
+
+HIPOTESE_POR_INCISO = {h["inciso"]: h for h in HIPOTESES_DE_IMPUGNACAO_INFUNDADA}
+
+# Art. 600, § 3o, e TJMA 452, § 3o, II — a remessa ao juizo para decidir a
+# impugnacao prorroga a prenotacao. Quem guarda o prazo da prenotacao e o
+# `ri_prenotacao_prazo`; esta e a frase com o endereco.
+PRENOTACAO_PRORROGADA_NA_REMESSA = {
+    "artigo": "art. 600, § 3º",
+    "o_que": "Remetidos os autos ao Juiz corregedor permanente, ficam "
+             "prorrogados os efeitos da prenotação.",
 }
 
 
@@ -382,9 +470,10 @@ def artigos_citados() -> list[str]:
     vistos: set[int] = set()
     fontes: list = [SEM_LIMITE_DE_AREA, IMPOSSIVEL_IDENTIFICAR, ONDE_NOTIFICAR,
                     SILENCIO_VALE_ANUENCIA, IMPUGNACAO_ATRASADA_ENTRA,
-                    NAO_GERA_PRIORIDADE]
+                    NAO_GERA_PRIORIDADE, PRENOTACAO_PRORROGADA_NA_REMESSA]
     for grupo in (DOCUMENTOS_DO_ART_592, DOCUMENTOS_DO_GEORREFERENCIAMENTO,
                   DISPENSAS, QUEM_E_CONFRONTANTE, COMO_NOTIFICAR, PRAZOS,
+                  CAMINHOS_DA_IMPUGNACAO, HIPOTESES_DE_IMPUGNACAO_INFUNDADA,
                   DESFECHO_DA_RETIFICACAO, DESFECHO_DO_GEORREFERENCIAMENTO,
                   CIRCUNSCRICAO):
         fontes.extend(grupo)

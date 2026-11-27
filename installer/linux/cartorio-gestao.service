@@ -1,0 +1,29 @@
+# O serviço do Cartório Gestão no Linux (docs/SERVIDOR_LINUX.md). O instalar_servidor.sh troca os
+# campos entre arrobas e grava em /etc/systemd/system/cartorio-gestao.service.
+[Unit]
+Description=Cartório Gestão (servidor)
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=@CONTA@
+Group=@CONTA@
+EnvironmentFile=@ENV@
+# O LibreOffice grava o perfil em $HOME: fica na pasta de dados.
+Environment=HOME=@DADOS@
+WorkingDirectory=@RAIZ@/sistema
+ExecStart=@RAIZ@/venv/bin/python app.py --service
+Restart=always
+RestartSec=5
+# O código só lê; a pasta de dados é o único lugar onde ele grava.
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=@DADOS@
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

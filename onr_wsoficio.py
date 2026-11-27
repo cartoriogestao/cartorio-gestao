@@ -63,6 +63,15 @@ O QUE ESTE MÓDULO FAZ HOJE
     que ele for salvo em `FONTES_EXTERNAS/onr_wsoficio/producao`. **A primeira
     chamada em homologação é a prova que falta.**
 
+    **E, desde 25/11/2026 (RI013 B0), O TRANSPORTE INTEIRO DE TRÊS SERVIÇOS**:
+    e-Protocolo (`eprotocolo.asmx`, 30 métodos), e-Intimação (`intimacoes.asmx`,
+    14) e matrícula online (`matriculaonline.asmx`, 2) estão todos em `CAMPOS`,
+    na ordem do WSDL, com as listas, o base64 e as datas que eles pedem. As
+    leituras a sessão chama; as escritas só se MONTAM (`pedido_*`, que devolve
+    um `Pedido`), e `Sessao.chamar` as recusa enquanto estiverem em
+    `ESPERAM_O_PODE_DO_TITULAR` — cada uma espera o «pode» do titular e a
+    primeira chamada em homologação. Nenhuma rodada, processo ou tela as chama.
+
     **O BDLight recebe um LINK, e não o arquivo** (`ImportarArquivoBDL` leva
     `URLArquivo`; até 5 MB) — o ONR vai buscar o XML num endereço. Esta casa
     não tem endereço público, e por isso a importação não foi construída.
@@ -71,12 +80,16 @@ A REDE NUNCA ACONTECE DENTRO DE `db.transaction()` — este módulo nem recebe b
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import re
 import subprocess
 import time
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
+from datetime import date, datetime
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape
@@ -183,13 +196,153 @@ CAMPOS = {
     "ListBoletosAC": ("Hash", "IDContrato"),
     "ListCustasAC": ("Hash", "IDContrato"),
     "GetExtratoXMLAC": ("Hash", "Protocolo"),
+    # O RESTO DO E-PROTOCOLO — 25/11/2026, RI013 B0 (o transporte). Os 24
+    # métodos que faltavam, na ordem do mesmo WSDL. As leituras (`Get*`,
+    # `List*` e `ContratoXMLtoPDF`) a sessão já chama; as escritas estão em
+    # `ESPERAM_O_PODE_DO_TITULAR` e a sessão as RECUSA (ver lá). O WSDL tem 30
+    # métodos, e não 31. ONDE O MANUAL E O WSDL DIVERGEM, VALE O WSDL: o
+    # `SetPrenotacaoExameCalculoAC` leva `Senha`, e não `DataVencimento`; os
+    # anexos do `SetContratoExigenciaAC` têm `Nome`, e não `Descricao`; e o
+    # método do repositório é `ListRepositorioDocumentosAC`, e não
+    # `ListDocumentosRepositorioAC`.
+    "ContratoXMLtoPDF": ("Hash", "URLArquivo"),
+    "SetBaixaBoletoAC": ("Hash", "IDBoleto", "Convenio"),
+    "GetPedidoAC": ("Hash", "IDContrato"),
+    "GetPedidoAC_V2": ("Hash", "IDContrato"),
+    "GetPedidoAC_V3": ("Hash", "IDContrato"),
+    "GetPedidoAC_V4": ("Hash", "IDContrato"),
+    "GetPedidoAC_V5": ("Hash", "IDContrato"),
+    "GetPedidoAC_V6": ("Hash", "IDContrato"),
+    "GetPedidoAC_V7": ("Hash", "IDContrato"),
+    "AlterarPedidoAC": ("Hash", "IDContrato", "TipoDocumento", "ApresentanteNome",
+                        "ApresentanteEmail", "EnderecoVia", "EnderecoLogradouro",
+                        "EnderecoNumero", "EnderecoComplemento", "EnderecoBairro", "EnderecoUF",
+                        "EnderecoCidade", "EnderecoCEP", "ContatoDDD", "ContatoTelefone"),
+    "SetPrenotacaoAC": ("Hash", "IDContrato", "NumeroPrenotacao", "DataPrenotacao",
+                        "DataVencimento", "Senha"),
+    "SetProrrogarPrenotacaoAC": ("Hash", "IDContrato", "Motivo"),
+    "SetCustasAC": ("Hash", "IDContrato", "ValorCustas"),
+    "SetCustasComplementarAC": ("Hash", "IDContrato", "ValorCustas"),
+    "SetPrenotacaoExameCalculoAC": ("Hash", "IDContrato", "NumeroPrenotacao", "DataPrenotacao",
+                                    "Senha"),
+    "SetContratoAverbadoAC": ("Hash", "IDContrato", "Resposta", "CertidaoAverbacao"),
+    "SetContratoAverbadoAC_DocID": ("Hash", "IDContrato", "Resposta", "CertidaoAverbacao"),
+    "SetContratoExigenciaAC": ("Hash", "IDContrato", "ExigenciaFinal", "Resposta", "Anexos"),
+    "SetContratoExigenciaAC_DocID": ("Hash", "IDContrato", "ExigenciaFinal", "Resposta",
+                                     "Anexos"),
+    "SetContratoCumprimentoExigenciaRI": ("Hash", "IDContrato"),
+    "SetContratoDevolvidoAC": ("Hash", "IDContrato", "Resposta"),
+    "ListRepositorioDocumentosAC": ("Hash", "IDContrato", "IDDepartamento", "CPFVinculado",
+                                    "DataVencimentoInicial", "DataVencimentoFinal"),
+    "SetFinalizarProtocoloAC": ("Hash", "IDContrato", "Resposta", "Anexos"),
+    "SetBaixaCustasAC": ("Hash", "IDCustas"),
+    # A E-INTIMAÇÃO (manual 4.43, cap. 3.11, p. 135-154) — 25/11/2026, RI013 B0.
+    # Os 14 métodos de `FONTES_EXTERNAS/onr_wsoficio/producao/intimacoes.wsdl`.
+    # O `CancelamentoJudicialIN` está no WSDL e não no manual.
+    "ImportarPrenotacaoIN": ("Hash", "XMLs"),
+    "ListStatusIN": ("Hash",),
+    "ListPedidosIN": ("Hash", "MaxRowPerPage", "PageNumber", "IDStatus", "Protocolo",
+                      "TipoDataPesquisa", "DataInicial", "DataFinal"),
+    "ListMensagensPedidoIN": ("Hash", "MaxRowPerPage", "PageNumber", "IDPedido", "IDStatus",
+                              "Assunto", "IDFiltro"),
+    "AdicionarMensagemIN": ("Hash", "IDIntimacao", "IDStatus", "Assunto", "Mensagem",
+                            "URLAnexos", "NumeroPrenotacao", "DataPrenotacao",
+                            "VencimentoPrenotacao", "ValorPrenotacao", "TipoDestinacaoMutuo",
+                            "TipoDeterminacaoJudicial", "ValorServico", "DataPagamento",
+                            "ValorPagamento"),
+    "GetDetalhesIN": ("Hash", "IDPedido"),
+    "GetDetalhesIN_V2": ("Hash", "IDPedido"),
+    "GetDetalhesIN_V3": ("Hash", "IDPedido"),
+    "GetMensagemIN": ("Hash", "IDMensagem"),
+    "GetEmolumentosIN": ("Hash", "IDPedido"),
+    "AdicionarEmolumentoIN": ("Hash", "IDPedido", "IDStatus", "Descricao", "Valor"),
+    "ExcluirEmolumentoIN": ("Hash", "IDEmolumento"),
+    "CancelamentoJudicialIN": ("Hash", "IDPedido", "DataAverbacao"),
+    "ListPagamentoIN": ("Hash", "MaxRowPerPage", "PageNumber", "Protocolo", "IDStatusPagamento",
+                        "IDStatusEmolumentos", "ProtocoloPagamento", "NossoNumero",
+                        "DataCustasInicial", "DataCustasFinal", "DataPagamentoInicial",
+                        "DataPagamentoFinal"),
+    # A MATRÍCULA ONLINE (manual 4.43, cap. 3.9, p. 91-93) — 25/11/2026, RI013
+    # B0. Dois métodos, os dois de leitura, com o MESMO tipo de pedido. O «x»
+    # minúsculo de `Xml` é do WSDL (as certidões escrevem `XML`).
+    "ObterXmlSolicitacoes": ("Hash", "Protocolo", "DataInicial", "DataFinal", "idPedido"),
+    "ObterXmlSolicitacoesV2": ("Hash", "Protocolo", "DataInicial", "DataFinal", "idPedido"),
 }
 
 #: O tipo do pedido no WSDL quando ele não é `<Metodo>_WSReq`. Medido no WSDL
 #: de produção: o `GetPedidoAC_V8` usa `GetPedidoAC_v8_WSReq`, com «v» minúsculo.
+#: E há reaproveitamento: o `GetPedidoAC_V6` usa o tipo da v5, o
+#: `GetDetalhesIN_V3` o da v2, e as duas da matrícula online o mesmo tipo.
 TIPO_DO_PEDIDO_NO_WSDL = {"LoginUsuarioCertificado": "Login_WSReq",
                           "ObterXMLSolicitacoes_v6": "ObterXMLSolicitacoesv2_WSReq",
-                          "GetPedidoAC_V8": "GetPedidoAC_v8_WSReq"}
+                          "GetPedidoAC_V3": "GetPedidoAC_v3_WSReq",
+                          "GetPedidoAC_V4": "GetPedidoAC_v4_WSReq",
+                          "GetPedidoAC_V5": "GetPedidoAC_v5_WSReq",
+                          "GetPedidoAC_V6": "GetPedidoAC_v5_WSReq",
+                          "GetPedidoAC_V7": "GetPedidoAC_v7_WSReq",
+                          "GetPedidoAC_V8": "GetPedidoAC_v8_WSReq",
+                          "GetDetalhesIN_V3": "GetDetalhesIN_V2_WSReq",
+                          "ListPagamentoIN": "ListPagamentosIN_WSReq",
+                          "ObterXmlSolicitacoes": "MatriculaOnline_WSReq",
+                          "ObterXmlSolicitacoesV2": "MatriculaOnline_WSReq"}
+
+#: OS MÉTODOS QUE MUDAM COISA NO ONR E AINDA NÃO TÊM O «PODE» DO TITULAR — RI013
+#: B0, 25/11/2026. O transporte deles está pronto (campos, listas, base64,
+#: datas; testado contra o WSDL), mas **`Sessao.chamar` os recusa**: prenotar,
+#: informar custas, responder exigência, averbar, devolver, finalizar e mandar
+#: mensagem de intimação mudam o que o banco e o devedor veem na Central, e cada
+#: um espera DUAS coisas — o «pode» do titular e a primeira chamada em
+#: homologação. A etapa que ganhar as duas (P2, P3, I2, I3) tira o método daqui,
+#: no mesmo PR que o chama, e diz no comentário quando e por quem.
+ESPERAM_O_PODE_DO_TITULAR = frozenset({
+    # e-Protocolo (manual 3.10)
+    "SetBaixaBoletoAC", "AlterarPedidoAC", "SetPrenotacaoAC", "SetProrrogarPrenotacaoAC",
+    "SetCustasAC", "SetCustasComplementarAC", "SetPrenotacaoExameCalculoAC",
+    "SetContratoAverbadoAC", "SetContratoAverbadoAC_DocID", "SetContratoExigenciaAC",
+    "SetContratoExigenciaAC_DocID", "SetContratoCumprimentoExigenciaRI",
+    "SetContratoDevolvidoAC", "SetFinalizarProtocoloAC", "SetBaixaCustasAC",
+    # e-Intimação (manual 3.11)
+    "ImportarPrenotacaoIN", "AdicionarMensagemIN", "AdicionarEmolumentoIN",
+    "ExcluirEmolumentoIN", "CancelamentoJudicialIN",
+})
+
+#: OS CAMPOS QUE SÃO LISTA, POR MÉTODO: (método, campo) → (o nome de cada item,
+#: os campos do item na ordem do WSDL). `None` no lugar dos campos é lista de
+#: texto puro (`ArrayOfString`, cada item `<string>`). É por método, e não por
+#: campo, porque o mesmo nome muda de forma: os `Anexos` da exigência levam
+#: `Nome`+`URLArquivo`, os da exigência por DocID `Nome`+`DocumentID`, e os da
+#: finalização `NomeArquivo`+`ArquivoBase64`.
+LISTAS_DO_METODO = {
+    ("SetContratoAverbadoAC", "CertidaoAverbacao"):
+        ("SetContratoAverbadoAC_Certidao_WSReq", ("Descricao", "URLArquivo")),
+    ("SetContratoAverbadoAC_DocID", "CertidaoAverbacao"):
+        ("SetContratoAverbadoAC_DocID_Certidao_WSReq", ("Descricao", "DocumentID")),
+    ("SetContratoExigenciaAC", "Anexos"):
+        ("SetContratoExigenciaAC_Anexo_WSReq", ("Nome", "URLArquivo")),
+    ("SetContratoExigenciaAC_DocID", "Anexos"):
+        ("SetContratoExigenciaAC_DocID_Anexo_WSReq", ("Nome", "DocumentID")),
+    ("SetFinalizarProtocoloAC", "Anexos"):
+        ("SetFinalizarProtocoloAC_Anexo_WSReq", ("NomeArquivo", "ArquivoBase64")),
+    ("ImportarPrenotacaoIN", "XMLs"): ("ImportarPrenotacaoIN_XML_WSReq", ("URLXML",)),
+    ("AdicionarMensagemIN", "URLAnexos"): ("string", None),
+    ("EnviarAnexosListCertidao", "AnexoList"):
+        ("AnexoListCertidao_WSReq", ("NomeArquivo", "ArquivoBase64")),
+}
+
+#: Campo que leva o arquivo em base64: `bytes` vira base64 aqui; texto vai como veio.
+CAMPOS_BASE64 = frozenset({"ArquivoBase64"})
+
+#: AS DATAS. O WSDL diz `string` em todas; o formato é do manual: aaaa-mm-dd no
+#: e-Protocolo (3.10), na e-Intimação (3.11) e na matrícula online (erro 13 do
+#: 3.9). `date`/`datetime` viram esse texto aqui; texto vai como veio. Só
+#: nestes serviços — nos outros o formato não foi conferido, e objeto de data
+#: é recusado. Os três da mensagem de intimação levam hora: o manual escreve
+#: «aaaa-mm-ddhh:mm:ss», sem nada entre o dia e a hora, o que parece espaço
+#: perdido no PDF — vai com espaço, **A CONFERIR na homologação**.
+SERVICOS_COM_DATA_ISO = frozenset({"eprotocolo", "intimacoes", "matricula"})
+CAMPOS_DE_DATA_COM_HORA = frozenset({("AdicionarMensagemIN", "DataPrenotacao"),
+                                     ("AdicionarMensagemIN", "VencimentoPrenotacao"),
+                                     ("AdicionarMensagemIN", "DataPagamento")})
 
 #: Os métodos do Acompanhamento de Títulos que MUDAM COISA NO ONR — e que o
 #: apresentante vê. Só `onr_acompanhamento` os chama, a partir de uma fila de
@@ -230,6 +383,64 @@ SERVICO_DO_METODO = {
     "ListAnexosAC": "eprotocolo", "ListBoletosAC": "eprotocolo",
     "ListCustasAC": "eprotocolo", "GetExtratoXMLAC": "eprotocolo",
 }
+# RI013 B0, 25/11/2026: os métodos novos dos três serviços. Cada nome só existe
+# num serviço (há teste que confere contra os WSDLs).
+SERVICO_DO_METODO.update({m: "eprotocolo" for m in (
+    "ContratoXMLtoPDF", "SetBaixaBoletoAC", "GetPedidoAC", "GetPedidoAC_V2", "GetPedidoAC_V3",
+    "GetPedidoAC_V4", "GetPedidoAC_V5", "GetPedidoAC_V6", "GetPedidoAC_V7", "AlterarPedidoAC",
+    "SetPrenotacaoAC", "SetProrrogarPrenotacaoAC", "SetCustasAC", "SetCustasComplementarAC",
+    "SetPrenotacaoExameCalculoAC", "SetContratoAverbadoAC", "SetContratoAverbadoAC_DocID",
+    "SetContratoExigenciaAC", "SetContratoExigenciaAC_DocID",
+    "SetContratoCumprimentoExigenciaRI", "SetContratoDevolvidoAC",
+    "ListRepositorioDocumentosAC", "SetFinalizarProtocoloAC", "SetBaixaCustasAC")})
+SERVICO_DO_METODO.update({m: "intimacoes" for m in (
+    "ImportarPrenotacaoIN", "ListStatusIN", "ListPedidosIN", "ListMensagensPedidoIN",
+    "AdicionarMensagemIN", "GetDetalhesIN", "GetDetalhesIN_V2", "GetDetalhesIN_V3",
+    "GetMensagemIN", "GetEmolumentosIN", "AdicionarEmolumentoIN", "ExcluirEmolumentoIN",
+    "CancelamentoJudicialIN", "ListPagamentoIN")})
+SERVICO_DO_METODO.update({m: "matricula" for m in ("ObterXmlSolicitacoes",
+                                                   "ObterXmlSolicitacoesV2")})
+
+#: OS CÓDIGOS DA E-INTIMAÇÃO — só o manual 4.43 os dá (3.11). Os status do
+#: PEDIDO vêm do próprio serviço (`ListStatusIN`); estes são os da MENSAGEM que
+#: o cartório pode mandar (3.11.15). O 28 (determinação judicial) o manual cita
+#: no `TipoDeterminacaoJudicial` e não lista aqui.
+STATUS_DA_MENSAGEM_IN = {2: "Devolvido", 3: "Devolvido com exigência", 4: "Prenotado",
+                         6: "Boleto de consolidação", 7: "Intimado", 8: "Não intimado",
+                         10: "Negativa de pagamento", 12: "Registro / averbação",
+                         14: "Pagamento no cartório", 16: "Expedição de intimação",
+                         20: "Informação RI", 22: "Boleto intimação edital",
+                         23: "Arquivamento por desinteresse",
+                         24: "Devolvido por incompetência", 25: "Desistência concluída",
+                         29: "Nova projeção"}
+#: `IDFiltro` do `ListMensagensPedidoIN` (3.11.7).
+FILTRO_DE_MENSAGEM_IN = {1: "Todas", 2: "Não lidas", 3: "Lidas", 4: "Recebidas",
+                         5: "Enviadas"}
+#: `IDStatus` do `AdicionarEmolumentoIN` (3.11.17).
+TIPO_DE_EMOLUMENTO_IN = {1: "Prenotação", 2: "Outros", 3: "Intimação"}
+#: `IDStatusPagamento` e `IDStatusEmolumentos` do `ListPagamentoIN` (3.11.21);
+#: 0 é «qualquer um» nos dois.
+STATUS_DO_PAGAMENTO_IN = {1: "Em aberto", 2: "Em processamento", 3: "Concluído"}
+TIPO_DE_CUSTAS_NO_PAGAMENTO_IN = {1: "Prenotação", 2: "Outros", 3: "Intimação",
+                                  5: "Boleto de consolidação", 6: "Boleto edital"}
+#: `TipoDeterminacaoJudicial` (3.11.15) — só com o status 28.
+TIPO_DETERMINACAO_JUDICIAL_IN = {1: "Paralisação do procedimento", 2: "Outros"}
+#: `TipoDestinacaoMutuo` (3.11.15) — obrigatório com o status 4 (prenotado).
+DESTINACAO_DO_MUTUO_IN = {
+    1: "Comércio", 2: "Exportação", 3: "Habitacional — compra de imóvel dado em garantia",
+    4: "Habitacional — compra de outro imóvel", 5: "Habitacional — construção — autoconstrução",
+    6: "Habitacional — construção — empreendimento", 7: "Habitacional — reforma e ampliação",
+    8: "Importação", 9: "Microcrédito", 10: "Não declarada",
+    11: "Não habitacional — compra de outro imóvel",
+    12: "Não habitacional — construção — autoconstrução",
+    13: "Não habitacional — construção — empreendimento",
+    14: "Não habitacional — compra de imóvel dado em garantia", 15: "Operações societárias",
+    16: "Produção agrícola", 17: "Produção industrial", 18: "Produção pecuária",
+    19: "Serviços", 20: "Outras destinações"}
+#: Mínimo de linhas por página nas listagens da e-Intimação (erro 12).
+MINIMO_POR_PAGINA_INTIMACAO = 10
+#: A matrícula online pesquisa no máximo 30 dias de cada vez (erro 13, 3.9).
+DIAS_POR_PESQUISA_MATRICULA_ONLINE = 30
 
 #: OS CÓDIGOS DO E-PROTOCOLO DO RI — só o manual 4.43 os dá (o WSDL diz `int`).
 #: `IDStatus` (3.10.4 e 3.10.22, p. 98 e 115-116). O 0 só aparece no filtro
@@ -494,9 +705,54 @@ def hash_da_mensagem(chave: str, token: str, *, maiusculas: bool = True) -> str:
     return h.upper() if maiusculas else h
 
 
+def _texto_do_campo(metodo: str, nome: str, valor: Any) -> str:
+    """Um valor simples como o .NET o lê (RI013 B0, 25/11/2026).
+
+    `bool` → true/false; `bytes` → base64, só em `CAMPOS_BASE64`; `date` e
+    `datetime` → aaaa-mm-dd (com « hh:mm:ss» em `CAMPOS_DE_DATA_COM_HORA`), só
+    nos serviços de `SERVICOS_COM_DATA_ISO`; `Decimal` e `float` → ponto e duas
+    casas, que é o «XX.XX» do manual; o resto vai como texto."""
+    if isinstance(valor, bool):
+        return "true" if valor else "false"
+    if isinstance(valor, (bytes, bytearray)):
+        if nome not in CAMPOS_BASE64:
+            raise WSOficioError(f"O campo {nome} de {metodo} não leva arquivo.")
+        return base64.b64encode(bytes(valor)).decode("ascii")
+    if isinstance(valor, (date, datetime)):
+        if SERVICO_DO_METODO.get(metodo) not in SERVICOS_COM_DATA_ISO:
+            raise WSOficioError(f"O formato de data de {metodo} não foi conferido: "
+                                "passe o texto pronto.")
+        if (metodo, nome) in CAMPOS_DE_DATA_COM_HORA:
+            if not isinstance(valor, datetime):
+                valor = datetime(valor.year, valor.month, valor.day)
+            return valor.strftime("%Y-%m-%d %H:%M:%S")
+        return valor.strftime("%Y-%m-%d")
+    if isinstance(valor, float):
+        valor = Decimal(str(valor))
+    if isinstance(valor, Decimal):
+        if not valor.is_finite():
+            raise WSOficioError(f"O valor de {nome} em {metodo} não é um número.")
+        return format(valor.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), "f")
+    if isinstance(valor, (dict, list, tuple, set)):
+        raise WSOficioError(f"O campo {nome} de {metodo} não é lista nem tipo composto.")
+    return str(valor)
+
+
+def _lista_do_campo(metodo: str, nome: str):
+    """(nome do item, campos do item) se o campo é lista; senão `None`."""
+    if (metodo, nome) in LISTAS_DO_METODO:
+        return LISTAS_DO_METODO[(metodo, nome)]
+    return LISTAS.get(nome)
+
+
 def envelope(metodo: str, campos: dict) -> bytes:
     """O envelope SOAP 1.1, com os campos NA ORDEM do contrato. Campo que não
-    está no contrato é recusado aqui — o .NET o ignoraria calado."""
+    está no contrato é recusado aqui — o .NET o ignoraria calado.
+
+    LISTAS E TIPOS ANINHADOS (RI013 B0, 25/11/2026): campo de
+    `LISTAS_DO_METODO` recebe uma lista; cada item é um `dict` com os campos do
+    tipo do item (na ordem do WSDL, campo a mais é recusado) ou, na lista de
+    texto (`ArrayOfString`), o próprio texto. Item `None` não vai."""
     ordem = CAMPOS[metodo]
     sobra = set(campos) - set(ordem)
     if sobra:
@@ -506,18 +762,31 @@ def envelope(metodo: str, campos: dict) -> bytes:
         if nome not in campos or campos[nome] is None:
             continue
         valor = campos[nome]
-        if isinstance(valor, bool):
-            valor = "true" if valor else "false"
-        if nome in LISTAS:
-            item, ordem_item = LISTAS[nome]
-            itens = []
-            for d in valor:
-                filhos = "".join(f"<{c}>{escape(str(d[c]))}</{c}>" for c in ordem_item
-                                 if d.get(c) is not None)
-                itens.append(f"<{item}>{filhos}</{item}>")
-            partes.append(f"<{nome}>" + "".join(itens) + f"</{nome}>")
+        lista = _lista_do_campo(metodo, nome)
+        if lista is None:
+            partes.append(f"<{nome}>{escape(_texto_do_campo(metodo, nome, valor))}</{nome}>")
             continue
-        partes.append(f"<{nome}>{escape(str(valor))}</{nome}>")
+        item, ordem_item = lista
+        if isinstance(valor, (str, bytes, dict)) or not hasattr(valor, "__iter__"):
+            raise WSOficioError(f"O campo {nome} de {metodo} é uma lista.")
+        itens = []
+        for d in valor:
+            if d is None:
+                continue
+            if ordem_item is None:
+                itens.append(f"<{item}>{escape(_texto_do_campo(metodo, nome, d))}</{item}>")
+                continue
+            if not isinstance(d, dict):
+                raise WSOficioError(f"Cada item de {nome} em {metodo} tem os campos "
+                                    f"{', '.join(ordem_item)}.")
+            demais = set(d) - set(ordem_item)
+            if demais:
+                raise WSOficioError(f"O item de {nome} em {metodo} não tem o(s) campo(s) "
+                                    f"{sorted(demais)}.")
+            filhos = "".join(f"<{c}>{escape(_texto_do_campo(metodo, c, d[c]))}</{c}>"
+                             for c in ordem_item if d.get(c) is not None)
+            itens.append(f"<{item}>{filhos}</{item}>")
+        partes.append(f"<{nome}>" + "".join(itens) + f"</{nome}>")
     return ('<?xml version="1.0" encoding="utf-8"?>'
             f'<soap:Envelope xmlns:soap="{SOAP}"><soap:Body>'
             f'<{metodo} xmlns="{NS}"><oRequest>{"".join(partes)}</oRequest></{metodo}>'
@@ -557,6 +826,355 @@ def ler_resposta(metodo: str, texto: str) -> dict:
         raise WSOficioError(f"A resposta de {metodo} veio sem {metodo}Result.")
     d = _para_python(res)
     return d if isinstance(d, dict) else {"valor": d}
+
+
+# ------------------------------------------- as respostas da e-Intimação (B0)
+#
+# `ler_resposta` devolve texto em tudo, e a lista vem em três formas: vazia
+# (`<Devedores />` vira ""), com um item (um `dict`, quando o nome do item não
+# acaba em `_WSResp`) ou com vários. Os leitores abaixo põem cada lista como
+# lista e cada número no tipo do WSDL. Os nomes dos campos são os do WSDL —
+# há teste que confere cada um contra o tipo de resposta.
+
+#: Os campos numéricos e booleanos das respostas da e-Intimação, pelo tipo do WSDL.
+INTEIROS_IN = frozenset({"IDPedido", "IDStatus", "IDCartorio", "TipoCobranca", "IDCustas",
+                         "QtdeRegistros", "QtdePaginas", "CODIGOERRO"})
+DECIMAIS_IN = frozenset({"Valor", "ValorServico"})
+BOOLEANOS_IN = frozenset({"Pago", "RETORNO"})
+
+#: As listas do `GetDetalhesIN_V3` e os campos de cada item, na ordem do WSDL.
+LISTAS_DO_DETALHE_IN = {
+    "Prenotacoes": ("Numero", "Data", "DataVencimento", "ValorServico"),
+    "Devedores": ("Nome", "Participacao", "CPFCNPJ", "Email"),
+    "Imoveis": ("Matricula",),
+    "EnderecosIntimacoes": ("NomeDevedor", "EnderecoCompleto"),
+    "Reingressos": ("Protocolo", "DataPrenotacao"),
+    "Boletos": ("DataVencimento", "Valor", "URL"),
+    "PrestacoesVencidas": ("Numero", "DataVencimento", "Valor"),
+    "Purgas": ("DataVencimento", "Valor"),
+}
+#: O solicitante e o credor vêm achatados (`CredorCPFCNPJ`, `CredorCidade` …);
+#: o leitor os junta, com estes sufixos («» é o nome).
+SUFIXOS_DE_PESSOA_IN = ("", "CPFCNPJ", "IM", "Endereco", "Numero", "Complemento", "Bairro",
+                        "Cidade", "Estado", "CEP", "DDD", "Telefone", "Email")
+#: Os campos soltos do `GetDetalhesIN_V3`.
+CAMPOS_DO_DETALHE_IN = ("IDPedido", "IDStatus", "Protocolo", "Estado", "Cidade", "IDCartorio",
+                        "Cartorio", "NumeroContrato", "DataRemessa", "TipoCobranca")
+#: Os itens das listagens.
+CAMPOS_DO_PEDIDO_IN = ("IDPedido", "Protocolo", "Solicitante", "IDStatus", "DataPedido",
+                       "DataStatus")
+CAMPOS_DO_PAGAMENTO_IN = ("IDPedido", "IDCustas", "Protocolo", "ProtocoloPagamento",
+                          "DataVencimento", "TipoCustas", "NossoNumero", "DescricaoCustas",
+                          "Valor", "UsuarioEfetivou", "DataCompensacao", "DataRepasse", "Pago")
+
+
+def como_lista(valor: Any) -> list:
+    """A lista de uma resposta, nas três formas em que ela chega: "" ou
+    `None` → []; um item só → [item]; vários → como veio."""
+    if valor in (None, ""):
+        return []
+    if isinstance(valor, list):
+        return valor
+    if isinstance(valor, dict) and len(valor) == 1:
+        (interno,) = valor.values()
+        if isinstance(interno, (dict, list)):        # <Lista><Item>…</Item></Lista>
+            return como_lista(interno) if isinstance(interno, list) else [interno]
+    return [valor]
+
+
+def _tipado(nome: str, valor: Any) -> Any:
+    if valor is None:
+        return None
+    if nome in BOOLEANOS_IN:
+        return valor if isinstance(valor, bool) else str(valor).strip().lower() == "true"
+    texto = str(valor).strip()
+    if nome in INTEIROS_IN:
+        try:
+            return int(texto)
+        except ValueError:
+            return None
+    if nome in DECIMAIS_IN:
+        try:
+            return Decimal(texto.replace(",", ".")) if texto else None
+        except InvalidOperation:
+            return None
+    return texto
+
+
+def _itens(valor: Any, campos: tuple) -> list[dict]:
+    return [{c: _tipado(c, item.get(c)) for c in campos}
+            for item in como_lista(valor) if isinstance(item, dict)]
+
+
+def ler_data_do_onr(texto: Any) -> date | datetime | None:
+    """As datas que o ONR devolve, nas formas vistas no manual: aaaa-mm-dd,
+    aaaa-mm-dd hh:mm:ss (o manual escreve sem o espaço; aceita as duas e o
+    «T»), e dd/mm/aaaa [hh:mm:ss]. O que não for data → `None`."""
+    t = str(texto or "").strip()
+    m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})(?:[ T]?(\d{2}):(\d{2})(?::(\d{2}))?)?(?:\.\d+)?", t)
+    if not m:
+        m2 = re.fullmatch(r"(\d{2})/(\d{2})/(\d{4})(?: (\d{2}):(\d{2})(?::(\d{2}))?)?", t)
+        if not m2:
+            return None
+        d, mes, a, h, mi, s = m2.groups()
+        partes = (a, mes, d, h, mi, s)
+    else:
+        partes = m.groups()
+    a, mes, d, h, mi, s = partes
+    try:
+        if h is None:
+            return date(int(a), int(mes), int(d))
+        return datetime(int(a), int(mes), int(d), int(h), int(mi), int(s or 0))
+    except ValueError:
+        return None
+
+
+def ler_pedidos_da_intimacao(r: dict) -> dict:
+    """`ListPedidosIN` → {qtde_registros, qtde_paginas, pedidos: [...]}."""
+    return {"qtde_registros": _tipado("QtdeRegistros", r.get("QtdeRegistros")) or 0,
+            "qtde_paginas": _tipado("QtdePaginas", r.get("QtdePaginas")) or 0,
+            "pedidos": _itens(r.get("Pedidos"), CAMPOS_DO_PEDIDO_IN)}
+
+
+def ler_pagamentos_da_intimacao(r: dict) -> dict:
+    """`ListPagamentoIN` → {qtde_registros, qtde_paginas, pagamentos: [...]}."""
+    return {"qtde_registros": _tipado("QtdeRegistros", r.get("QtdeRegistros")) or 0,
+            "qtde_paginas": _tipado("QtdePaginas", r.get("QtdePaginas")) or 0,
+            "pagamentos": _itens(r.get("Pagamentos"), CAMPOS_DO_PAGAMENTO_IN)}
+
+
+def ler_detalhes_da_intimacao(r: dict) -> dict:
+    """`GetDetalhesIN_V3` → a ficha do pedido de intimação fiduciária.
+
+    Os campos soltos com o nome do WSDL; `solicitante` e `credor` juntados
+    (`{"Nome", "CPFCNPJ", "Cidade", …}`); `prestacao` (agência e endereço de
+    pagamento); e as oito listas — prenotações, devedores (com o e-mail, que é
+    o que a v3 traz a mais), imóveis, endereços de intimação, reingressos,
+    boletos, prestações vencidas e purgas —, sempre como lista."""
+    ficha = {c: _tipado(c, r.get(c)) for c in CAMPOS_DO_DETALHE_IN}
+    for quem in ("Solicitante", "Credor"):
+        ficha[quem.lower()] = {(s or "Nome"): _tipado(s, r.get(quem + s))
+                               for s in SUFIXOS_DE_PESSOA_IN}
+    ficha["prestacao"] = {"Agencia": _tipado("", r.get("PrestacaoAgencia")),
+                          "Endereco": _tipado("", r.get("PrestacaoEndereco"))}
+    for lista, campos in LISTAS_DO_DETALHE_IN.items():
+        ficha[lista] = _itens(r.get(lista), campos)
+    return ficha
+
+
+# ------------------------------------- as escritas: só montam (RI013 B0, 25/11/2026)
+#
+# CADA FUNÇÃO ABAIXO SÓ MONTA O PEDIDO. Nenhuma rodada, processo, botão ou tela
+# as chama, e `Sessao.chamar` recusa os métodos delas enquanto estiverem em
+# `ESPERAM_O_PODE_DO_TITULAR`. Cada uma precisa, antes de ir à rede, do «pode»
+# do titular e da primeira chamada em homologação; é a etapa que as usar (P2 a
+# prenotação, P3 o retorno do andamento, I2/I3 a e-Intimação) que liga.
+
+@dataclass(frozen=True)
+class Pedido:
+    """Um pedido montado e ainda não enviado: o método e os campos, sem o Hash."""
+    metodo: str
+    campos: dict
+
+    def envelope(self, hash_: str = "") -> bytes:
+        return envelope(self.metodo, dict(self.campos, Hash=hash_))
+
+
+def _pedido(metodo: str, **campos) -> Pedido:
+    envelope(metodo, dict(campos, Hash=""))          # recusa campo errado já aqui
+    return Pedido(metodo, campos)
+
+
+def _anexos(anexos, chaves: tuple[str, str], nomes_aceitos: tuple[str, str]) -> list[dict]:
+    """Aceita a lista com as chaves do WSDL ou com as nossas (`nome`, `url` …)."""
+    saida = []
+    for a in anexos or ():
+        a = dict(a)
+        item = {}
+        for wsdl, nosso in zip(chaves, nomes_aceitos):
+            item[wsdl] = a.pop(wsdl, None) if wsdl in a else a.pop(nosso, None)
+        if a:
+            raise WSOficioError(f"O anexo não tem o(s) campo(s) {sorted(a)}.")
+        saida.append(item)
+    return saida
+
+
+# -- e-Protocolo (manual 3.10). Todas precisam do «pode» do titular e de homologação.
+
+def pedido_prenotacao_ac(id_contrato: int, *, numero: str, data: date | str,
+                         vencimento: date | str, senha: str | None = None) -> Pedido:
+    """`SetPrenotacaoAC` — informa ao ONR o número e o prazo da prenotação (P2).
+    Precisa do «pode» do titular (a prenotação automática) e de homologação."""
+    return _pedido("SetPrenotacaoAC", IDContrato=int(id_contrato), NumeroPrenotacao=str(numero),
+                   DataPrenotacao=data, DataVencimento=vencimento, Senha=senha)
+
+
+def pedido_prenotacao_exame_calculo_ac(id_contrato: int, *, numero: str, data: date | str,
+                                       senha: str | None = None) -> Pedido:
+    """`SetPrenotacaoExameCalculoAC` — a prenotação do exame e cálculo. O WSDL
+    leva `Senha`, e não o `DataVencimento` do manual. Precisa do «pode» e de
+    homologação."""
+    return _pedido("SetPrenotacaoExameCalculoAC", IDContrato=int(id_contrato),
+                   NumeroPrenotacao=str(numero), DataPrenotacao=data, Senha=senha)
+
+
+def pedido_prorrogar_prenotacao_ac(id_contrato: int, *, motivo: str) -> Pedido:
+    """`SetProrrogarPrenotacaoAC`. Precisa do «pode» do titular e de homologação."""
+    return _pedido("SetProrrogarPrenotacaoAC", IDContrato=int(id_contrato), Motivo=motivo)
+
+
+def pedido_custas_ac(id_contrato: int, valor: Decimal | str, *,
+                     complementar: bool = False) -> Pedido:
+    """`SetCustasAC` (ou `SetCustasComplementarAC`) — o valor dos emolumentos;
+    é o que gera o boleto do apresentante. Precisa do «pode» (o selo «pago na
+    Central») e de homologação."""
+    return _pedido("SetCustasComplementarAC" if complementar else "SetCustasAC",
+                   IDContrato=int(id_contrato), ValorCustas=Decimal(str(valor)))
+
+
+def pedido_exigencia_ac(id_contrato: int, *, resposta: str, anexos=(), final: bool = False,
+                        por_document_id: bool = False) -> Pedido:
+    """`SetContratoExigenciaAC` (anexos por URL que o ONR vai buscar) ou
+    `SetContratoExigenciaAC_DocID` (anexos já no AssinadorWeb). Cada anexo:
+    `{"Nome", "URLArquivo"}` ou `{"Nome", "DocumentID"}` (ou `nome`/`url`/
+    `document_id`). Precisa do «pode», de homologação e — por URL — do repasse
+    de arquivo na VPS, porque esta casa não tem endereço público."""
+    if por_document_id:
+        itens = _anexos(anexos, ("Nome", "DocumentID"), ("nome", "document_id"))
+        metodo = "SetContratoExigenciaAC_DocID"
+    else:
+        itens = _anexos(anexos, ("Nome", "URLArquivo"), ("nome", "url"))
+        metodo = "SetContratoExigenciaAC"
+    return _pedido(metodo, IDContrato=int(id_contrato), ExigenciaFinal=bool(final),
+                   Resposta=resposta, Anexos=itens or None)
+
+
+def pedido_cumprimento_exigencia_ri(id_contrato: int) -> Pedido:
+    """`SetContratoCumprimentoExigenciaRI`. Precisa do «pode» e de homologação."""
+    return _pedido("SetContratoCumprimentoExigenciaRI", IDContrato=int(id_contrato))
+
+
+def pedido_averbado_ac(id_contrato: int, *, resposta: str, certidoes=(),
+                       por_document_id: bool = False) -> Pedido:
+    """`SetContratoAverbadoAC` (certidões por URL) ou `_DocID`. Cada certidão:
+    `{"Descricao", "URLArquivo"}` ou `{"Descricao", "DocumentID"}`; a do XML de
+    retorno vai com a descrição «XMLRETORNO» (manual 3.10.35). Precisa do
+    «pode», de homologação e — por URL — do repasse de arquivo na VPS."""
+    if por_document_id:
+        itens = _anexos(certidoes, ("Descricao", "DocumentID"), ("descricao", "document_id"))
+        metodo = "SetContratoAverbadoAC_DocID"
+    else:
+        itens = _anexos(certidoes, ("Descricao", "URLArquivo"), ("descricao", "url"))
+        metodo = "SetContratoAverbadoAC"
+    return _pedido(metodo, IDContrato=int(id_contrato), Resposta=resposta,
+                   CertidaoAverbacao=itens or None)
+
+
+def pedido_devolvido_ac(id_contrato: int, *, resposta: str) -> Pedido:
+    """`SetContratoDevolvidoAC`. Precisa do «pode» do titular e de homologação."""
+    return _pedido("SetContratoDevolvidoAC", IDContrato=int(id_contrato), Resposta=resposta)
+
+
+def pedido_finalizar_protocolo_ac(id_contrato: int, *, resposta: str = "",
+                                  anexos=()) -> Pedido:
+    """`SetFinalizarProtocoloAC` — o único do e-Protocolo que leva o ARQUIVO,
+    em base64, e não uma URL. Cada anexo: `{"NomeArquivo", "ArquivoBase64"}`
+    (ou `nome`/`conteudo`); `bytes` viram base64 no envelope. Precisa do «pode»
+    do titular e de homologação."""
+    itens = _anexos(anexos, ("NomeArquivo", "ArquivoBase64"), ("nome", "conteudo"))
+    for a in itens:
+        if not a.get("NomeArquivo") or not a.get("ArquivoBase64"):
+            raise WSOficioError("Cada anexo da finalização tem nome e conteúdo.")
+    return _pedido("SetFinalizarProtocoloAC", IDContrato=int(id_contrato),
+                   Resposta=resposta or None, Anexos=itens or None)
+
+
+def pedido_baixa_boleto_ac(id_boleto: int, *, convenio: bool) -> Pedido:
+    """`SetBaixaBoletoAC`. Precisa do «pode» do titular e de homologação."""
+    return _pedido("SetBaixaBoletoAC", IDBoleto=int(id_boleto), Convenio=bool(convenio))
+
+
+def pedido_baixa_custas_ac(id_custas: int) -> Pedido:
+    """`SetBaixaCustasAC`. Precisa do «pode» do titular e de homologação."""
+    return _pedido("SetBaixaCustasAC", IDCustas=int(id_custas))
+
+
+def pedido_alterar_ac(id_contrato: int, **campos) -> Pedido:
+    """`AlterarPedidoAC` — o apresentante e o endereço dele, com os nomes do
+    WSDL. Os três inteiros obrigatórios vão 0 se não vierem (o que o .NET
+    leria). Precisa do «pode» do titular e de homologação."""
+    for obrigatorio in ("TipoDocumento", "EnderecoNumero", "EnderecoCEP"):
+        campos.setdefault(obrigatorio, 0)
+    return _pedido("AlterarPedidoAC", IDContrato=int(id_contrato), **campos)
+
+
+# -- e-Intimação (manual 3.11). Todas precisam do «pode» do titular e de homologação.
+
+def pedido_importar_prenotacao_in(urls_xml) -> Pedido:
+    """`ImportarPrenotacaoIN` — a lista de URLs de XML que o ONR vai buscar.
+    Precisa do «pode», de homologação e do repasse de arquivo na VPS."""
+    itens = [{"URLXML": str(u)} for u in urls_xml or () if u]
+    if not itens:
+        raise WSOficioError("Nenhum XML para importar (erro 12 do manual).")
+    return _pedido("ImportarPrenotacaoIN", XMLs=itens)
+
+
+def pedido_mensagem_in(id_intimacao: int, *, status: int, assunto: str, mensagem: str,
+                       urls_anexos=(), numero_prenotacao: str | None = None,
+                       data_prenotacao: date | datetime | str | None = None,
+                       vencimento_prenotacao: date | datetime | str | None = None,
+                       valor_prenotacao: Decimal | str | None = None,
+                       destinacao_mutuo: int = 0, determinacao_judicial: int = 0,
+                       valor_servico: Decimal | str | None = None,
+                       data_pagamento: date | datetime | str | None = None,
+                       valor_pagamento: Decimal | str | None = None) -> Pedido:
+    """`AdicionarMensagemIN` — o andamento da intimação (prenotado, intimado,
+    não intimado, boleto …; `STATUS_DA_MENSAGEM_IN`). Os dois inteiros
+    obrigatórios no WSDL vão 0 quando o status não os pede. Os anexos são URLs
+    (`ArrayOfString`). Precisa do «pode» do titular, de homologação e — com
+    anexo — do repasse de arquivo na VPS."""
+    if int(status) not in STATUS_DA_MENSAGEM_IN and int(status) != 28:
+        raise WSOficioError(f"O status {status} não é dos que o cartório manda (3.11.15).")
+    if int(status) == 4 and not (numero_prenotacao and data_prenotacao and vencimento_prenotacao
+                                 and valor_prenotacao is not None and destinacao_mutuo):
+        raise WSOficioError("Com o status 4 (prenotado) o ONR pede número, data, vencimento "
+                            "e valor da prenotação e a destinação do mútuo.")
+
+    def dinheiro(v):
+        return None if v is None else Decimal(str(v))
+    return _pedido("AdicionarMensagemIN", IDIntimacao=int(id_intimacao), IDStatus=int(status),
+                   Assunto=assunto, Mensagem=mensagem,
+                   URLAnexos=[str(u) for u in urls_anexos or () if u] or None,
+                   NumeroPrenotacao=numero_prenotacao, DataPrenotacao=data_prenotacao,
+                   VencimentoPrenotacao=vencimento_prenotacao,
+                   ValorPrenotacao=dinheiro(valor_prenotacao),
+                   TipoDestinacaoMutuo=int(destinacao_mutuo),
+                   TipoDeterminacaoJudicial=int(determinacao_judicial),
+                   ValorServico=dinheiro(valor_servico), DataPagamento=data_pagamento,
+                   ValorPagamento=dinheiro(valor_pagamento))
+
+
+def pedido_emolumento_in(id_pedido: int, *, tipo: int, descricao: str,
+                         valor: Decimal | str) -> Pedido:
+    """`AdicionarEmolumentoIN` (tipo: `TIPO_DE_EMOLUMENTO_IN`). Precisa do
+    «pode» do titular e de homologação."""
+    if int(tipo) not in TIPO_DE_EMOLUMENTO_IN:
+        raise WSOficioError(f"O tipo de emolumento {tipo} não existe (3.11.17).")
+    return _pedido("AdicionarEmolumentoIN", IDPedido=int(id_pedido), IDStatus=int(tipo),
+                   Descricao=descricao, Valor=Decimal(str(valor)))
+
+
+def pedido_excluir_emolumento_in(id_emolumento: int) -> Pedido:
+    """`ExcluirEmolumentoIN`. Precisa do «pode» do titular e de homologação."""
+    return _pedido("ExcluirEmolumentoIN", IDEmolumento=int(id_emolumento))
+
+
+def pedido_cancelamento_judicial_in(id_pedido: int, *, data_averbacao: date | str) -> Pedido:
+    """`CancelamentoJudicialIN` — está no WSDL e não no manual; a data vai em
+    aaaa-mm-dd, como no resto do serviço (A CONFERIR). Precisa do «pode» do
+    titular e de homologação."""
+    return _pedido("CancelamentoJudicialIN", IDPedido=int(id_pedido),
+                   DataAverbacao=data_averbacao)
 
 
 # --------------------------------------------------------------- a sessão
@@ -638,7 +1256,14 @@ class Sessao:
 
     def chamar(self, metodo: str, **campos) -> dict:
         """Uma chamada com hash. «Hash inválido» puro (nem usado, nem vencido)
-        na primeira vez faz UMA tentativa com a outra caixa — ver o cabeçalho."""
+        na primeira vez faz UMA tentativa com a outra caixa — ver o cabeçalho.
+
+        O MÉTODO QUE ESPERA O «PODE» DO TITULAR NÃO SAI (RI013 B0): a recusa
+        vem antes do login, e nada vai à rede."""
+        if metodo in ESPERAM_O_PODE_DO_TITULAR:
+            raise WSOficioError(
+                f"{metodo} muda o pedido no ONR e ainda espera o «pode» do titular e a "
+                "primeira chamada em homologação. Nada foi enviado.")
         tentativas = [self.maiusculas] if self.maiusculas is not None else [True, False]
         ultimo = None
         for maiusculas in tentativas:
@@ -799,6 +1424,102 @@ class Sessao:
     def extrato_do_eprotocolo(self, protocolo: str) -> dict:
         """`GetExtratoXMLAC` — a URL do extrato XML (Prov. 228/2026, CNN 210-C)."""
         return self.chamar("GetExtratoXMLAC", Protocolo=str(protocolo))
+
+    def repositorio_do_eprotocolo(self, id_contrato: int, *, departamento: int = 0,
+                                  cpf: str = "", vencimento_de: date | str = "",
+                                  vencimento_ate: date | str = "") -> dict:
+        """`ListRepositorioDocumentosAC` — os documentos do repositório ligados
+        ao contrato (os filtros são opcionais no manual; o departamento é `int`
+        obrigatório no WSDL e vai 0 quando não se filtra — A CONFERIR)."""
+        return self.chamar("ListRepositorioDocumentosAC", IDContrato=int(id_contrato),
+                           IDDepartamento=int(departamento), CPFVinculado=cpf or None,
+                           DataVencimentoInicial=vencimento_de or None,
+                           DataVencimentoFinal=vencimento_ate or None)
+
+    # -- a e-Intimação (manual 3.11). SÓ AS LEITURAS (RI013 B0, 25/11/2026);
+    #    quem vai chamá-las é a I2. As escritas estão em `ESPERAM_O_PODE_DO_TITULAR`.
+    def status_da_intimacao(self) -> list[dict]:
+        """`ListStatusIN` — a tabela de status de pedido, que só o serviço tem."""
+        r = self.chamar("ListStatusIN")
+        return [{"IDStatus": _tipado("IDStatus", s.get("IDStatus")),
+                 "NomeStatus": _tipado("", s.get("NomeStatus"))}
+                for s in como_lista(r.get("Status")) if isinstance(s, dict)]
+
+    def pedidos_da_intimacao(self, *, de: date | str = "", ate: date | str = "",
+                             status: int = 0, protocolo: str = "",
+                             por_mensagem: bool = False, pagina: int = 1,
+                             por_pagina: int = 50) -> dict:
+        """`ListPedidosIN`, já lido (`ler_pedidos_da_intimacao`). Status 0 é
+        «todos»; as datas são as do cadastro do pedido («P») ou, com
+        `por_mensagem`, as da última mensagem («M»)."""
+        r = self.chamar("ListPedidosIN",
+                        MaxRowPerPage=max(MINIMO_POR_PAGINA_INTIMACAO, int(por_pagina)),
+                        PageNumber=int(pagina), IDStatus=int(status),
+                        Protocolo=str(protocolo or ""),
+                        TipoDataPesquisa="M" if por_mensagem else "P",
+                        DataInicial=de or "", DataFinal=ate or "")
+        return ler_pedidos_da_intimacao(r)
+
+    def detalhes_da_intimacao(self, id_pedido: int) -> dict:
+        """`GetDetalhesIN_V3`, já lido (`ler_detalhes_da_intimacao`)."""
+        return ler_detalhes_da_intimacao(self.chamar("GetDetalhesIN_V3", IDPedido=int(id_pedido)))
+
+    def mensagens_da_intimacao(self, id_pedido: int, *, status: int = 0, filtro: int = 1,
+                               pagina: int = 1, por_pagina: int = 50) -> dict:
+        """`ListMensagensPedidoIN` (filtro: `FILTRO_DE_MENSAGEM_IN`)."""
+        return self.chamar("ListMensagensPedidoIN",
+                           MaxRowPerPage=max(MINIMO_POR_PAGINA_INTIMACAO, int(por_pagina)),
+                           PageNumber=int(pagina), IDPedido=int(id_pedido),
+                           IDStatus=int(status), Assunto="", IDFiltro=int(filtro))
+
+    def mensagem_da_intimacao(self, id_mensagem: int) -> dict:
+        """`GetMensagemIN`."""
+        return self.chamar("GetMensagemIN", IDMensagem=int(id_mensagem))
+
+    def emolumentos_da_intimacao(self, id_pedido: int) -> dict:
+        """`GetEmolumentosIN`."""
+        return self.chamar("GetEmolumentosIN", IDPedido=int(id_pedido))
+
+    def pagamentos_da_intimacao(self, *, custas_de: date | str = "", custas_ate: date | str = "",
+                                pago_de: date | str = "", pago_ate: date | str = "",
+                                protocolo: str = "", status_pagamento: int = 0,
+                                tipo_custas: int = 0, pagina: int = 1,
+                                por_pagina: int = 50) -> dict:
+        """`ListPagamentoIN`, já lido (`ler_pagamentos_da_intimacao`). Zero é
+        «qualquer um» nos dois status."""
+        r = self.chamar("ListPagamentoIN",
+                        MaxRowPerPage=max(MINIMO_POR_PAGINA_INTIMACAO, int(por_pagina)),
+                        PageNumber=int(pagina), Protocolo=str(protocolo or ""),
+                        IDStatusPagamento=int(status_pagamento),
+                        IDStatusEmolumentos=int(tipo_custas), ProtocoloPagamento="",
+                        NossoNumero="", DataCustasInicial=custas_de or "",
+                        DataCustasFinal=custas_ate or "", DataPagamentoInicial=pago_de or "",
+                        DataPagamentoFinal=pago_ate or "")
+        return ler_pagamentos_da_intimacao(r)
+
+    # -- a matrícula online (manual 3.9). Só leitura (RI013 B0); quem vai chamar é a C2.
+    def solicitacoes_da_matricula_online(self, *, de: date | str, ate: date | str,
+                                         protocolo: str = "", id_pedido: str = "") -> dict:
+        """`ObterXmlSolicitacoesV2` — o XML dos pedidos de visualização de
+        matrícula. No máximo 30 dias por vez (erro 13); o código 14 do ONR («não
+        foram encontrados resultados») vira lista vazia, e não erro."""
+        d1 = de if isinstance(de, date) else ler_data_do_onr(de)
+        d2 = ate if isinstance(ate, date) else ler_data_do_onr(ate)
+        if not isinstance(d1, date) or not isinstance(d2, date):
+            raise WSOficioError("A matrícula online pede as duas datas, em aaaa-mm-dd.")
+        if isinstance(d1, datetime):
+            d1 = d1.date()
+        if isinstance(d2, datetime):
+            d2 = d2.date()
+        if not 0 <= (d2 - d1).days <= DIAS_POR_PESQUISA_MATRICULA_ONLINE:
+            raise WSOficioError("A matrícula online pesquisa no máximo 30 dias de cada vez.")
+        try:
+            return self.chamar("ObterXmlSolicitacoesV2", Protocolo=str(protocolo or ""),
+                               DataInicial=d1, DataFinal=d2, idPedido=str(id_pedido or ""))
+        except WSOficioRecusou as e:
+            if str(e.codigo) == "14":
+                return {"RETORNO": True, "Xml": "", "vazio": True}
+            raise
 
 
 def _transporte_da_casa(url: str, corpo: bytes, acao: str) -> tuple[int, str]:

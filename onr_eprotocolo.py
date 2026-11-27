@@ -174,8 +174,20 @@ class EProtocoloRIError(ValueError):
     """Recusa com frase de balcão."""
 
 
+#: O vínculo com a prenotação da casa (P2a, 25/11/2026). Coluna nova se põe
+#: uma vez, com guarda: `init_schema` roda a cada leitura, e o `ALTER TABLE`
+#: pede trava exclusiva mesmo quando a coluna já existe.
+COLUNAS_DA_P2A = (("prenotacao_id", "bigint"), ("prenotado_por", "bigint"),
+                  ("prenotado_por_nome", "TEXT"), ("prenotado_em", "TEXT"),
+                  ("pulo_id", "bigint"))
+
+
 def init_schema(con) -> None:
-    banco(con).escrever(SCHEMA)
+    bd = banco(con)
+    bd.escrever(SCHEMA)
+    for coluna, tipo in COLUNAS_DA_P2A:
+        if not bd.tem_coluna("onr_ep_pedidos", coluna):
+            bd.escrever(f"ALTER TABLE onr_ep_pedidos ADD COLUMN IF NOT EXISTS {coluna} {tipo}")
 
 
 def ambiente(leitor: Callable[..., Any]) -> str:
@@ -407,8 +419,9 @@ def guardar_da_lista(con, amb: str, item: dict, agora: str) -> dict:
     anexos de novo (status mudou num pedido já lido — exigência, reingresso)."""
     init_schema(con)
     bd = banco(con)
-    row = bd.um("SELECT id, id_status, ficha_lida, prenotacao_numero FROM onr_ep_pedidos "
-                "WHERE ambiente=%s AND id_contrato=%s", (amb, int(item["id_contrato"])))
+    row = bd.um("SELECT id, id_status, ficha_lida, prenotacao_numero, prenotacao_id "
+                "FROM onr_ep_pedidos WHERE ambiente=%s AND id_contrato=%s",
+                (amb, int(item["id_contrato"])))
     if row is None:
         sit = situacao_do_status(item["id_status"])
         novo = bd.escrever(
@@ -422,6 +435,10 @@ def guardar_da_lista(con, amb: str, item: dict, agora: str) -> dict:
                 "ficha": sit != "FECHADO_NO_ONR", "anexos": False}
     mudou = row["id_status"] != item["id_status"]
     sit = situacao_do_status(item["id_status"], row["prenotacao_numero"] or "")
+    if sit == "A_PRENOTAR" and row["prenotacao_id"]:
+        # Prenotado AQUI (P2a) e o ONR ainda não sabe — o aviso é da P2b: o
+        # status de lá não devolve o título à fila.
+        sit = "EM_ANDAMENTO"
     if mudou:
         bd.escrever("UPDATE onr_ep_pedidos SET id_status=%s, situacao=%s, status_em=%s, "
                     "atualizado_em=%s WHERE id=%s",
@@ -686,6 +703,11 @@ def alertas(con, p: dict, ims: list[dict] | None = None) -> list[dict]:
     aberto = p.get("situacao") in ABERTAS
     remessa = p.get("data_remessa") or p.get("data_solicitacao") or ""
     propria = _numero_da_prenotacao(p.get("prenotacao_numero"))
+    propria_id = int(p["prenotacao_id"]) if p.get("prenotacao_id") else None
+    if propria_id and propria is None and bd.tem_tabela("ri_protocolos"):
+        # Prenotado aqui (P2a): o número é o do Livro 1 desta casa.
+        propria = _numero_da_prenotacao(
+            bd.valor("SELECT numero FROM ri_protocolos WHERE id=%s", (propria_id,)))
     numeros = {im["matricula_numero"] for im in ims if im.get("matricula_numero")}
     ids = {int(im["matricula_id"]) for im in ims if im.get("matricula_id")}
     if aberto and (numeros or ids):
@@ -700,7 +722,7 @@ def alertas(con, p: dict, ims: list[dict] | None = None) -> list[dict]:
                         or RIDOM.normalizar_numero_matricula(pr["matricula_numero"]) in numeros)
                 if not alvo:
                     continue
-                if propria is not None and pr["numero"] == propria:
+                if pr["id"] == propria_id or (propria is not None and pr["numero"] == propria):
                     continue          # é a prenotação deste mesmo título
                 # PELA HORA DA PRENOTAÇÃO (decisão de 24/11/2026): a que já está
                 # prenotada vem antes do título que ainda não foi; se os dois já
@@ -808,6 +830,20 @@ def rotulo_do_tipo_servico(valor: Any) -> str:
     return WS.TIPO_SERVICO_EPROTOCOLO.get(v, str(valor or "")) if v is not None else str(valor or "")
 
 
+def ha_quanto_tempo(desde: Any, agora: datetime) -> str:
+    """«há 3 hora(s)», «há 2 dia(s)» — quanto o título espera prenotação. Valendo
+    a hora da prenotação (REGRA_DE_PRIORIDADE), a demora custa prioridade."""
+    try:
+        horas = (agora - datetime.fromisoformat(str(desde)[:19])).total_seconds() / 3600
+    except (TypeError, ValueError):
+        return ""
+    if horas < 1:
+        return "há menos de uma hora"
+    if horas < 48:
+        return f"há {int(horas)} hora(s)"
+    return f"há {int(horas // 24)} dia(s)"
+
+
 def resumo_do_painel(con, *, agora: datetime, amb: str | None = None,
                      processo_ligado: bool = False, no_expediente: bool = True) -> dict:
     """O aviso do painel: quantos esperam prenotação, quantos têm aviso de
@@ -832,7 +868,11 @@ def resumo_do_painel(con, *, agora: datetime, amb: str | None = None,
             "abertos": len(lista), "ultima_boa": boa, "ultima": qualquer,
             "minutos_desde_a_boa": minutos, "atrasada": atrasada,
             "ultima_falhou": bool(qualquer and qualquer["situacao"] == "ERRO"),
-            "processo_ligado": processo_ligado}
+            "processo_ligado": processo_ligado,
+            # O mais antigo que espera: desde quando chegou AQUI (P2a).
+            "espera_desde": a_prenotar[0]["recebido_em"] if a_prenotar else None,
+            "espera_texto": (ha_quanto_tempo(a_prenotar[0]["recebido_em"], agora)
+                             if a_prenotar else "")}
 
 
 def processo_ligado(con) -> bool:

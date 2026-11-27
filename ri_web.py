@@ -83,6 +83,7 @@ from ri_odt import (MIOLO_DA_CERTIDAO,
                     html_com_destaque_rotulo_ato,
                     ato_sem_espaco_antes_do_fecho, anexar_fecho_ao_ato)
 import ri_cnib as CNIB
+import ri_requisitos_ir as RIREQ  # o que a matricula nova precisa para o Indicador Real (RI018)
 import ri_georref as GEO  # a conferencia do georreferenciamento no ato (RI011, art. 343-F, II)
 import nome_humano as NOMEHUM
 import cpf_cnpj as CPFCNPJ
@@ -95,6 +96,7 @@ import modelos_elementos as ELEM
 import ri_documentos as RDOC
 import notas_selo as NSELO
 import caixa_protocolo as CXPROT
+import onr_eprotocolo_prenotacao as EPP
 import pastas_da_casa as PDC
 import contato_do_cliente as CONTATO
 import emolumentos as EMOL
@@ -3299,9 +3301,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     flash("O protocolo geral indicado não existe, não é do Registro de "
                           "Imóveis ou já tem prenotação. Nada foi prenotado.", "danger")
                     return None
+            # O TÍTULO DO E-PROTOCOLO DO ONR (RI013 P2a, 25/11/2026) vem por
+            # este MESMO caminho, com o pedido escondido no formulário.
+            ep_pedido = (request.form.get("onr_ep_pedido_id") or "").strip()
+            eletronico = None
             with db.transaction() as con:
                 bd = banco(con)
                 bd.travar("ri_protocolos.numero")
+                if ep_pedido:
+                    # A ordem da remessa se confere AQUI, sob a trava do número:
+                    # a fila pode ter andado depois que a tela abriu. A recusa
+                    # sobe como exceção, desfaz a transação e nenhum número se gasta.
+                    eletronico = EPP.conferir(con, ep_pedido,
+                                              pulo_id=request.form.get("onr_ep_pulo_id"))
                 ultimo = bd.valor("SELECT MAX(numero) AS n FROM ri_protocolos WHERE livro=%s",
                                   (livro,))
                 numero = int((ultimo or 0)) + 1
@@ -3336,8 +3348,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         natureza_titulo, objeto, matricula_id, matricula_numero, data_limite,
                         telefone, email, documento_descricao, procuracao_citada,
                         reurb, reurb_tipo,
-                        situacao, anotacao, origem, criado_em, criado_por)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'ABERTO', %s, 'MANUAL', %s, %s)
+                        situacao, anotacao, origem, origem_chave, criado_em, criado_por)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'ABERTO', %s, %s, %s, %s, %s)
                        RETURNING id""",
                     (numero, livro, destino, data, datetime.now().strftime("%H:%M:%S"),
                      (request.form.get("apresentante") or "").strip() or None,
@@ -3354,9 +3366,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                      1 if reurb else 0,
                      tipo_reurb or None,
                      (request.form.get("anotacao") or "").strip() or None,
+                     # A ORIGEM: «MANUAL» no balcão, como sempre; o título do
+                     # e-Protocolo leva a sua e o IDContrato (para a P2b).
+                     EPP.ORIGEM if eletronico else "MANUAL",
+                     str(eletronico["id_contrato"]) if eletronico else None,
                      db.now(), app.extensions["usuario_id"]()),  # quem prenotou (robô incluso); criado_por e FK para users(id): o NOME aqui dava 500 em toda prenotacao (06/10/2026)
                 )[0]["id"]
                 novo = int(novo)
+                if eletronico:
+                    # O VÍNCULO, na mesma transação: prenotado por outra pessoa
+                    # no meio do caminho, a exceção desfaz esta prenotação.
+                    EPP.vincular(con, eletronico["id"], novo,
+                                 quem_id=app.extensions["usuario_id"](),
+                                 quem_nome=(app.extensions["usuario_nome"]() or "").strip() or None,
+                                 agora=db.now(),
+                                 pulo_id=(eletronico["pulo"] or {}).get("id"))
                 # TODA PRENOTAÇÃO TEM PROTOCOLO GERAL — decisão do oficial,
                 # 12/10/2026 («criar automático»). Medido antes: das 31
                 # prenotações abertas, 1 tinha protocolo geral; dos 22 gerais
@@ -3408,15 +3432,38 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   {"numero": numero, "livro": livro, "livro_destino": destino,
                    "matricula": mat, "prazo_dias_uteis": prazo,
                    "reurb": reurb, "reurb_tipo": tipo_reurb or None,
-                   "limite": limite})
+                   "limite": limite,
+                   **({"origem": EPP.ORIGEM, "id_contrato": eletronico["id_contrato"],
+                       "onr_ep_pedido_id": eletronico["id"]} if eletronico else {})})
+            if eletronico:
+                pulo = eletronico["pulo"] or {}
+                audit("ONR_EPROTOCOLO_PRENOTADO", "onr_ep_pedidos", eletronico["id"],
+                      {"protocolo_id": novo, "numero": numero, "id_contrato": eletronico["id_contrato"],
+                       "protocolo_onr": eletronico.get("protocolo"), "fora_da_ordem": bool(pulo),
+                       "pulo_id": pulo.get("id"), "motivo_do_pulo": pulo.get("motivo")})
             flash(f"Protocolo {numero} prenotado em {data}. Prazo de {prazo} dias úteis"
                   f"{' (REURB-' + (tipo_reurb or 'S') + ')' if tipo_reurb else ''}: vence em {limite}. "
-                  f"Protocolo geral {geral_numero}.{selado}",
+                  f"Protocolo geral {geral_numero}.{selado}"
+                  + (f" Título do e-Protocolo {eletronico.get('protocolo') or eletronico['id_contrato']} "
+                     "ligado a esta prenotação; o aviso ao ONR ainda não é enviado (P2b)."
+                     if eletronico else ""),
                   "success")
+            if eletronico:
+                return redirect(url_for("onr_eprotocolo_ficha", pedido_id=eletronico["id"]))
             return redirect(url_for("ri_protocolo"))
 
         if request.method == "POST":
-            resposta = _prenotar_do_formulario()
+            try:
+                resposta = _prenotar_do_formulario()
+            except EPP.PrenotacaoEletronicaError as erro:
+                # A recusa do e-Protocolo saiu de dentro da transação, que se
+                # desfez. Volta à ficha do título, e não ao formulário: sem o
+                # pedido escondido, um segundo envio viraria prenotação de
+                # balcão solta, sem o vínculo.
+                flash(str(erro), "danger")
+                pid = numero_digitado(request.form.get("onr_ep_pedido_id"))
+                return redirect(url_for("onr_eprotocolo_ficha", pedido_id=pid)
+                                if pid is not None else url_for("onr_eprotocolo"))
             if resposta is not None:
                 return resposta
 
@@ -3458,6 +3505,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if cx_arg is not None:
             de_cx = q1("""SELECT * FROM cx_protocolos WHERE id=%s AND atribuicao='RI'
                           AND ri_protocolo_id IS NULL""", (cx_arg,))
+        # VINDO DO E-PROTOCOLO DO ONR («Prenotar este título», RI013 P2a): o
+        # formulário abre preenchido com a ficha que o ONR mandou, e leva o
+        # pedido escondido. A ordem se confere aqui e, de novo, ao gravar.
+        de_onr = None
+        ep_arg = request.args.get("onr_ep")
+        if ep_arg:
+            try:
+                with db.connect() as con:
+                    p_ep = EPP.conferir(con, ep_arg, pulo_id=request.args.get("pulo"))
+                    de_onr = EPP.ficha_para_prenotar(con, p_ep)
+            except EPP.PrenotacaoEletronicaError as erro:
+                # Link velho ou fora da ordem: volta à ficha do título, e não
+                # ao formulário de balcão em branco.
+                flash(str(erro), "danger")
+                pid = numero_digitado(ep_arg)
+                return redirect(url_for("onr_eprotocolo_ficha", pedido_id=pid)
+                                if pid is not None else url_for("onr_eprotocolo"))
 
         def espera_acao():
             """O que espera ação, para o layout novo (30/10/2026). SÓ LÊ.
@@ -3482,10 +3546,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return perto
 
         return render_template("ri_protocolo.html", rows=rows, resumo=resumo,
-                               de_cx=dict(de_cx) if de_cx else None,
+                               de_cx=dict(de_cx) if de_cx else None, de_onr=de_onr,
                                situacao=situacao, busca=busca, hoje=hoje.isoformat(),
                                prazo=PRAZO_PRENOTACAO, prazo_reurb=PRAZO_PRENOTACAO_REURB,
-                               restam=restam, espera_acao=espera_acao, form=request.form,
+                               restam=restam, espera_acao=espera_acao,
+                               form=request.form or (de_onr["campos"] if de_onr else request.form),
                                MOTIVOS_DA_GRATUIDADE_DO_RI=AS.MOTIVOS_DA_GRATUIDADE_DO_RI)
 
     # ===================================== a tela do título, com o que corrigir
@@ -4731,6 +4796,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   "Nada foi lavrado.", "danger")
             return redirect(url_for("ri_ficha", matricula_id=matricula_id))
 
+        # O CLARO ENTRE COLCHETES QUE NINGUÉM TROCOU — RI018, 25/11/2026: a AV-01 de
+        # uma matrícula nova foi lavrada e selada com «[NOVA MATRÍCULA]» no lugar do
+        # número. Ato manual não tem modelo, e a guarda de cima não o via.
+        claro = RIMIN.claro_por_preencher(teor, acervo=e_acervo)
+        if claro:
+            flash(f"O texto do ato ainda traz «{claro}», que é claro por preencher — "
+                  f"no livro sairia assim e congelaria na corrente de hash. Troque "
+                  f"pelo dado (o número da matrícula nova, o protocolo) e lavre de "
+                  f"novo. Nada foi lavrado.", "danger")
+            return redirect(url_for("ri_ficha", matricula_id=matricula_id))
+
         # A REVISÃO ANTES DA LAVRATURA — ordem do oficial em 06/10/2026: o
         # Opus lê o ato com a matrícula antes de ele existir. Ver
         # `revisao_previa.py`: sem chave da IA a etapa não existe, e IA fora do
@@ -5771,6 +5847,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         selo_a_mao = (request.form.get("selo_abertura_texto") or "").strip()
         emolumentos = (request.form.get("emolumentos_abertura") or "").strip()
 
+        # O SELO NÃO SAI PARA FICHA QUE NÃO SOBE AO INDICADOR REAL — RI018, 25/11/2026.
+        # Antes da rede e do dinheiro do selo. O selo digitado à mão já existe fora
+        # do sistema: esse se registra e avisa, em vez de sumir.
+        with db.connect() as _c_ir:
+            _conf_ir = RIREQ.conferir(dict(m), RIREQ.settings_de(_c_ir))
+        if _conf_ir.pendencias and not selo_a_mao:
+            flash(f"O selo da abertura da matrícula {m['numero']} não saiu: a ficha "
+                  f"ainda não tem o que o Indicador Real exige — {_conf_ir.resumo()}. "
+                  f"Complete em «Retificação cadastral» e sele de novo.", "danger")
+            return voltar
+        if _conf_ir.pendencias:
+            flash(f"A ficha ainda não sobe ao Indicador Real — {_conf_ir.resumo()}.",
+                  "warning")
+        if _conf_ir.sem_configuracao:
+            flash(RIREQ.recado_sem_configuracao(_conf_ir), "warning")
+
         # A RECUSA E AQUI, COM O CLIENTE NA FRENTE — a mesma razao da rota que
         # lavra: o envelope tambem recusaria, mas la a resposta vem da rede.
         if isento and not motivo_isencao:
@@ -6701,6 +6793,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         "uf": "UF",
         "cep": "CEP",
         "rural_urbano": "Localização",
+        # O TIPO DO IMÓVEL (RI018, 25/11/2026): o Indicador Real o leva, e a ficha só o
+        # ganhava pela carga do E-Ofício ou pela fila de conferência.
+        "tipo_imovel": "Tipo do imóvel",
         "area_valor": "Área",
         "area_unidade": "Unidade da área",
         "descricao_perimetro": "Descrição do perímetro",
@@ -6759,6 +6854,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         def tela(**extra):
             return render_template("ri_editar.html", m=m,
                                    campos=CAMPOS_CADASTRAIS,
+                                   ir_tipos_imovel=RIREQ.TIPOS_DO_IMOVEL,
                                    versao_edicao=versao_atual,
                                    delegatarios=quem_pode_abrir_matricula(), **extra)
 
@@ -6866,6 +6962,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 flash(_mensagem_cib_obrigatorio(), "danger")
                 return recusada()
 
+        # A RETIFICAÇÃO NÃO TIRA A FICHA NOVA DO INDICADOR REAL — RI018, 25/11/2026.
+        # Recusa só o impedimento que a mudança CRIA: o que já faltava não impede
+        # gravar outra correção (é por aqui que as fichas antigas se completam).
+        # Ficha de acervo só avisa — ver `ri_requisitos_ir`.
+        if mudancas:
+            with db.connect() as _c_ir:
+                _settings_ir = RIREQ.settings_de(_c_ir)
+            _antes_ir = RIREQ.conferir(m, _settings_ir)
+            _depois_ir = RIREQ.conferir({**m, **valores}, _settings_ir)
+            _criados_ir = RIREQ.novos_impedimentos(_antes_ir, _depois_ir)
+            if _criados_ir and m["tipo_ficha"] != "ACERVO":
+                flash("Nada foi gravado: a correção tiraria a ficha do Indicador Real — "
+                      + " · ".join(f"{p['rotulo']}: {p['mensagem']}" for p in _criados_ir),
+                      "danger")
+                return recusada()
+
         if not mudancas:
             flash("Nada foi alterado.", "warning")
             return redirect(url_for("ri_ficha", matricula_id=matricula_id))
@@ -6913,6 +7025,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
               {"numero": m["numero"], "motivo": motivo, "mudancas": mudancas})
         flash(f"{len(mudancas)} campo(s) alterado(s). A mudança ficou registrada "
               f"na auditoria, com valor anterior e novo.", "success")
+        if _depois_ir.pendencias:
+            flash(f"A ficha ainda não sobe ao Indicador Real — {_depois_ir.resumo()}.",
+                  "warning")
         return redirect(url_for("ri_ficha", matricula_id=matricula_id))
 
     # ------------------------------------- cancelamento e encerramento
@@ -7844,6 +7959,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
     # --------------------------------------------------- nova matricula
 
+    def _extras_do_indicador_real(settings=None) -> dict:
+        """O que a tela de abertura mostra do Indicador Real (RI018): as listas e a UF da casa."""
+        if settings is None:
+            with db.connect() as _c_ir:
+                settings = RIREQ.settings_de(_c_ir)
+        return {"ir_municipios": RIREQ.municipios_da_casa(settings),
+                "ir_uf": RIREQ.uf_da_casa(settings),
+                "ir_tipos_imovel": RIREQ.TIPOS_DO_IMOVEL,
+                "ir_tipos_via": RIREQ.TIPOS_DE_VIA}
+
     @app.route("/registro-imoveis/nova", methods=["GET", "POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
     def ri_nova_matricula():
@@ -7916,7 +8041,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                    e_acervo=matricula_de_acervo(proximo),
                                    do_arquivo=do_arquivo,
                                    rascunho_id=rascunho_id,
-                                   form=form_ini)
+                                   form=form_ini,
+                                   **_extras_do_indicador_real())
 
         # O QR COLADO SAIU DA TELA — 14/09/2026, ordem do oficial. Medido antes
         # de tirar: das 1.701 matrículas, **zero** têm selo de abertura, e
@@ -7946,6 +8072,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             bd.travar("ri_numeracao.livro")
             numero = RC.proximo_numero(con, livro)
             e_acervo = matricula_de_acervo(numero)
+            _settings_ir = RIREQ.settings_de(con)
             pessoa_da_abertura = ((None, None, None) if e_acervo
                                   else quem_pratica_o_ato())
             if not bd.um("SELECT 1 AS um FROM ri_numeracao WHERE livro=%s", (livro,)):
@@ -7962,7 +8089,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 return render_template("ri_nova.html", livro=livro, proximo=numero,
                                        e_acervo=matricula_de_acervo(numero),
                                        do_arquivo=None, form=request.form,
-                                       rascunho_id=request.form.get("_rascunho_id_tela", type=int))  # HOTFIX-2026-10-13-06
+                                       rascunho_id=request.form.get("_rascunho_id_tela", type=int),  # HOTFIX-2026-10-13-06
+                                       **_extras_do_indicador_real(_settings_ir))
 
             _rural = (request.form.get("rural_urbano") or "").strip() or None
             _cib = (request.form.get("cib") or "").strip() or None
@@ -7976,7 +8104,30 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 return render_template("ri_nova.html", livro=livro, proximo=numero,
                                        e_acervo=matricula_de_acervo(numero),
                                        do_arquivo=None, form=request.form,
-                                       rascunho_id=request.form.get("_rascunho_id_tela", type=int))  # HOTFIX-2026-10-13-06
+                                       rascunho_id=request.form.get("_rascunho_id_tela", type=int),  # HOTFIX-2026-10-13-06
+                                       **_extras_do_indicador_real(_settings_ir))
+
+            # O QUE O INDICADOR REAL EXIGE — RI018, 25/11/2026. A régua é a do arquivo
+            # (`onr_ir_json`, via `ri_requisitos_ir`): a ficha que abre é a ficha que sobe.
+            # Matrícula NOVA não abre com campo obrigatório vazio ou fora do código; a de
+            # acervo abre e avisa (ver o cabeçalho de `ri_requisitos_ir`, «o que trava»).
+            _ir = RIREQ.completar_pela_casa(
+                {c: (request.form.get(c) or "").strip() or None
+                 for c in ("tipo_imovel", "rural_urbano", "logradouro", "cidade", "uf",
+                           "cep", "cib")},
+                _settings_ir, tipo_via=request.form.get("tipo_via") or "")
+            _conf_ir = RIREQ.conferir({**_ir, "numero": str(numero),
+                                       "livro_norm": norm_livro(livro)}, _settings_ir)
+            if not e_acervo and _conf_ir.pendencias:
+                flash(f"A matrícula {numero} não foi aberta: faltam "
+                      f"{len(_conf_ir.pendencias)} dado(s) que o Indicador Real exige "
+                      f"(Circular COGEX 243/2026). Veja campo por campo abaixo.", "danger")
+                return render_template("ri_nova.html", livro=livro, proximo=numero,
+                                       e_acervo=False, do_arquivo=None,
+                                       form={**request.form.to_dict(), **{k: v or "" for k, v in _ir.items()}},
+                                       rascunho_id=request.form.get("_rascunho_id_tela", type=int),
+                                       pendencias_ir=_conf_ir.pendencias,
+                                       **_extras_do_indicador_real(_settings_ir))
 
             novo_id = bd.escrever(
                 """INSERT INTO ri_matriculas
@@ -7987,14 +8138,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     bairro, cidade, uf, cep, area_valor, area_unidade, descricao_perimetro,
                     confrontacoes, inscricao_municipal,
                     registro_anterior, teor, teor_formato, cnm, cib, origem, criado_em,
-                    criado_por, aberta_nome, aberta_titulo, aberta_tratamento)
+                    criado_por, aberta_nome, aberta_titulo, aberta_tratamento, tipo_imovel)
                    VALUES (%(numero)s,'',%(livro)s,%(livro_norm)s,%(folha)s,%(data_abertura)s,
                     %(selo_texto)s,%(qr1)s,%(mime1)s,%(qr2)s,%(mime2)s,%(emolumentos)s,
                     %(tipo_ficha)s,'ATIVA',%(conferido)s,%(rural_urbano)s,%(logradouro)s,%(numero_predial)s,
                     %(bairro)s,%(cidade)s,%(uf)s,%(cep)s,%(area_valor)s,%(area_unidade)s,%(descricao_perimetro)s,
                     %(confrontacoes)s,%(inscricao_municipal)s,
                     %(registro_anterior)s,%(teor)s,'texto',%(cnm)s,%(cib)s,'MANUAL',%(criado_em)s,NULL,
-                    %(aberta_nome)s,%(aberta_titulo)s,%(aberta_tratamento)s)
+                    %(aberta_nome)s,%(aberta_titulo)s,%(aberta_tratamento)s,%(tipo_imovel)s)
                    RETURNING id""",
                 {
                  # QUEM ABRIU A MATRICULA, CONGELADO AQUI — pedido do oficial
@@ -8027,13 +8178,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                  or None),
                  "qr1": None, "mime1": None, "qr2": None, "mime2": None,
                  "emolumentos": (request.form.get("emolumentos_abertura") or "").strip() or None,
-                 "rural_urbano": (request.form.get("rural_urbano") or "").strip() or None,
-                 "logradouro": (request.form.get("logradouro") or "").strip() or None,
+                 "rural_urbano": _ir["rural_urbano"],
+                 "logradouro": _ir["logradouro"],
                  "numero_predial": (request.form.get("numero_predial") or "").strip() or None,
                  "bairro": (request.form.get("bairro") or "").strip() or None,
-                 "cidade": (request.form.get("cidade") or "").strip() or None,
-                 "uf": (request.form.get("uf") or "").strip() or None,
-                 "cep": (request.form.get("cep") or "").strip() or None,
+                 "cidade": _ir["cidade"],
+                 "uf": _ir["uf"],
+                 "cep": _ir["cep"],
                  "area_valor": (request.form.get("area_valor") or "").strip() or None,
                  "area_unidade": (request.form.get("area_unidade") or "").strip() or None,
                  "descricao_perimetro": (request.form.get("descricao_perimetro") or "").strip() or None,
@@ -8060,6 +8211,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                  #   SEM CNS NÃO SAI CNM, e a matrícula sai assim mesmo: o
                  #   código é identificação, e não pode impedir a abertura.
                  "cnm": _cnm_da_matricula(livro, numero),
+                 # O TIPO DO IMÓVEL (RI018): a tela não o pedia, e a ficha nova nascia sem ele.
+                 "tipo_imovel": _ir["tipo_imovel"],
                  "cib": _cib_normalizado(_cib) or None,
                  "criado_em": db.now()},
             )[0]["id"]
@@ -8120,6 +8273,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                    "origem": "abertura_nova_matricula"})
         flash(f"Matrícula {numero} aberta no livro {livro}. "
               f"O próximo número do livro passou a ser {numero + 1}.", "success")
+        if _conf_ir.sem_configuracao:
+            flash(RIREQ.recado_sem_configuracao(_conf_ir), "warning")
+        elif _conf_ir.pendencias:
+            flash(f"Ficha de acervo aberta sem o que o Indicador Real exige — "
+                  f"{_conf_ir.resumo()}. Ela não sobe até ser completada "
+                  f"(retificação cadastral ou fila de conferência das fichas).", "warning")
+        for _aviso_ir in _conf_ir.avisos:
+            flash(_aviso_ir, "warning")
         # A SOMA DAS FRAÇÕES NÃO IMPEDE A ABERTURA (T022): avisa, como a ficha.
         # E o mesmo nome sem documento também só avisa (decisão de 26/11/2026).
         _aviso_nome = _aviso_de_nome_repetido(donos)

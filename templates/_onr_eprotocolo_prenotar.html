@@ -1,0 +1,30 @@
+{# O TÍTULO DO E-PROTOCOLO DO ONR NA PRENOTAÇÃO DE BALCÃO (RI013 P2a, 25/11/2026).
+   Vai DENTRO do formulário de `ri_protocolo.html`: o pedido segue escondido, e a
+   rota confere a ordem da remessa de novo ao gravar. Os campos do formulário já
+   vêm preenchidos com a ficha do ONR; o escrevente confere e escolhe o livro. #}
+{% set e = de_onr %}
+<input type="hidden" name="onr_ep_pedido_id" value="{{ e.pedido_id }}">
+{% if e.pulo %}<input type="hidden" name="onr_ep_pulo_id" value="{{ e.pulo.id }}">{% endif %}
+<div class="span2 card" id="onr-ep-prenotar" style="margin:0">
+  <p style="margin:0"><strong>Título remetido pelo e-Protocolo do ONR</strong> —
+    protocolo <strong>{{ e.protocolo or '—' }}</strong>, IDContrato <strong>{{ e.id_contrato }}</strong>,
+    remetido em {{ (e.data_remessa or '—')|replace('T', ' ') }}.
+    <a href="{{ url_for('onr_eprotocolo_ficha', pedido_id=e.pedido_id) }}">abrir a ficha</a></p>
+  {% if e.pulo %}<p class="small warning" style="margin:4px 0 0">Fora da ordem da remessa, com motivo:
+    «{{ e.pulo.motivo }}»</p>{% endif %}
+  {% for a in e.alertas if a.nivel == 'perigo' %}
+  <p class="notice danger" style="margin:6px 0 0"><strong>Contraditório:</strong> {{ a.texto }}</p>
+  {% endfor %}
+  {% for a in e.alertas if a.nivel != 'perigo' %}
+  <p class="small {{ 'warning' if a.nivel == 'atencao' else 'muted' }}" style="margin:4px 0 0">{{ a.texto }}</p>
+  {% endfor %}
+  <dl class="detail small" style="margin-top:6px">
+    <dt>Serviço</dt><dd>{{ e.servico or '—' }}</dd>
+    <dt>Valor pago na Central</dt><dd>{{ e.valor or '—' }}{% if e.cobranca %} ({{ e.cobranca|lower }}){% endif %}</dd>
+    <dt>Matrícula(s)</dt><dd>{% for im in e.imoveis %}{% if im.matricula_id %}<a href="{{ url_for('ri_ficha', matricula_id=im.matricula_id) }}">{{ im.texto }}</a>{% else %}{{ im.texto or '—' }} <span class="badge alta">não existe neste sistema</span>{% endif %}{% if not loop.last %}; {% endif %}{% else %}—{% endfor %}</dd>
+    <dt>Partes</dt><dd>{% for x in e.partes %}{{ x.nome }}{% if x.qualidade %} ({{ x.qualidade|lower }}){% endif %}{% if not loop.last %}; {% endif %}{% else %}—{% endfor %}</dd>
+    <dt>Anexos no ONR</dt><dd>{% for a in e.anexos %}{% if a.url %}<a href="{{ a.url }}" target="_blank" rel="noopener noreferrer">{{ a.nome or a.id_anexo }}</a>{% else %}{{ a.nome or a.id_anexo }}{% endif %}{% if not loop.last %}, {% endif %}{% else %}—{% endfor %}</dd>
+  </dl>
+  <p class="small muted" style="margin:4px 0 0">O selo é o da prenotação de sempre. Nada é enviado ao ONR
+    nesta etapa: a prenotação fica ligada ao título, e o aviso ao ONR vem depois.</p>
+</div>

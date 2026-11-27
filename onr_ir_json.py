@@ -229,32 +229,42 @@ def _outros_municipios(bruto: Any, uf_codigo: int | None) -> tuple[dict[str, int
 # ------------------------------------------------------------ o registro
 
 
-def _bloco_rural(m: Mapping[str, Any], motivos: list[str]) -> dict[str, str]:
+def _bloco_rural(m: Mapping[str, Any], motivos: list[tuple[str, str]]) -> dict[str, str]:
     car = _texto(m.get("car")).upper()
     if car and not _CAR.match(car):
-        motivos.append("O CAR da ficha não tem o formato do manual (UF-7 dígitos-32 caracteres).")
+        motivos.append(("car", "O CAR da ficha não tem o formato do manual (UF-7 dígitos-32 caracteres)."))
     ccir = _digitos(m.get("ccir"))
     if ccir and len(ccir) != 13:
-        motivos.append("O CCIR da ficha não tem os 13 dígitos do manual.")
+        motivos.append(("ccir", "O CCIR da ficha não tem os 13 dígitos do manual."))
     sigef = _texto(m.get("sigef")).lower()
     if sigef and not _SIGEF.match(sigef):
-        motivos.append("O SIGEF da ficha não tem os 32 caracteres do manual.")
+        motivos.append(("sigef", "O SIGEF da ficha não tem os 32 caracteres do manual."))
     # O manual diz que o CIB é o NIRF com outro nome, e o exemplo do campo traz os dois formatos.
     nirf = _texto(m.get("nirf")) or _texto(m.get("cib"))
     if nirf and not 7 <= len(re.sub(r"[^0-9A-Za-z]", "", nirf)) <= 8:
-        motivos.append("O NIRF/CIB da ficha não tem o tamanho do manual.")
+        motivos.append(("nirf", "O NIRF/CIB da ficha não tem o tamanho do manual."))
     return {"CAR": car, "NIRF": nirf, "CCIR": ccir, "NUMERO_INCRA": _texto(m.get("incra")),
             "SIGEF": sigef, "DENOMINACAORURAL": _texto(m.get("logradouro")), "ACIDENTEGEOGRAFICO": ""}
 
 
 def montar_registro(m: Mapping[str, Any], casa: Serventia) -> tuple[dict | None, list[str]]:
     """O registro do manual, ou a lista do que impede. Não preenche nada que a ficha não diga."""
-    motivos: list[str] = []
+    registro, por_campo = montar_registro_por_campo(m, casa)
+    return registro, [motivo for _campo, motivo in por_campo]
+
+
+def montar_registro_por_campo(m: Mapping[str, Any], casa: Serventia) -> tuple[dict | None, list[tuple[str, str]]]:
+    """O mesmo `montar_registro`, com cada impedimento ligado à coluna da ficha que o causa.
+
+    É a régua da abertura da matrícula (`ri_requisitos_ir`): a tela mostra o que falta campo por
+    campo, e a régua é esta, a do arquivo, para que a ficha que abre seja a ficha que sobe.
+    """
+    motivos: list[tuple[str, str]] = []
     numero = _texto(m.get("numero"))
     if not numero.isdigit():
-        motivos.append(f"O número da matrícula («{numero}») não é só de dígitos.")
+        motivos.append(("numero", f"O número da matrícula («{numero}») não é só de dígitos."))
     if not _texto(m.get("livro_norm")).startswith("2"):
-        motivos.append("A ficha não está no Livro 2. Confira se é matrícula antes de enviar.")
+        motivos.append(("livro_norm", "A ficha não está no Livro 2. Confira se é matrícula antes de enviar."))
 
     letra = chave(m.get("rural_urbano"))
     if letra in ("u", "urbano", "urbana"):
@@ -263,28 +273,28 @@ def montar_registro(m: Mapping[str, Any], casa: Serventia) -> tuple[dict | None,
         localizacao = LOCALIZACAO_RURAL
     else:
         localizacao = None
-        motivos.append("A ficha não diz se o imóvel é urbano ou rural.")
+        motivos.append(("rural_urbano", "A ficha não diz se o imóvel é urbano ou rural."))
 
     tipo = codigo_do_imovel(m.get("tipo_imovel"))
     if tipo is None:
-        motivos.append(f"O tipo do imóvel («{_texto(m.get('tipo_imovel')) or 'vazio'}») não é um dos 13 do manual.")
+        motivos.append(("tipo_imovel", f"O tipo do imóvel («{_texto(m.get('tipo_imovel')) or 'vazio'}») não é um dos 13 do manual."))
     tipo_via, nome_via = partir_logradouro(m.get("logradouro"))
     if tipo_via is None:
-        motivos.append(f"O logradouro («{_texto(m.get('logradouro')) or 'vazio'}») não começa por um tipo "
-                       "do manual seguido do nome.")
+        motivos.append(("logradouro", f"O logradouro («{_texto(m.get('logradouro')) or 'vazio'}») não começa por um tipo "
+                       "do manual seguido do nome."))
 
     cidade = casa.municipios.get(chave(m.get("cidade")))
     # O MUNICÍPIO JÁ DIZ A UF: o código IBGE de 7 dígitos começa pelo da UF. Ficha sem UF e com um
     # município da circunscrição não fica de fora por isso. UF escrita e diferente continua recusada.
     uf = _texto(m.get("uf")).upper() or (casa.uf if cidade is not None else "")
     if uf != casa.uf:
-        motivos.append(f"A UF da ficha («{uf or 'vazia'}») não é a da serventia.")
+        motivos.append(("uf", f"A UF da ficha («{uf or 'vazia'}») não é a da serventia."))
     if cidade is None:
-        motivos.append(f"O município da ficha («{_texto(m.get('cidade')) or 'vazio'}») não tem código IBGE "
-                       "configurado nesta serventia.")
+        motivos.append(("cidade", f"O município da ficha («{_texto(m.get('cidade')) or 'vazio'}») não tem código IBGE "
+                       "configurado nesta serventia."))
     cep = _digitos(m.get("cep"))
     if cep and len(cep) != 8:
-        motivos.append("O CEP da ficha não tem 8 dígitos.")
+        motivos.append(("cep", "O CEP da ficha não tem 8 dígitos."))
 
     vazio_rural = {c: "" for c in CHAVES_RURAL}
     if localizacao == LOCALIZACAO_RURAL:
@@ -292,7 +302,7 @@ def montar_registro(m: Mapping[str, Any], casa: Serventia) -> tuple[dict | None,
     else:
         rural = vazio_rural
         if localizacao == LOCALIZACAO_URBANO and any(_texto(m.get(c)) for c in ("car", "ccir", "sigef", "incra", "nirf")):
-            motivos.append("A ficha está como urbana e traz cadastro rural (CAR, CCIR, SIGEF, INCRA ou NIRF). Confira.")
+            motivos.append(("rural_urbano", "A ficha está como urbana e traz cadastro rural (CAR, CCIR, SIGEF, INCRA ou NIRF). Confira."))
     if motivos:
         return None, motivos
 

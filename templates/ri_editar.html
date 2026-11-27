@@ -93,6 +93,14 @@
         {% if m.rural_urbano and m.rural_urbano not in ('U', 'R') %}<option value="{{ m.rural_urbano }}" selected>{{ m.rural_urbano }}</option>{% endif %}
       </select>
     </label>
+    {# O TIPO DO IMÓVEL (RI018): os 13 do manual do Indicador Real. #}
+    <label data-passo="imovel">Tipo do imóvel
+      <select name="tipo_imovel">
+        <option value="">—</option>
+        {% for t in ir_tipos_imovel or [] %}<option {% if m.tipo_imovel == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+        {% if m.tipo_imovel and m.tipo_imovel not in (ir_tipos_imovel or []) %}<option selected>{{ m.tipo_imovel }}</option>{% endif %}
+      </select>
+    </label>
     <label data-passo="imovel">Área<input name="area_valor" value="{{ m.area_valor or '' }}"></label>
     <label data-passo="imovel">Unidade
       <select name="area_unidade">

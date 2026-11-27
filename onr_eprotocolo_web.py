@@ -14,6 +14,13 @@ O AVISO NO PAINEL
     ligado e no expediente, passa de uma hora sem leitura (CNN 325). Antes de a
     casa ligar o processo ou fazer a primeira leitura, o painel não mostra nada.
 
+PRENOTAR COM UM CLIQUE (P2a, 25/11/2026)
+    «Prenotar este título» leva à tela da prenotação de balcão, já preenchida
+    (`onr_eprotocolo_prenotacao`). O botão só fica ativo no mais antigo da
+    fila; prenotar outro antes pede motivo escrito («Pular a ordem»), que vai
+    para a auditoria. A ficha do título prenotado mostra o que a P2b vai mandar
+    ao ONR pelo `SetPrenotacaoAC` — e que ainda não se manda.
+
 A REDE ACONTECE FORA DE `db.transaction()` — ver `onr_eprotocolo.ler`.
 """
 from __future__ import annotations
@@ -23,9 +30,10 @@ from datetime import date, datetime
 from flask import flash, redirect, render_template, request, url_for
 
 import onr_eprotocolo as EP
+import onr_eprotocolo_prenotacao as EPP
 import onr_wsoficio as WS
 from bd_nativo import ERROS_DO_BANCO
-from seguranca_web import numero_digitado
+from seguranca_web import PRATICA, numero_digitado
 
 QUEM = ("ADMIN", "MANAGER", "USER", "AUDITOR")
 NO_PAINEL = ("ADMIN", "MANAGER", "USER")
@@ -45,7 +53,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     current_user = app.extensions["current_user"]
 
     with db.connect() as con:
-        EP.init_schema(con)
+        EPP.init_schema(con)
 
     def amb() -> str:
         return EP.ambiente(db.get_setting)
@@ -57,12 +65,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         a = amb()
         with db.connect() as con:
             lista = EP.fila_com_alertas(con, todos=todos, amb=a)
+            primeiro = next(iter(EPP.esperando(con, a)), None)
             resumo = EP.resumo_do_painel(con, agora=datetime.now(), amb=a,
                                          processo_ligado=EP.processo_ligado(con),
                                          no_expediente=no_expediente(datetime.now()))
         return render_template("onr_eprotocolo.html", lista=lista, todos=todos, ambiente=a,
                                endereco=WS.BASE[a], credencial=WS.situacao(a), resumo=resumo,
                                processo=EP.CATALOGO[0],
+                               primeiro_id=primeiro["id"] if primeiro else None,
+                               motivo_minimo=EPP.MOTIVO_MINIMO,
                                rotulo_do_status=EP.rotulo_do_status,
                                rotulo_do_tipo_servico=EP.rotulo_do_tipo_servico)
 
@@ -76,11 +87,36 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 flash(str(erro), "danger")
                 return redirect(url_for("onr_eprotocolo"))
             avisos = EP.alertas(con, p, p["imoveis"])
+            frente = EPP.a_frente(con, p) if p["situacao"] == "A_PRENOTAR" else []
+            onr = EPP.para_o_onr(con, p)
         return render_template("onr_eprotocolo_ficha.html", p=p, alertas=avisos,
+                               a_frente=frente, para_o_onr=onr, motivo_minimo=EPP.MOTIVO_MINIMO,
                                rotulo_do_status=EP.rotulo_do_status,
                                rotulo_do_tipo_servico=EP.rotulo_do_tipo_servico,
                                tipos_de_cobranca=WS.TIPO_COBRANCA_EPROTOCOLO,
                                tipos_de_isencao=WS.TIPO_ISENCAO_EPROTOCOLO)
+
+    @app.route("/ri/onr/eprotocolo/<int:pedido_id>/pular", methods=["POST"])
+    @roles_required(*PRATICA)
+    def onr_eprotocolo_pular(pedido_id: int):
+        """Prenotar fora da ordem da remessa: grava o motivo, audita e leva à
+        prenotação. NÃO prenota — a prenotação continua sendo a do balcão."""
+        motivo = request.form.get("motivo") or ""
+        try:
+            with db.transaction() as con:
+                pulo = EPP.registrar_pulo(
+                    con, pedido_id, motivo, quem_id=app.extensions["usuario_id"](),
+                    quem_nome=(app.extensions["usuario_nome"]() or "").strip() or None,
+                    agora=db.now())
+        except EP.EProtocoloRIError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("onr_eprotocolo_ficha", pedido_id=pedido_id))
+        audit("ONR_EPROTOCOLO_FORA_DA_ORDEM", "onr_ep_pedidos", pedido_id,
+              {"pulo_id": pulo["pulo_id"], "motivo": pulo["motivo"], "pulados": pulo["pulados"],
+               "pulados_protocolos": pulo["pulados_protocolos"]})
+        flash(f"Ordem da remessa pulada ({len(pulo['pulados'])} título(s) antes deste). "
+              "O motivo ficou na auditoria.", "warning")
+        return redirect(url_for("ri_protocolo", onr_ep=pedido_id, pulo=pulo["pulo_id"]))
 
     @app.route("/ri/onr/eprotocolo/ler", methods=["POST"])
     @roles_required("ADMIN")

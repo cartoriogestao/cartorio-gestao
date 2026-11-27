@@ -761,17 +761,18 @@ def prazo_ate(con, inicio: str, chave: str) -> str:
 
     **QUEM CONTA É O NÚCLEO** — `ri_schema.soma_dias_uteis`, com os feriados
     locais de Configurações (`rotina_da_casa.feriados_da_casa`), a mesma conta
-    da prenotação. O prazo que o artigo escreve sem «úteis» (art. 600, § 5º)
-    vai a `ri_schema.soma_dias_corridos`. Este módulo só escolhe qual pedir.
+    da prenotação. Só prazo em dias úteis: o corrido (o do SIGEF) este módulo
+    não conta.
     """
-    from ri_schema import soma_dias_corridos, soma_dias_uteis
+    from ri_schema import soma_dias_uteis
     from rotina_da_casa import feriados_da_casa
     regra = NORMA.prazo(chave)
+    if not regra["uteis"]:
+        raise ValueError(f"O prazo {chave} é em dias corridos e não se conta "
+                         "aqui.")
     dia = _data(inicio, "o início do prazo")
-    if regra["uteis"]:
-        return soma_dias_uteis(dia, int(regra["dias"]),
-                               feriados_da_casa(con)).isoformat()
-    return soma_dias_corridos(dia, int(regra["dias"])).isoformat()
+    return soma_dias_uteis(dia, int(regra["dias"]),
+                           feriados_da_casa(con)).isoformat()
 
 
 def _data(valor: Any, campo: str):
@@ -1055,8 +1056,8 @@ def intimar_para_contrarrazoes(con, processo_id: int, confrontante_id: int, *,
                                usuario: str | None = None) -> dict:
     """Registra a intimação do interessado para as contrarrazões. ESCREVE.
 
-    Art. 600, § 5º: «no prazo de 10 (dez) dias» — sem «úteis», e por isso
-    contados corridos (`rt_tjma`, prazo CONTRARRAZOAR).
+    Art. 600, § 5º: «no prazo de 10 (dez) dias», contados em dias úteis por
+    decisão do titular (27/11/2026) — `rt_tjma`, prazo CONTRARRAZOAR.
     """
     i = _impugnacao_para_gravar(con, processo_id, confrontante_id,
                                 agora=agora, usuario=usuario)
@@ -1081,7 +1082,7 @@ def intimar_para_contrarrazoes(con, processo_id: int, confrontante_id: int, *,
             quem=usuario, confrontante_id=confrontante_id,
             artigo="art. 600, § 5º",
             o_que=(f"Interessado intimado em {dia} para contrarrazões ao "
-                   f"recurso de {i['nome']}, até {limite} (10 dias)."))
+                   f"recurso de {i['nome']}, até {limite} (10 dias úteis)."))
     return {"contrarrazoes_prazo_ate": limite}
 
 
@@ -1432,14 +1433,14 @@ def passos_das_impugnacoes(con, processo_id: int, *, hoje: str) -> list[dict]:
         elif etapa == "INTIMAR_CONTRARRAZOES":
             passos.append({
                 "o_que": f"{nome} recorreu: intimar o interessado para, "
-                         "querendo, apresentar contrarrazões em 10 dias.",
+                         "querendo, apresentar contrarrazões em 10 dias úteis.",
                 "artigo": "art. 600, § 5º"})
         elif etapa == "CONTRARRAZOES":
             if not i.get("contrarrazoes_em") \
                     and str(i["contrarrazoes_prazo_ate"]) >= str(hoje)[:10]:
                 passos.append({
                     "o_que": f"Contrarrazões ao recurso de {nome} até "
-                             f"{i['contrarrazoes_prazo_ate']} (10 dias); "
+                             f"{i['contrarrazoes_prazo_ate']} (10 dias úteis); "
                              "depois, os autos vão ao Juiz corregedor "
                              "permanente.",
                     "artigo": "art. 600, § 5º",

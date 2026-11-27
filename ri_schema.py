@@ -1561,16 +1561,6 @@ def soma_dias_uteis(inicio: date, dias: int, feriados_locais: set[date] | None =
     return atual
 
 
-def soma_dias_corridos(inicio: date, dias: int) -> date:
-    """Data em que o prazo em dias CORRIDOS se esgota.
-
-    Para a norma que escreve «N dias» sem qualificar (TJMA 600, § 5º; 620,
-    § 2º). Mora aqui, ao lado da de dias úteis, para que quem conta prazo
-    tenha um lugar só para pedir os dois.
-    """
-    return inicio + timedelta(days=dias)
-
-
 def dias_uteis_entre(inicio: date, fim: date, feriados_locais: set[date] | None = None) -> int:
     """Dias uteis decorridos, para saber quanto falta ou quanto passou."""
     if fim < inicio:

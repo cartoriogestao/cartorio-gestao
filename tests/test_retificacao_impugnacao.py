@@ -4,7 +4,7 @@ O QUE ESTES TESTES GUARDAM
     - a rejeição de plano da impugnação infundada é decisão DO OFICIAL (§ 4º):
       texto obrigatório, quem decidiu e quando; a hipótese do § 6º é só apoio;
     - os prazos saem do núcleo, com os feriados da casa: recurso em 10 dias
-      úteis da intimação (§ 4º), contrarrazões em 10 dias (§ 5º, sem «úteis»),
+      úteis da intimação (§ 4º), contrarrazões em 10 dias úteis (§ 5º, decisão do titular),
       transação em 15 dias úteis prorrogáveis uma única vez (§ 2º);
     - sem recurso no prazo o procedimento prossegue; com recurso, contrarrazões
       e remessa ao Juiz;
@@ -272,19 +272,20 @@ def test_com_recurso_contrarrazoes_em_10_dias_e_depois_o_juiz(casa):
     with con:
         saida = RT.intimar_para_contrarrazoes(
             con, pid, cid, intimado_em="2026-09-18", agora="2026-09-18T10:00")
-    # «10 (dez) dias», sem «úteis»: corridos.
-    assert saida["contrarrazoes_prazo_ate"] == "2026-09-28"
+    # «10 (dez) dias», em dias úteis por decisão do titular (27/11/2026): da
+    # sexta 18/09, passam dois fins de semana.
+    assert saida["contrarrazoes_prazo_ate"] == "2026-10-02"
     with con, pytest.raises(RT.RetificacaoError) as erro:
         RT.remeter_ao_juiz(con, pid, cid, informacoes="informações do oficial",
-                           hoje="2026-09-28", agora="2026-09-28T10:00")
-    assert "corre até 2026-09-28" in str(erro.value)
+                           hoje="2026-10-02", agora="2026-10-02T10:00")
+    assert "corre até 2026-10-02" in str(erro.value)
     with con:
         saida = RT.remeter_ao_juiz(
-            con, pid, cid, hoje="2026-09-29", agora="2026-09-29T10:00",
+            con, pid, cid, hoje="2026-10-05", agora="2026-10-05T10:00",
             usuario=OFICIAL,
             informacoes="certidões das matrículas e planta juntadas")
     assert saida["desfecho"] == RT.AO_JUIZ and saida["fase"] == "AO_JUIZ"
-    i = RT.impugnacoes(con, pid, hoje="2026-09-29")[0]
+    i = RT.impugnacoes(con, pid, hoje="2026-10-05")[0]
     assert i["remessa_paragrafo"] == "art. 600, § 5º"
 
 

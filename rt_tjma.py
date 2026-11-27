@@ -272,18 +272,18 @@ PRAZOS: tuple[dict, ...] = (
      "uteis": True, "de_quem": "AS_PARTES",
      "o_que": "A prorrogação da transação, a pedido — UMA ÚNICA VEZ, contada "
               "do fim do prazo original"},
-    # O RECURSO E AS CONTRARRAZOES DA IMPUGNACAO INFUNDADA — e os dois NAO
-    # contam igual, porque o paragrafo nao os escreve igual: o § 4o diz «10
-    # (dez) dias uteis»; o § 5o diz «10 (dez) dias», sem qualificar. E a regra
-    # do SIGEF: inventar «uteis» onde o artigo nao escreveu daria a parte mais
-    # prazo do que a norma deu.
+    # O RECURSO E AS CONTRARRAZOES DA IMPUGNACAO INFUNDADA. O § 4o diz «10
+    # (dez) dias uteis»; o § 5o diz so «10 (dez) dias». AS CONTRARRAZOES CONTAM
+    # EM DIAS UTEIS POR DECISAO DO TITULAR (27/11/2026, RI021): os dois prazos
+    # do mesmo recurso correm no mesmo calendario. Diferente do SIGEF, que
+    # continua corrido.
     {"chave": "RECORRER", "artigo": "art. 600, § 4º", "dias": 10, "uteis": True,
      "de_quem": "IMPUGNANTE",
      "o_que": "Recorrer da rejeição de plano da impugnação infundada, contado "
               "da intimação do impugnante; sem recurso, o procedimento "
               "prossegue"},
     {"chave": "CONTRARRAZOAR", "artigo": "art. 600, § 5º", "dias": 10,
-     "uteis": False, "de_quem": "REQUERENTE",
+     "uteis": True, "de_quem": "REQUERENTE",
      "o_que": "O interessado apresenta, querendo, contrarrazões ao recurso; "
               "depois os autos vão ao Juiz corregedor permanente"},
     {"chave": "SUSCITAR_DUVIDA", "artigo": "art. 604, § 2º", "dias": 15,
@@ -342,9 +342,9 @@ CAMINHOS_DA_IMPUGNACAO: tuple[dict, ...] = (
               "intimação do impugnante, o procedimento prossegue."},
     {"artigo": "art. 600, § 5º",
      "o_que": "Com recurso: apresentadas as razões, o interessado é intimado "
-              "para contrarrazões em 10 dias, e os autos vão ao Juiz "
-              "corregedor permanente com as informações complementares do "
-              "oficial."},
+              "para contrarrazões em 10 dias (úteis, nesta casa), e os autos "
+              "vão ao Juiz corregedor permanente com as informações "
+              "complementares do oficial."},
     {"artigo": "art. 601",
      "o_que": "A remessa ao Juiz é ato fundamentado, com as informações dos "
               "assentamentos sobre o imóvel e os confinantes, certidões "

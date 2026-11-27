@@ -292,7 +292,7 @@
      recurso até <strong>{{ i.recurso_prazo_ate }}</strong> (10 dias úteis, art. 600, § 4º).</p>{% endif %}
   {% if i.recurso_em %}<p class="small">Recurso em {{ i.recurso_em }}: {{ i.recurso_razoes }}</p>{% endif %}
   {% if i.contrarrazoes_intimadas_em %}<p class="small">Contrarrazões: intimado em {{ i.contrarrazoes_intimadas_em }},
-     até <strong>{{ i.contrarrazoes_prazo_ate }}</strong> (10 dias, art. 600, § 5º){% if i.contrarrazoes_em %};
+     até <strong>{{ i.contrarrazoes_prazo_ate }}</strong> (10 dias úteis, art. 600, § 5º){% if i.contrarrazoes_em %};
      apresentadas em {{ i.contrarrazoes_em }}{% endif %}.</p>{% endif %}
   {% if i.transacao_pedida_em %}<p class="small">Transação pedida por {{ RT.QUEM_PEDE_TRANSACAO.get(i.transacao_pedida_por, i.transacao_pedida_por) }}
      em {{ i.transacao_pedida_em }}; prazo até <strong>{{ i.transacao_prazo_ate }}</strong>
@@ -399,7 +399,7 @@
     <input type="hidden" name="acao" value="intimar_contrarrazoes">
     <input type="hidden" name="confrontante_id" value="{{ i.confrontante_id }}">
     Interessado intimado para contrarrazões em <input type="date" name="intimado_em" required>
-    <button class="link-button">registrar (10 dias, § 5º)</button>
+    <button class="link-button">registrar (10 dias úteis, § 5º)</button>
   </form>
   {% endif %}
   {% if i.etapa == 'CONTRARRAZOES' and not i.contrarrazoes_em %}

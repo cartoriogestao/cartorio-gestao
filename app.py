@@ -3808,6 +3808,9 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     # Os pedidos do ONR parados: o aviso na tela de quem faz o trabalho (A005).
     import onr_pedidos_avisos_web
     onr_pedidos_avisos_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+    # A e-Intimação do RI: a leitura dos pedidos, só leitura (A005, 27/11/2026).
+    import onr_intimacoes_web
+    onr_intimacoes_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
     # A CONFERENCIA DO ENDERECO QUE VAI AO ONR — o que o teor da ficha diz,
     # ao lado do que a ficha tem, com a frase de onde cada campo saiu.

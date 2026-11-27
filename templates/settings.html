@@ -450,7 +450,7 @@
   {# A005, 26/11/2026: os pedidos do ONR parados avisam quem faz o trabalho, e
      não a Checklist do dia. Rota própria: só mexe nesta chave. #}
   <p class="muted small">
-    Os pedidos de certidão do ONR, os títulos do e-Protocolo e os atendimentos do SAEC sem
+    Os pedidos de certidão do ONR, os títulos do e-Protocolo, os atendimentos do SAEC e os pedidos de e-Intimação sem
     andamento viram aviso na tela desta pessoa: simples no 1º dia útil e faixa vermelha do 2º
     em diante, até o pedido andar. <strong>Em branco, o aviso vai para o ADMIN.</strong>
     Hoje recebe: <strong>{{ opc.efetivo.nome or 'ninguém' }}</strong>{% if opc.efetivo.de_onde == 'ADMIN' %} (o ADMIN, porque {{ opc.efetivo.motivo }}){% endif %}.

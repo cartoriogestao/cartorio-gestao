@@ -244,14 +244,93 @@ já vem no Python), e a sobreposição é conta de plano escrita no sistema. Tud
 disso é instalado na produção. Sem a biblioteca, a tela diz o que instalar e o
 resto do sistema segue.
 
+### O memorial da matrícula vira polígono PENDENTE
+
+Muitas fichas trazem, no teor, o memorial no formato do SIGEF: «… até o vértice
+XXXX-M-0002, de coordenadas (Longitude: -47°12'00,425", Latitude -05°50'53,691" e
+Altitude …)». A tela do mapa tem a seção **«Extrair do memorial da matrícula»**
+(um número de matrícula, ou o botão para todas as abertas que têm memorial). O
+código é `geo_formatos.ler_memorial` (a leitura do texto), `ri_geo.extrair_memorial`
+(medir e guardar) e `ri_geo.adotar_memoriais_sem_aviso` (o lote).
+
+**O que a leitura faz**
+
+1. Tira a marcação HTML do teor, desescapa (`&#x27;`, `&quot;`, até duas vezes) e lê
+   os vértices **na ordem do texto**: nome (o que vem depois de «vértice», «ponto»
+   ou «marco»), Longitude e Latitude em graus, minutos e segundos — sinal negativo,
+   hemisfério em letra (N S L O W E) ou por extenso (Norte, Sul, Leste, Oeste),
+   vírgula ou ponto decimal, aspas e apóstrofos de qualquer tipo, Longitude antes
+   ou depois da Latitude. O anel se fecha no primeiro vértice.
+2. **Rodapé de página no meio da coordenada** (o teor vem de PDF) é lido e marcado:
+   o vértice sai, e a conferência avisa «texto no meio da coordenada».
+3. **SIRGAS 2000.** O texto que diz **SAD 69 ou Córrego Alegre é recusado**, com a
+   frase do motivo (a passagem de datum precisa de parâmetros que o sistema não
+   tem); o que cita um deles **e** o SIRGAS também (não dá para saber a qual valem
+   as coordenadas) é recusado do mesmo jeito. WGS 84 entra com aviso. O texto que
+   **não diz o sistema** entra tratado como SIRGAS 2000, **com aviso**.
+4. **Mais de uma gleba no texto:** cada «Inicia-se a descrição deste perímetro»
+   abre uma gleba; sem essa frase, o anel que volta ao primeiro vértice (pelo nome
+   ou pela coordenada) fecha a gleba e o que vem depois abre outra. Cada gleba é
+   **um polígono**, e todos levam o aviso «CONFERIR» com a **soma das áreas** ao
+   lado da registrada. Vértices de glebas diferentes nunca entram no mesmo anel.
+5. O que não se lê **não some em silêncio**: coordenada com minuto ou segundo que
+   não existe, rótulo «Longitude» sem a coordenada, ou coordenada sem sinal e sem
+   hemisfério viram **ERRO** no polígono (fica guardado, não se adota). O texto
+   que não é graus-minutos-segundos (grau decimal, UTM) **não é lido**: a recusa
+   diz isso.
+
+**O que fica guardado:** um polígono **PENDENTE** por gleba, com origem «Memorial da
+matrícula» (`ri_geo_importacoes.formato = MEMORIAL`, nome «memorial da matrícula
+N», SHA-256 do texto lido) e, em `origem_atributos`, o **texto-fonte da gleba** e os
+**vértices como vieram** (nome, coordenada escrita e valor). A matrícula fica só
+como **sugestão** (`matricula_id` com a situação PENDENTE). Extrair de novo o mesmo
+texto é recusado (já está guardado, mesmo descartado); texto que mudou extrai de
+novo. A ficha de leitura é o `teor`; se ele não tem o memorial, a descrição do
+perímetro.
+
+**A conferência é a que já existia**, mais os achados do memorial: área medida ao
+lado da registrada (na lista de pendentes e na página do polígono), fechamento,
+cruzamento, coordenadas fora do Brasil, sobreposição com os vigentes (quando
+adotado), e — só do memorial — «várias glebas», «o texto não volta ao primeiro
+vértice» (o sistema fechou o anel), «texto no meio da coordenada», «coordenadas
+fora de qualquer descrição», «ato com coordenadas no teor» (outra descrição pode
+estar em vigor) e «o texto não diz o sistema».
+
+**Adoção é ato da pessoa.** Um a um, pela tela do polígono. Em lote existe **só o
+botão «Adotar os memoriais sem aviso»**: leva o polígono que não tem achado
+nenhum (nem aviso), de matrícula aberta e sem vigente, com a área que **bate** com
+a registrada (tolerância da casa), sem sobreposição com polígono vigente e que não
+é uma de várias glebas. O lote antigo (sugestões do atributo do arquivo) **não**
+adota memorial. Adotar uma gleba substitui o vigente da matrícula (o Mapa guarda
+um polígono por matrícula), e a tela avisa.
+
+**O que foi medido (26/11/2026, só leitura, sem copiar texto):** das 467 matrículas
+abertas que citam «Longitude» no teor ou na descrição do perímetro, 310 viram ao
+menos um polígono; 154 não têm vértices em graus-minutos-segundos (em 20 delas há coordenada em grau
+decimal; nas demais, o rótulo «Longitude» aparece de outro jeito, e **ainda não se
+olhou o que é**) e 3 foram recusadas por SAD 69. Das
+302 que trazem pelo menos 3 vértices com nome de SIGEF (a contagem da RI007 foi 269,
+com outro critério), 299 viram polígono e 209 sem erro; dessas, 127 têm área
+registrada legível e **92 estão dentro de ±5%** (60 dentro de ±1%). Só **9** não têm
+nenhum aviso — quase sempre por causa do «o texto não diz o sistema» —, e é isso
+que o lote adota (descontada a sobreposição).
+
+**O que o lote não faz, de propósito:** adotar o que o texto não diz que é SIRGAS;
+assumir hemisfério onde não há sinal (59 matrículas têm coordenada sem sinal: ficam
+ERRO, e quem decide é o oficial se «sem sinal, no Brasil, é Oeste/Sul» serve); ler
+grau decimal; somar glebas num polígono só (multipolígono por matrícula).
+
 ## O que ainda FALTA
 
 - **O Manual 2 do Book C (topografia) não está disponível**, e o formato exato que
   o Mapa do ONR espera para a carga (nomes de campo, sistema, geometria) segue
   sendo o do plugin de referência — de terceiro, e não de documento do ONR.
-- **Desenho do polígono dentro do sistema** (digitar coordenadas, memorial
-  descritivo) e **importar o memorial em planilha** do SIGEF: hoje só o arquivo
-  geoespacial entra.
+- **Desenho do polígono dentro do sistema** (digitar coordenadas) e **importar o
+  memorial em planilha** do SIGEF. O memorial **em texto, do teor da matrícula**,
+  já entra (ver acima); **baixar do SIGEF** e **enviar ao ONR** seguem de fora (o
+  primeiro depende de decisão do oficial sobre chamada externa).
+- **Memorial em grau decimal ou UTM**, e a **matrícula com várias glebas num só
+  polígono** (multipolígono): hoje só graus-minutos-segundos, e uma gleba por vez.
 - **O nome dos atributos da camada do SIGEF/Acervo Fundiário não foi achado em fonte
   oficial**: o sistema só usa um punhado de nomes prováveis para **preencher** o
   código da parcela, que a pessoa confere.

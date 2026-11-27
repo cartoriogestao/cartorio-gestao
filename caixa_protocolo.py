@@ -830,6 +830,10 @@ CREATE TABLE IF NOT EXISTS cx_atendimento (
 )
 """
 
+#: As N linhas de 1 de uma divisão guardam aqui o id da primeira delas
+#: (`caixa_web`, «N linhas de 1, uma para cada ato»).
+COLUNA_DA_DIVISAO = "dividido_de"
+
 # O diferimento é do ITEM, e não do protocolo: um protocolo do Protesto pode
 # ter a certidão paga no balcão e o protesto «a posteriori» no mesmo papel.
 COLUNAS_DO_DIFERIMENTO = ("diferido_quem", "diferido_quando",
@@ -849,6 +853,11 @@ def init_cobertura_schema(con) -> None:
     for coluna in COLUNAS_DO_DIFERIMENTO:
         if not bd.tem_coluna("cx_protocolo_atos", coluna):
             bd.escrever(f"ALTER TABLE cx_protocolo_atos ADD COLUMN {coluna} TEXT")
+    # A ORIGEM DA LINHA DIVIDIDA (27/11/2026): as N linhas de 1 de uma divisão
+    # guardam o id da primeira delas. Vazia nas linhas de sempre e nas de «uma
+    # linha com N», que seguem exatamente como antes.
+    if not bd.tem_coluna("cx_protocolo_atos", COLUNA_DA_DIVISAO):
+        bd.escrever(f"ALTER TABLE cx_protocolo_atos ADD COLUMN {COLUNA_DA_DIVISAO} bigint")
 
 
 def _anotar_item_do_ato(bd: Banco, item, *, tabela: str, ato_id: int,
@@ -1227,6 +1236,70 @@ def por_que_nao_dividir(de_um: dict, de_n: dict, quantas: int) -> str | None:
             return ("este item tem teto ou faixa: dividido em linhas, o total "
                     "mudaria")
     return None
+
+
+def divisao_da_linha(linha) -> int | None:
+    """De que divisão a linha do protocolo veio, ou None. Só lê a linha.
+
+    None nas linhas de sempre, nas de «uma linha com N» e na linha lida sem a
+    coluna (banco montado à mão, consulta que não a pediu).
+    """
+    try:
+        valor = linha[COLUNA_DA_DIVISAO]
+    except (KeyError, IndexError, TypeError):
+        return None
+    return int(valor) if valor not in (None, "") else None
+
+
+def uma_de_cada_divisao(linhas) -> list:
+    """As linhas, com UMA SÓ de cada divisão: a primeira livre. Só filtra.
+
+    Decisão do titular em 27/11/2026: lavrado sem marcar, o ato leva uma linha
+    da divisão, e não todas. As linhas que não vieram de divisão passam todas,
+    como sempre. `linhas` vem na ordem do id, como todas as leituras do
+    protocolo.
+    """
+    vistas: set[int] = set()
+    saida = []
+    for linha in linhas:
+        grupo = divisao_da_linha(linha)
+        if grupo is not None:
+            if grupo in vistas:
+                continue
+            vistas.add(grupo)
+        saida.append(linha)
+    return saida
+
+
+def pre_marcar_uma_de_cada_divisao(con, linhas) -> list:
+    """As linhas da tela de lavrar, com `marcado` falso nas linhas da divisão
+    além da primeira. Só LÊ.
+
+    A linha que não veio de divisão sai como entrou — sem `marcado` se não o
+    tinha —, e a tela a marca como sempre. A primeira de cada divisão guarda o
+    `marcado` que tinha. Linha lida sem a coluna da divisão é procurada pelo id.
+    """
+    linhas = [dict(linha) for linha in linhas]
+    if not linhas:
+        return linhas
+    if not any(COLUNA_DA_DIVISAO in linha for linha in linhas):
+        bd = banco(con)
+        if not bd.tem_coluna("cx_protocolo_atos", COLUNA_DA_DIVISAO):
+            return linhas
+        ids = [int(linha["id"]) for linha in linhas]
+        lugares = ",".join(["%s"] * len(ids))
+        grupos = {int(r["id"]): r[COLUNA_DA_DIVISAO] for r in bd.ler(
+            f"""SELECT id, {COLUNA_DA_DIVISAO} FROM cx_protocolo_atos
+                 WHERE id IN ({lugares}) AND {COLUNA_DA_DIVISAO} IS NOT NULL""", ids)}
+    else:
+        grupos = {int(linha["id"]): linha.get(COLUNA_DA_DIVISAO) for linha in linhas}
+    ficam = {int(linha["id"]) for linha in uma_de_cada_divisao(
+        [{"id": linha["id"], COLUNA_DA_DIVISAO: grupos.get(int(linha["id"]))}
+         for linha in linhas])}
+    for linha in linhas:
+        if int(linha["id"]) not in ficam:
+            linha["marcado"] = False
+    return linhas
 
 
 def itens_para_o_selo(con, protocolo_id, codigo: str | None) -> list[dict]:

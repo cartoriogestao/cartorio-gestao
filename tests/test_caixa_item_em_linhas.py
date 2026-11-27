@@ -535,3 +535,150 @@ def test_ri_tres_linhas_de_1_tres_averbacoes(casa_ri):
         sobra = [i for i in CXP.itens_disponiveis(con, cx["id"])
                  if i["codigo_ato"] == "16.22.2"]
     assert sobra == [], "sobrou saldo do 16.22.2"
+
+
+# ------------------- a linha dividida vai uma de cada vez (titular, 27/11/2026)
+
+
+def _caixas_do_item(html: str) -> dict[int, bool]:
+    """`protocolo_item_id` da tela de lavrar: id → vem marcado."""
+    saida = {}
+    for tag in re.findall(r'<input[^>]*name="protocolo_item_id"[^>]*>', html):
+        valor = re.search(r'value="(\d+)"', tag)
+        if valor and 'type="checkbox"' in tag:
+            saida[int(valor.group(1))] = bool(re.search(r"\bchecked\b", tag))
+    return saida
+
+
+def test_uma_de_cada_divisao_e_a_pre_marcacao():
+    """A regra sozinha: das linhas de uma divisão, fica a primeira; as linhas
+    de sempre passam todas, e a tela não ganha `marcado` nelas."""
+    col = CXP.COLUNA_DA_DIVISAO
+    linhas = [{"id": 1, col: None}, {"id": 2, col: 2}, {"id": 3, col: 2},
+              {"id": 4}, {"id": 5, col: 5}, {"id": 6, col: 2}, {"id": 7, col: 5}]
+    assert [x["id"] for x in CXP.uma_de_cada_divisao(linhas)] == [1, 2, 4, 5]
+    assert CXP.uma_de_cada_divisao([{"id": 9}, {"id": 10}]) == [{"id": 9}, {"id": 10}]
+    marcadas = CXP.pre_marcar_uma_de_cada_divisao(None, linhas)
+    assert [x.get("marcado", "como sempre") for x in marcadas] == [
+        "como sempre", "como sempre", False, "como sempre", "como sempre", False, False]
+    # O `marcado` que a tela já trazia fica na primeira da divisão.
+    com_sugestao = [{"id": 2, col: 2, "marcado": False}, {"id": 3, col: 2, "marcado": True}]
+    assert [x["marcado"] for x in CXP.pre_marcar_uma_de_cada_divisao(None, com_sugestao)] \
+        == [False, False]
+
+
+def test_a_divisao_guarda_a_origem_e_a_linha_com_n_nao(casa):
+    dividido, inteiro = _novo_protocolo(casa), _novo_protocolo(casa)
+    _acrescentar(casa, dividido, servico=_servico("15.3.1"), quantidade="3",
+                 separar="linhas")
+    _acrescentar(casa, inteiro, servico=_servico("15.3.1"), quantidade="3",
+                 separar="linha")
+    linhas = _linhas(casa, dividido)
+    assert [x[CXP.COLUNA_DA_DIVISAO] for x in linhas] == [linhas[0]["id"]] * 3
+    assert [x[CXP.COLUNA_DA_DIVISAO] for x in _linhas(casa, inteiro)] == [None]
+
+
+def _tres_titulos_rtd_com_o_item(b, quantidade: str, separar: str):
+    """Três títulos do RTD num protocolo, o 15.3.1 × 3 lançado e quitado."""
+    b.abrir_caixa()
+    titulos = [b.receber_titulo(4, serie="TD_B", natureza="Contrato de exemplo",
+                                apresentante="EMPRESA DE EXEMPLO LTDA", documento=CNPJ)
+               for _ in range(3)]
+    pid = titulos[0]["protocolo_geral_id"]
+    url = f"/caixa/protocolos/{pid}"
+    r = b.post(f"{url}/itens", url, acao="acrescentar",
+               servico=str(int(TABELA["15.3.1"]["s"])), quantidade=quantidade,
+               separar=separar)
+    assert "acrescentado" in _avisos_rtd(r), _avisos_rtd(r)
+    r = b.post(f"{url}/itens", url, acao="quitar_todos", forma_pagamento="DINHEIRO")
+    assert "lançado" in _avisos_rtd(r), _avisos_rtd(r)
+    numero = b.um("SELECT numero FROM cx_protocolos WHERE id=%s", (pid,))["numero"]
+    r = b.post("/selo/cobertura/atender", "/caixa", protocolo=numero)
+    assert "atendendo o protocolo" in _avisos_rtd(r), _avisos_rtd(r)
+    return titulos, pid
+
+
+def _registrar_sem_marcar(b, titulo, pid: int, teor: str) -> int:
+    """Registra pelo protocolo SEM mandar `protocolo_item_id` nenhum."""
+    tela = f"/rcpj-rtd/titulo/{titulo['id']}"
+    antes = b.um("SELECT max(id) AS n FROM rg_atos")["n"] or 0
+    r = postar_e_seguir(b.c, f"{tela}/registrar", {
+        "csrf_token": _token_rtd(b.c, tela), "serie": "TD_B", "teor": teor,
+        "protocolo_id": str(pid)})
+    ato = b.um("SELECT id FROM rg_atos ORDER BY id DESC LIMIT 1")["id"]
+    assert ato > antes, f"o registro não saiu: {_avisos_rtd(r)}"
+    return ato
+
+
+def test_rtd_linhas_divididas_sem_marcar_cada_registro_leva_uma(casa_rtd):
+    """«3 linhas de 1»: a ficha do título pré-marca só a primeira linha livre,
+    e o registro lavrado sem marcação nenhuma leva UMA linha, e não as três."""
+    b = Balcao(casa_rtd)
+    titulos, pid = _tres_titulos_rtd_com_o_item(b, "3", "linhas")
+    linhas = [x["id"] for x in b.ler(
+        "SELECT id FROM cx_protocolo_atos WHERE protocolo_id=%s ORDER BY id", (pid,))]
+    assert len(linhas) == 3
+    atos = []
+    for i, titulo in enumerate(titulos):
+        b.qualificar(titulo["id"], resultado="POSITIVA")
+        if i == 0:
+            # O primeiro título é o do protocolo geral com o item: a ficha
+            # dele mostra as três linhas, e só a primeira vem marcada.
+            tela = b.c.get(f"/rcpj-rtd/titulo/{titulo['id']}").get_data(as_text=True)
+            assert _caixas_do_item(tela) == {x: x == linhas[0] for x in linhas}, (
+                "a ficha não pré-marcou só a primeira linha da divisão")
+        atos.append(_registrar_sem_marcar(b, titulo, pid, f"CONTRATO DE EXEMPLO {i}."))
+        usados = b.ler("""SELECT id FROM cx_protocolo_atos
+                           WHERE protocolo_id=%s AND usado_por_ato_id=%s""", (pid, atos[-1]))
+        assert [u["id"] for u in usados] == [linhas[i]], (
+            f"o registro {i + 1} levou {len(usados)} linhas")
+    assert len(set(atos)) == 3
+    for ato in atos:
+        selos = b.ler("SELECT referencia FROM sd_selos WHERE tabela='rg_atos' AND ato_id=%s",
+                      (ato,))
+        assert [s["referencia"].split(":")[-1] for s in selos] == ["15.3.1"], selos
+
+
+def test_rtd_uma_linha_com_3_sem_marcar_fica_como_hoje(casa_rtd):
+    """«Uma linha com 3» segue como sempre. Medido na base deste PR, com o
+    mesmo roteiro: a ficha a marca, e o primeiro registro lavrado sem marcação
+    sai com um selo 15.3.1 e fica ligado à linha, que gasta uma unidade."""
+    b = Balcao(casa_rtd)
+    titulos, pid = _tres_titulos_rtd_com_o_item(b, "3", "linha")
+    [linha] = b.ler("SELECT * FROM cx_protocolo_atos WHERE protocolo_id=%s", (pid,))
+    assert linha["quantidade"] == 3 and linha[CXP.COLUNA_DA_DIVISAO] is None
+    b.qualificar(titulos[0]["id"], resultado="POSITIVA")
+    tela = b.c.get(f"/rcpj-rtd/titulo/{titulos[0]['id']}").get_data(as_text=True)
+    assert _caixas_do_item(tela) == {linha["id"]: True}
+    ato = _registrar_sem_marcar(b, titulos[0], pid, "CONTRATO DE EXEMPLO.")
+    depois = b.um("""SELECT quantidade, quantidade_usada, usado_em, usado_por_ato_id,
+                            usado_por_tabela FROM cx_protocolo_atos WHERE id=%s""",
+                  (linha["id"],))
+    assert dict(depois) == {"quantidade": 3, "quantidade_usada": 1, "usado_em": None,
+                            "usado_por_ato_id": ato, "usado_por_tabela": "rg_atos"}
+    assert [s["referencia"] for s in b.ler("SELECT referencia FROM sd_selos ORDER BY id")] \
+        == [f"rg_atos:{ato}:15.3.1"]
+
+
+def test_ri_a_ficha_pre_marca_uma_linha_da_divisao(casa_ri):
+    """Na ficha da matrícula, das «3 linhas de 1» do 16.22.2 vem marcada só a
+    primeira; o 16.1 do mesmo protocolo vem marcado como sempre."""
+    f = _compra_e_venda(casa_ri)
+    m = f["matricula"]
+    cx = _protocolo_geral(casa_ri, interessado=VENDEDOR, itens=[("16.1", 1)], pagar=False)
+    c = casa_ri["balcao"]
+    ficha_cx = f"/caixa/protocolos/{cx['id']}"
+    html = _clicar(c, ficha_cx, f"{ficha_cx}/itens", acao="acrescentar",
+                   servico=str(SERVICO["16.22.2"]), quantidade="3", separar="linhas")
+    assert "acrescentado em 3 linhas de 1" in html, html[:600]
+    itens = _ler(casa_ri, """SELECT id, codigo_ato FROM cx_protocolo_atos
+                              WHERE protocolo_id=%s ORDER BY id""", (cx["id"],))
+    divididas = [i["id"] for i in itens if i["codigo_ato"] == "16.22.2"]
+    outras = [i["id"] for i in itens if i["codigo_ato"] != "16.22.2"]
+    assert len(divididas) == 3 and outras
+    tela = c.get(f"/registro-imoveis/{m['id']}?lavrar=1&protocolo_id={cx['id']}"
+                 ).get_data(as_text=True)
+    caixas = _caixas_do_item(tela)
+    assert {i: caixas.get(i) for i in divididas} == {
+        divididas[0]: True, divididas[1]: False, divididas[2]: False}, caixas
+    assert all(caixas.get(i) for i in outras), caixas

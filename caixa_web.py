@@ -2714,18 +2714,29 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
                 with db.transaction() as con:
                     bd = banco(con)
+                    ids_da_divisao = []
                     for _ in range(quantidade):
-                        bd.escrever(
+                        ids_da_divisao.append(int(bd.escrever(
                             """INSERT INTO cx_protocolo_atos
                                (protocolo_id, descricao, codigo_ato, quantidade,
                                 valor_total, emolumentos, ferc, fadep, femp, ferrfis,
                                 servico_codigo, base_calculo, origem_valor)
-                               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                               RETURNING id""",
                             (protocolo_id, de_um["descricao"], de_um["codigo_tj"],
                              de_um["quantidade"], de_um["total"], de_um["emolumentos"],
                              de_um["ferc"], de_um["fadep"], de_um["femp"],
                              de_um["ferrfis"], de_um["servico_codigo"],
-                             de_um["base_calculo"], de_um["origem_valor"]))
+                             de_um["base_calculo"], de_um["origem_valor"]))[0]["id"]))
+                    # A ORIGEM: as N linhas guardam o id da primeira, e a tela de
+                    # lavrar pré-marca uma só (`CXP.pre_marcar_uma_de_cada_divisao`).
+                    if bd.tem_coluna("cx_protocolo_atos", CXP.COLUNA_DA_DIVISAO):
+                        lugares = ",".join(["%s"] * len(ids_da_divisao))
+                        bd.escrever(
+                            f"""UPDATE cx_protocolo_atos
+                                   SET {CXP.COLUNA_DA_DIVISAO} = %s
+                                 WHERE id IN ({lugares})""",
+                            [ids_da_divisao[0]] + ids_da_divisao)
                     _atualizar_total(bd, protocolo_id)
                 audit("PROTOCOLO_ITEM_ACRESCENTADO", "PROTOCOLO", protocolo_id,
                       {"codigo_tj": item["codigo_tj"], "total": item["total"],

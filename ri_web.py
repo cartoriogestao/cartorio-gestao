@@ -2139,8 +2139,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             protocolo_caixa_escolhido = resolvido.get("protocolo_caixa_id")
             if protocolo_caixa_escolhido is not None:
                 protocolo_caixa_escolhido = str(protocolo_caixa_escolhido)
-            itens_do_protocolo_caixa = RITEOR.itens_do_protocolo_disponiveis(
-                _cx, protocolo_caixa_escolhido)
+            # Da divisão em linhas, só a primeira vem marcada (27/11/2026).
+            itens_do_protocolo_caixa = CXPROT.pre_marcar_uma_de_cada_divisao(
+                _cx, RITEOR.itens_do_protocolo_disponiveis(
+                    _cx, protocolo_caixa_escolhido))
             itens_ri_texto_completo = RITEOR.itens_com_texto_completo(_cx)
             depositos_da_prenotacao = resolvido.get("depositos") or []
             caixa_origem = resolvido.get("origem") or "nenhum"
@@ -6432,7 +6434,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             marcados = {n for n in map(numero_digitado, form.getlist("protocolo_item_id"))
                         if n is not None}
         else:
-            marcados = {int(i["id"]) for i in itens}
+            # Da divisão em linhas, só a primeira vem marcada (27/11/2026).
+            marcados = {int(i["id"]) for i in CXPROT.uma_de_cada_divisao(itens)}
         return {"abertas": abertas, "prenotacao": prenotacao, "caixa": caixa,
                 "itens": itens, "marcados": marcados}
 

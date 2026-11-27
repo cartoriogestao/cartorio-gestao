@@ -611,6 +611,20 @@ def ferj_do_emolumento(emolumento: int, pct_centesimos: int) -> int:
     return CU.ferj_do_emolumento(emolumento, pct_centesimos)
 
 
+#: A natureza do caixa que nunca é base (`caixa_schema.NATUREZAS`).
+NATUREZA_DE_TERCEIRO = "VALOR_DE_TERCEIRO"
+
+
+def valor_de_terceiros_do_recibo(recibo: Mapping[str, Any]) -> int:
+    """Quanto do recibo é valor de terceiro, pela discriminação congelada. Só calcula."""
+    try:
+        dados = json.loads(recibo.get("discriminacao") or "{}") or {}
+    except ValueError:
+        return 0
+    return sum(centavos(t.get("valor")) for t in (dados.get("terceiros") or [])
+               if isinstance(t, dict))
+
+
 def base_do_recibo(recibo: Mapping[str, Any],
                    lancamentos: Iterable[Mapping[str, Any]],
                    pct_ferj: int = 0) -> tuple[int, list[str]]:
@@ -626,6 +640,14 @@ def base_do_recibo(recibo: Mapping[str, Any],
     vivos = [l for l in lancamentos
              if not l.get("estornado") and not l.get("excluido")
              and (l.get("sentido") or "ENTRADA") == "ENTRADA"]
+    # O VALOR DE TERCEIRO NÃO É BASE (F010, 25/11/2026): é o que o outro
+    # cartório cobra pela certidão que esta casa materializa, e sai inteiro
+    # para lá. Tributá-lo seria pagar ISS sobre dinheiro alheio — a mesma razão
+    # dos fundos. O recibo só de valor de terceiro tem base zero, e não nota.
+    terceiros = [l for l in vivos if l.get("natureza") == NATUREZA_DE_TERCEIRO]
+    vivos = [l for l in vivos if l.get("natureza") != NATUREZA_DE_TERCEIRO]
+    if terceiros and not vivos:
+        return 0, []
     pendencias = []
     if vivos:
         base = 0
@@ -686,6 +708,14 @@ def descricao_do_servico(recibo: Mapping[str, Any], base: int) -> str:
     if itens:
         partes.append("Atos: " + "; ".join(itens) + ".")
     total = centavos(recibo.get("valor_total"))
+    terceiros = valor_de_terceiros_do_recibo(recibo)
+    if terceiros:
+        total -= terceiros
+        partes.append(
+            f"O recibo leva também R$ {reais(terceiros)} de valores de terceiros "
+            f"(o que o cartório de origem cobra pela certidão materializada aqui, "
+            f"repassado a ele), que não são emolumento desta serventia e não "
+            f"integram a base.")
     if total > base:
         partes.append(
             # Sem a lista fechada de fundos: o lançamento também tem `fermoju`
@@ -702,8 +732,9 @@ def _lancamentos_de(bd, recibo_ids: list[int]) -> dict[int, list[dict]]:
     if not recibo_ids:
         return por_recibo
     for l in bd.ler(
-            """SELECT id, recibo_id, numero, ano, sentido, valor, emolumentos,
-                      ferc, fadep, femp, ferrfis, estornado, forma_pagamento,
+            """SELECT id, recibo_id, numero, ano, sentido, natureza, valor,
+                      emolumentos, ferc, fadep, femp, ferrfis, estornado,
+                      forma_pagamento,
                       COALESCE(excluido, 0) AS excluido
                  FROM cx_lancamentos WHERE recibo_id = ANY(%s)
                 ORDER BY recibo_id, id""", (recibo_ids,)):
@@ -796,7 +827,8 @@ def avaliar(con, recibos: list[Mapping[str, Any]], cfg: Mapping[str, str]) -> li
         pendencias += pend
         gratuito = not pend and base <= 0
         if gratuito:
-            pendencias.append("Sem emolumento a tributar (ato gratuito ou recibo só de fundos).")
+            pendencias.append("Sem emolumento a tributar (ato gratuito, ou recibo só de "
+                              "fundos ou de valores de terceiros).")
         pendencias += pendencias_do_tomador(tomador, cfg)
         try:
             iss = None if base is None else valor_do_iss(base, cfg.get("nfse_aliquota"))

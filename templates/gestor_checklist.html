@@ -2,16 +2,30 @@
 {# A CHECKLIST DE GESTÃO DO DIA (19/11/2026, `gestor_checklist`): os achados
    abertos do gestor pela área do semáforo, e as telas que alguém confere
    todo dia. «Conferido hoje» grava quem olhou; não fecha achado.
-   Sem rodada válida do gestor, nada aparece como «em dia». #}
+   Sem rodada válida do gestor, nada aparece como «em dia».
+   SÓ A TI E O ADMINISTRADOR (25/11/2026, G007): a lista traz só as regras de
+   destino TI_ADMIN (`gestor_destino`); o que é do escrevente ou débito passado
+   vai ao quadro «Fora da checklist», contado e com a tarefa que o leva. A cor
+   oficial da área conta todos.
+   O QUE NÃO CABE À GESTÃO (25/11/2026, T019): «Retirar» tira o achado da
+   lista e da contagem desta tela, com motivo; «Ver os retirados» mostra quem,
+   quando e por quê, e «Devolver à lista». A cor oficial da área continua
+   contando os retirados; ao lado vem a cor «sem os retirados».
+   A ROTINA DO DIA (26/11/2026, `rotina_da_casa`): o bloco «Rotina do dia»
+   vem antes dos achados, por área (e «TI e sistema» para a TI), com o «Como
+   fazer» e o «Feito» de cada item. Não mexe nos achados nem na cor. #}
+{% from '_rotina.html' import lista as lista_da_rotina with context %}
 {% block title %}Checklist de gestão do dia{% endblock %}
 {% block heading %}<h1>Checklist de gestão do dia</h1>{% endblock %}
 {% block content %}
 {% set m = ck.medicao %}
 {% set classe_cor = {'VERMELHO': 'critica', 'AMARELO': 'alta', 'VERDE': 'ok'} %}
-{% macro tabela(itens) %}
+{% macro tabela(itens, retirados=false) %}
   <div class="table-wrap">
   <table>
-    <tr><th>Gravidade</th><th>O que é</th><th>Regra</th><th>Prazo</th><th>Em aberto</th><th>Onde resolver</th></tr>
+    <tr><th>Gravidade</th><th>O que é</th><th>Regra</th><th>Prazo</th><th>Em aberto</th><th>Onde resolver</th>
+      {% if retirados %}<th>Retirado</th><th>Motivo</th>{% if ck.pode_retirar %}<th></th>{% endif %}
+      {% elif ck.pode_retirar %}<th>Não cabe à gestão?</th>{% endif %}</tr>
     {% for x in itens %}
     <tr>
       <td><span class="badge {{ {'VENCIDO': 'critica', 'CRITICO': 'critica', 'PRAZO': 'alta', 'NAO_MEDIU': 'alta', 'OUTRA': 'alta'}.get(x.gravidade, '') }}">{{ gravidades[x.gravidade] }}</span></td>
@@ -20,6 +34,35 @@
       <td>{% if x.prazo %}{{ x.prazo[8:10] }}/{{ x.prazo[5:7] }}/{{ x.prazo[:4] }}{% else %}<span class="muted">—</span>{% endif %}</td>
       <td>{% if x.dias_em_aberto is none %}<span class="muted">?</span>{% elif x.dias_em_aberto == 0 %}desde hoje{% else %}{{ x.dias_em_aberto }} dia(s){% endif %}</td>
       <td>{% if x.link %}<a href="{{ x.link }}">abrir</a>{% else %}<span class="muted">sem tela</span>{% endif %}</td>
+      {% if retirados %}
+      <td class="small">{{ x.retirada.por }} <span class="muted">em {{ x.retirada.em[8:10] }}/{{ x.retirada.em[5:7] }}/{{ x.retirada.em[:4] }} às {{ x.retirada.em[11:16] }}</span></td>
+      <td class="small">{% if x.retirada.motivo_pronto %}<strong>{{ x.retirada.motivo_pronto }}</strong> — {% endif %}{{ x.retirada.motivo }}</td>
+      {% if ck.pode_retirar %}<td>
+        <form method="post" action="{{ url_for('gestor_checklist_devolver') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="achado_id" value="{{ x.id }}">
+          <input type="hidden" name="area" value="{{ ck.area or '' }}">
+          <button type="submit" class="small">Devolver à lista</button>
+        </form></td>{% endif %}
+      {% elif ck.pode_retirar %}
+      <td>
+        <details class="retirar-da-gestao"><summary class="small">Retirar</summary>
+        <form method="post" action="{{ url_for('gestor_checklist_retirar') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="achado_id" value="{{ x.id }}">
+          <input type="hidden" name="area" value="{{ ck.area or '' }}">
+          <label class="small">Motivo pronto (opcional)
+            <select name="motivo_codigo"><option value="">—</option>
+              {% for cod, rot in ck.motivos_prontos %}<option value="{{ cod }}">{{ rot }}</option>{% endfor %}
+            </select></label>
+          <label class="small">Por que não cabe à gestão (obrigatório)
+            <input type="text" name="motivo" required minlength="3" maxlength="{{ ck.motivo_maximo }}"></label>
+          <button type="submit" class="small">Retirar da checklist</button>
+          <p class="small muted">Não resolve nem apaga o achado: ele continua aberto no gestor e na cor oficial da área.</p>
+        </form>
+        </details>
+      </td>
+      {% endif %}
     </tr>
     {% endfor %}
   </table>
@@ -33,6 +76,11 @@
 {% endif %}
 
 <section class="panel">
+  <p>Primeiro vem a <strong>rotina do dia</strong> de cada área: o que a casa faz todo dia,
+  semana ou mês para se manter em ordem (cópia de segurança, centrais, robôs, financeiro,
+  malote, prazos), com o passo a passo de cada item e quem o faz. «Feito» grava quem fez,
+  quando e como foi; <strong>não resolve achado nem muda a cor</strong>. O cadastro é a
+  <strong>Rotina da serventia</strong>{% if ck.abre_cadastro_rotina %} (<a href="{{ url_for('rotina_cadastro') }}">abrir</a>){% endif %}.</p>
   <p>Os <strong>achados abertos</strong> do gestor, pela mesma área do semáforo do
   painel geral, e as <strong>conferências do dia</strong>. O botão «conferido hoje»
   grava quem olhou e quando — <strong>não resolve achado</strong>: o achado só sai
@@ -41,6 +89,16 @@
   até {{ ck.rotina_dias_uteis }} dias úteis) vem primeiro; o <strong>débito passado</strong>
   vem depois, recolhido e contado. A cor oficial da área conta os dois; «só a rotina»
   é a cor que ela teria sem o débito.</p>
+  <p>A lista é <strong>só da TI e da administração</strong>: o que se resolve em lote, por
+  mudança no sistema, por IA ou por rotina geral (cargas das centrais, cópia de segurança,
+  conciliação do selo, decisões do oficial). A prática do ato, a digitalização e o que pede
+  livro ou balcão vão para as <strong>tarefas dos escreventes</strong>, e o débito passado fica com o
+  <strong>agente de compliance</strong> — veja <a href="#fora">Fora da checklist</a>. A cor oficial da área conta tudo.</p>
+  <p>O que <strong>não cabe à gestão</strong> o oficial ou o gerente retira da lista, com
+  o motivo: o achado sai da lista e da contagem desta tela, mas <strong>não é resolvido nem
+  apagado</strong> e continua na <strong>cor oficial</strong> da área (a do painel geral e do
+  retrato). Ao lado dela vem a cor «sem os retirados».
+  {% if ck.total_retirados %}<a href="{{ url_for('gestor_checklist', area=ck.area, ver='retirados') }}#retirados">Ver os retirados ({{ ck.total_retirados }})</a>{% endif %}</p>
   {% if m and m.gestor.ultima_rodada and ck.medido %}<p class="small muted">O gestor rodou em {{ m.gestor.ultima_rodada[8:10] }}/{{ m.gestor.ultima_rodada[5:7] }} às {{ m.gestor.ultima_rodada[11:16] }}.</p>{% endif %}
   <nav class="filtros" aria-label="Áreas">
     <a href="{{ url_for('gestor_checklist') }}" {% if not ck.area %}aria-current="page"{% endif %}>{% if not ck.area %}<strong>Todas as áreas</strong>{% else %}Todas as áreas{% endif %}</a>
@@ -49,28 +107,58 @@
       {% if a %}<span class="badge {{ {'VERMELHO': 'critica', 'AMARELO': 'alta', 'VERDE': 'ok'}.get(a.cor, '') }}">{{ cores[a.cor] }}{% if a.abertos %} · {{ a.abertos }}{% endif %}</span>{% endif %}
     {% endfor %}
     {% if m and outros in m.areas %} · <a href="{{ url_for('gestor_checklist', area=outros) }}">{{ areas[outros] }}</a>{% endif %}
+    · <a href="{{ url_for('gestor_checklist', area=area_ti) }}" {% if ck.area == area_ti %}aria-current="page"{% endif %} title="Só a rotina: o semáforo não mede a TI">{% if ck.area == area_ti %}<strong>{{ areas[area_ti] }}</strong>{% else %}{{ areas[area_ti] }}{% endif %}</a>
   </nav>
 </section>
 
+<section class="panel" id="rotina">
+  <div class="panel-head"><h2>Rotina do dia{% if ck.area %} — {{ areas[ck.area] }}{% endif %} ({{ ck.total_rotina }})</h2>
+    {% if ck.abre_cadastro_rotina %}<a class="small" href="{{ url_for('rotina_cadastro', area=ck.area) }}">Rotina da serventia (cadastro)</a>{% endif %}</div>
+  {% if ck.erro_rotina %}
+  <div class="notice critical">Não deu para ler a rotina: {{ ck.erro_rotina }}. Isto não quer dizer que não há rotina para hoje.</div>
+  {% elif ck.rotina_cadastrada == 0 %}
+  <p class="small muted">Nenhuma rotina cadastrada ainda.{% if ck.abre_cadastro_rotina %} <a href="{{ url_for('rotina_cadastro') }}">Cadastrar a rotina da serventia</a>.{% endif %}</p>
+  {% elif not ck.rotina %}
+  <p class="small muted">Nada da rotina vence hoje nem está atrasado{% if ck.area %} em {{ areas[ck.area] }}{% endif %}.</p>
+  {% else %}
+  {% for area, lista in ck.rotina.items() %}
+  <h3>{{ rotina_areas[area] }}
+    <small class="muted">{{ lista|selectattr('situacao', 'equalto', 'ATRASADO')|list|length }} atrasado(s),
+      {{ lista|rejectattr('situacao', 'in', ['ATRASADO', 'FEITO'])|list|length }} a fazer,
+      {{ lista|selectattr('situacao', 'equalto', 'FEITO')|list|length }} feito(s){% set faltas = lista|sum(attribute='n_sem_registro') %}{% if faltas %},
+      <strong>{{ faltas }} sem registro</strong> nos últimos 30 dias{% endif %}</small></h3>
+  {{ lista_da_rotina(lista, 'checklist', ck.area) }}
+  {% endfor %}
+  {% endif %}
+</section>
+
 <section class="panel" id="achados">
-  <div class="panel-head"><h2>Achados abertos{% if ck.area %} — {{ areas[ck.area] }}{% endif %} ({{ ck.total_achados }})</h2></div>
+  <div class="panel-head"><h2>Achados abertos da TI e da administração{% if ck.area %} — {{ areas[ck.area] }}{% endif %} ({{ ck.total_achados }})</h2>
+    {% if ck.total_fora.ESCREVENTE or ck.total_fora.COMPLIANCE %}<span class="small"><a href="#fora">Fora da checklist: {{ ck.total_fora.ESCREVENTE }} dos escreventes, {{ ck.total_fora.COMPLIANCE }} de débito passado</a></span>{% endif %}
+    {% if ck.total_retirados %}<span class="small"><a href="{{ url_for('gestor_checklist', area=ck.area, ver='retirados') }}#retirados">Ver os retirados ({{ ck.total_retirados }})</a> <span class="muted">— {{ ck.total_retirados }} retirado(s) não conta(m) aqui</span></span>{% endif %}</div>
+  {% if ck.erro_retiradas %}<div class="notice critical">Não deu para ler os retirados: {{ ck.erro_retiradas }}. A lista abaixo pode trazer item que alguém retirou.</div>{% endif %}
   {% if ck.erro_achados %}
   <div class="notice critical">Não deu para ler os achados: {{ ck.erro_achados }}. Isto não quer dizer que não há achado.</div>
-  {% elif not ck.achados %}
-    {% if ck.medido %}<p class="muted">Nenhum achado aberto{% if ck.area %} em {{ areas[ck.area] }}{% endif %} na última conferência do gestor.</p>
+  {% elif not ck.areas_da_lista %}
+    {% if ck.medido %}<p class="muted">Nenhum achado aberto{% if ck.area %} em {{ areas[ck.area] }}{% endif %} para a TI e a administração na última conferência do gestor{% if ck.total_fora.ESCREVENTE or ck.total_fora.COMPLIANCE %} — o que há está <a href="#fora">fora da checklist</a>{% endif %}.</p>
     {% else %}<p class="muted">Sem medição: não dá para dizer se {% if ck.area %}{{ areas[ck.area] }} está{% else %}as áreas estão{% endif %} em dia.</p>{% endif %}
   {% else %}
-  {% for area, lista in ck.achados.items() %}{% set a = m.areas.get(area) if m else none %}
+  {% for area in ck.areas_da_lista %}{% set lista = ck.achados.get(area, []) %}{% set a = m.areas.get(area) if m else none %}
   {% set da_rotina = lista|selectattr('idade', 'equalto', 'ROTINA')|list %}
   {% set do_debito = lista|selectattr('idade', 'equalto', 'DEBITO')|list %}
   {% set cor_rotina = ck.cor_da_rotina.get(area) %}
+  {% set n_retirados = ck.retirados_por_area.get(area, 0) %}{% set cor_sem = ck.cor_sem_retirados.get(area) %}
   <h3>{{ areas[area] }}
-    {% if a %}<span class="badge {{ classe_cor.get(a.cor, '') }}">{{ cores[a.cor] }}</span>{% endif %}
+    {% if a %}<span class="badge {{ classe_cor.get(a.cor, '') }}" title="A cor oficial: a do painel geral e do retrato, que conta também os retirados">{{ cores[a.cor] }}</span>{% endif %}
+    {% if n_retirados and cor_sem %}<span class="badge {{ classe_cor.get(cor_sem, '') }}" title="A cor que a área teria sem os achados retirados por não caberem à gestão">sem os retirados: {{ cores[cor_sem] }}</span>{% endif %}
     {% if cor_rotina %}<span class="badge {{ classe_cor.get(cor_rotina, '') }}" title="A cor que a área teria só com a rotina">só a rotina: {{ cores[cor_rotina] }}</span>{% endif %}
-    <small class="muted">{{ lista|length }} aberto(s): {{ da_rotina|length }} da rotina, {{ do_debito|length }} de débito passado</small></h3>
+    <small class="muted">{{ lista|length }} aberto(s): {{ da_rotina|length }} da rotina, {{ do_debito|length }} de débito passado{% if n_retirados %} · {{ n_retirados }} retirado(s) não conta(m) aqui; a cor oficial os conta{% endif %}</small></h3>
+  {% if not lista %}<p class="muted small">Nada aberto fora o(s) {{ n_retirados }} retirado(s) por não caber(em) à gestão.</p>
+  {% else %}
   <h4 class="idade-rotina">Rotina <small class="muted">— visto há até {{ ck.rotina_dias_uteis }} dias úteis; vem primeiro</small></h4>
   {% if da_rotina %}{{ tabela(da_rotina) }}
   {% else %}<p class="muted small">Nada da rotina aberto{% if not ck.medido %} na última conferência (sem medição){% endif %}.</p>{% endif %}
+  {% endif %}
   {% if do_debito %}
   <details class="idade-debito"{% if ck.area or not da_rotina %} open{% endif %}>
     <summary><strong>Débito passado</strong> — {{ do_debito|length }} aberto(s), {{ do_debito|selectattr('faz_a_cor')|list|length }} que faz(em) a cor <small class="muted">(visto há mais de {{ ck.rotina_dias_uteis }} dias úteis)</small></summary>
@@ -81,6 +169,72 @@
   {% endif %}
   {% if nao_mede %}<p class="small muted">Ainda não entram: {{ nao_mede|join('; ') }}.</p>{% endif %}
 </section>
+
+<section class="panel" id="fora">
+  <div class="panel-head"><h2>Fora da checklist{% if ck.area %} — {{ areas[ck.area] }}{% endif %}</h2></div>
+  <p class="small muted">Saíram da lista porque não são da TI nem da administração. Continuam abertos no
+  gestor e <strong>contam na cor oficial</strong> da área; a tela que os resolve é a da tarefa.</p>
+  {% if ck.erro_achados %}<p class="muted">Sem a lista dos achados, não dá para dizer o que ficou fora.</p>
+  {% else %}
+  <h3>Tarefas dos escreventes <small class="muted">({{ ck.total_fora.ESCREVENTE }} achado(s))</small></h3>
+  {% if ck.erro_tarefas %}<div class="notice critical">Não deu para ler as tarefas: {{ ck.erro_tarefas }}. Isto não quer dizer que a tarefa não existe.</div>{% endif %}
+  {% if ck.fora.ESCREVENTE %}
+  <div class="table-wrap">
+  <table>
+    <tr><th>Regra</th><th>Área</th><th>Achados</th><th>Por que é do escrevente</th><th>Tarefa</th></tr>
+    {% for x in ck.fora.ESCREVENTE %}
+    <tr>
+      <td>{{ x.rotulo }} <code class="small">{{ x.regra }}</code></td>
+      <td>{{ areas[x.area] }}</td>
+      <td>{{ x.n }}{% if x.fazem_a_cor %} <small class="muted">({{ x.fazem_a_cor }} faz(em) a cor)</small>{% endif %}</td>
+      <td class="small">{{ x.motivo }}</td>
+      <td class="small">
+        {% if x.tarefas is none %}<span class="muted">não deu para ler</span>
+        {% elif x.tarefas %}{% for t in x.tarefas %}{% if ck.abre_tarefa %}<a href="{{ url_for('task_detail', task_id=t.id) }}">tarefa {{ t.id }}</a>{% else %}tarefa {{ t.id }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+        {% else %}<span class="muted">a tarefa nasce na próxima rodada do gestor</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% elif ck.medido %}<p class="muted small">Nada dos escreventes{% if ck.area %} em {{ areas[ck.area] }}{% endif %} na última conferência do gestor.</p>
+  {% else %}<p class="muted small">Sem medição: não dá para dizer o que é dos escreventes.</p>{% endif %}
+  <h3>Débito passado — agente de compliance <small class="muted">({{ ck.total_fora.COMPLIANCE }} achado(s))</small></h3>
+  {% if ck.fora.COMPLIANCE %}
+  <ul>
+    {% for x in ck.fora.COMPLIANCE %}
+    <li>{{ x.rotulo }} <code class="small">{{ x.regra }}</code> — {{ areas[x.area] }}, {{ x.n }} achado(s). <span class="small muted">{{ x.motivo }}.</span></li>
+    {% endfor %}
+  </ul>
+  <p class="small muted">Não é rotina do dia a dia: o agente de compliance acompanha, e a cor da área continua contando.</p>
+  {% elif ck.medido %}<p class="muted small">Nada de débito passado{% if ck.area %} em {{ areas[ck.area] }}{% endif %} na última conferência do gestor.</p>
+  {% else %}<p class="muted small">Sem medição: não dá para dizer o que é débito passado.</p>{% endif %}
+  {% if ck.fora.AVISO %}
+  <h3>Rotina automática — aviso na tela <small class="muted">({{ ck.total_fora.AVISO }} achado(s))</small></h3>
+  <ul>
+    {% for x in ck.fora.AVISO %}
+    <li>{{ x.rotulo }} <code class="small">{{ x.regra }}</code> — {{ areas[x.area] }}, {{ x.n }} achado(s). <span class="small muted">{{ x.motivo }}.</span></li>
+    {% endfor %}
+  </ul>
+  <p class="small muted">O sistema faz esta rotina sozinho. Quando um elo para, a faixa do alto da tela avisa a TI, o gestor e o administrador; com tudo funcionando, não há o que conferir à mão.</p>
+  {% endif %}
+  {% endif %}
+</section>
+{% if ver_retirados %}
+<section class="panel" id="retirados">
+  <div class="panel-head"><h2>Retirados — não cabem à gestão{% if ck.area %} — {{ areas[ck.area] }}{% endif %} ({{ ck.total_retirados }})</h2>
+    <a class="small" href="{{ url_for('gestor_checklist', area=ck.area) }}#achados">Voltar à lista</a></div>
+  <p class="small muted">Continuam abertos no gestor e na cor oficial da área; só saíram da lista e da contagem desta tela.
+  «Devolver à lista» os traz de volta. O achado que o gestor fecha some daqui também.</p>
+  {% if not ck.retirados %}<p class="muted">Nenhum achado aberto retirado{% if ck.area %} em {{ areas[ck.area] }}{% endif %}.</p>
+  {% else %}
+  {% for area, lista in ck.retirados.items() %}
+  <h3>{{ areas[area] }} <small class="muted">{{ lista|length }} retirado(s)</small></h3>
+  {{ tabela(lista, true) }}
+  {% endfor %}
+  {% endif %}
+</section>
+{% endif %}
 
 <section class="panel" id="conferencias">
   <div class="panel-head"><h2>Conferências do dia</h2>

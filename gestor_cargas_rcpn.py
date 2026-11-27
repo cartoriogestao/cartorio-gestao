@@ -277,12 +277,18 @@ def preparar_sirc(con, hoje: date, *, s: dict, ret: dict[int, str]) -> dict:
     from ri_schema import soma_dias_uteis
     r = _vazio()
     devendo, prazos = [], []
+    # O ACERVO (pela ORIGEM) e o termo sem número não entram no arquivo do dia:
+    # a mesma régua da cobrança (`gestor_conferencia.assentos_fora_da_cobranca`).
+    from gestor_conferencia import assentos_fora_da_cobranca
+    fora_da_cobranca = assentos_fora_da_cobranca(con)
     for p in SIRC.sem_os_ja_enviados(con, SIRC.pendentes_de_remessa(con)):
         ref = SIRC.referencia_do_envio(p)
         ultima = ref.rsplit(":", 1)[-1] if ref.count(":") >= 2 else str(p.get("data_ato") or "")
         if not _depois_do_corte(ultima):
             continue
         aid = int(p.get("assento_id") or 0)
+        if aid in fora_da_cobranca and aid not in ret:
+            continue
         if aid in ret:
             r["fora"].append({"assento_id": aid, "nome": p.get("nome"),
                               "numero": p.get("numero"), "motivo": ret[aid]})
@@ -346,8 +352,16 @@ def preparar_crc(con, hoje: date, *, s: dict, ret: dict[int, str]) -> dict:
     import crc_carga
     r = _vazio()
     ids, prazos, antes = [], [], 0
+    # O ACERVO SE SEPARA PELA ORIGEM (26/11/2026): o lançamento direto do livro
+    # grava a data da digitação, e passava pelo corte como ato novo. Conta como
+    # «fora pelo corte», que é o que ele é — sobe no lote do acervo. O retido
+    # (o sem número) segue para `fora`, com o motivo, como antes.
+    from gestor_conferencia import assentos_fora_da_cobranca
+    fora_da_cobranca = assentos_fora_da_cobranca(con)
     for p in crc_carga.pendentes_de_carga(con):
-        if not _depois_do_corte(p.get("data_ato")):
+        pid = int(p["id"])
+        if (not _depois_do_corte(p.get("data_ato"))
+                or (pid in fora_da_cobranca and pid not in ret)):
             antes += 1
             continue
         if int(p["id"]) in ret:

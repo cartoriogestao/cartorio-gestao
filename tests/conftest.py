@@ -53,6 +53,65 @@ if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
 import os  # noqa: E402
+import threading  # noqa: E402
+
+import flask  # noqa: E402
+from itsdangerous import timed as _assinatura_com_hora  # noqa: E402
+
+
+# O RELÓGIO QUE VOLTA NÃO DERRUBA A SESSÃO DOS TESTES (25/11/2026).
+#
+# O DEFEITO. Desde a 3.7.22 a suíte da CI caía de vez em quando, a cada rodada
+# num teste diferente, sempre com o cliente logado mandado para /login (o #527
+# caiu três vezes sem relação com a mudança). O cookie da sessão do Flask é
+# assinado pelo `itsdangerous` com a hora em SEGUNDOS INTEIROS, e a conferência
+# recusa a assinatura de idade NEGATIVA. Quando o relógio de parede volta, ainda
+# que um segundo, o cookie assinado logo antes fica «do futuro»: o Flask o
+# descarta calado e a requisição chega sem ninguém logado — 302 para /login, sem
+# aviso nenhum. Passado o recuo, o mesmo cookie volta a valer: por isso uma tela
+# só divergia na varredura das molduras. A suíte roda numa VM (colima) cujo
+# relógio é acertado por fora; em duas rodadas vermelhas o relógio de parede
+# mediu menos que o monotônico do pytest.
+#
+# A TRAVA. Nos testes, a hora da assinatura não anda para trás dentro do
+# processo: quem assina e quem confere é o mesmo processo (o cliente de teste e
+# o servidor em thread dos testes de navegador). O sistema não muda — o que a
+# trava tira é só o recuo do relógio da máquina de teste. Quantas vezes ele
+# voltou fica em RELOGIO_DA_ASSINATURA, e o `cg_login` o diz quando falha.
+class _RelogioDaAssinatura:
+    def __init__(self):
+        self.ultimo = 0
+        self.recuos = 0
+        self.maior_recuo = 0
+        self._atras = False
+        self._trava = threading.Lock()
+
+    def __call__(self) -> int:
+        agora = int(time.time())
+        with self._trava:
+            if agora >= self.ultimo:
+                self.ultimo, self._atras = agora, False
+                return agora
+            if not self._atras:
+                self.recuos += 1
+                self._atras = True
+            self.maior_recuo = max(self.maior_recuo, self.ultimo - agora)
+            return self.ultimo
+
+    def resumo(self) -> str:
+        if not self.recuos:
+            return "o relógio não voltou neste processo"
+        return (f"o relógio voltou {self.recuos} vez(es) neste processo "
+                f"(maior recuo: {self.maior_recuo} s)")
+
+
+# Um relógio só por processo: há teste que faz `import conftest`, e isso carrega
+# uma segunda cópia deste módulo — que acharia o relógio da primeira, e não outro.
+RELOGIO_DA_ASSINATURA = getattr(_assinatura_com_hora.TimestampSigner,
+                                "_relogio_da_suite", None) or _RelogioDaAssinatura()
+_assinatura_com_hora.TimestampSigner._relogio_da_suite = RELOGIO_DA_ASSINATURA
+_assinatura_com_hora.TimestampSigner.get_timestamp = (
+    lambda self: RELOGIO_DA_ASSINATURA())
 
 # MIGRAÇÃO PARA O POSTGRESQL (cópia MIGRACAO_PG, 15/10/2026): com
 # CG_TEST_BACKEND=pg e CG_PG_DSN, o banco de cada teste vai para um schema
@@ -481,21 +540,66 @@ def _restaurar_do_seed(db_path: Path, seed_path: Path, seed_tables: list[str]) -
         con.close()
 
 
-def cg_login(client, username: str, password: str):
-    """Login via test_client com CSRF da tela /login."""
-    html = client.get("/login").get_data(as_text=True)
+def cg_login(client, username: str, password: str, *, recusa: bool = False):
+    """Login via test_client com CSRF da tela /login — e confere que ENTROU.
+
+    O LOGIN QUE NÃO ENTRA FALHA AQUI (25/11/2026). A tela de erro do login
+    responde 200, e o teste só caía depois, numa tela qualquer, com um 302 para
+    /login que não dizia o porquê. Agora a falha é na hora, e a primeira linha
+    (a que vai ao comentário da CI) traz o que o servidor respondeu, o recado da
+    tela, a exceção da rota e se o relógio voltou.
+
+    `recusa=True` é para o teste que QUER o login recusado (a senha errada que a
+    auditoria grava): aí a sessão aberta é que é a falha. A conferência continua
+    nos dois sentidos; nenhum dos dois passa calado.
+    """
+    pagina = client.get("/login")
+    html = pagina.get_data(as_text=True)
     achado = re.search(r'name="csrf_token"[^>]*value="([^"]+)"', html)
     if not achado:
-        raise AssertionError("a tela /login nao trouxe csrf_token")
-    return client.post(
-        "/login",
-        data={
-            "username": username,
-            "password": password,
-            "csrf_token": achado.group(1),
-        },
-        follow_redirects=True,
-    )
+        raise AssertionError(
+            f"cg_login({username!r}): a tela /login não trouxe csrf_token — GET /login "
+            f"respondeu {pagina.status_code} {pagina.headers.get('Location', '')}".rstrip()
+            + f"; {RELOGIO_DA_ASSINATURA.resumo()}")
+    app = client.application
+    recados: list[str] = []
+    excecoes: list[str] = []
+
+    def _recado(_app, message, category, **_):
+        recados.append(f"{category}: {message}")
+
+    def _excecao(_app, exception, **_):
+        excecoes.append(f"{type(exception).__name__}: {str(exception)[:200]}")
+
+    with flask.message_flashed.connected_to(_recado, app), \
+            flask.got_request_exception.connected_to(_excecao, app):
+        resposta = client.post(
+            "/login",
+            data={
+                "username": username,
+                "password": password,
+                "csrf_token": achado.group(1),
+            },
+            follow_redirects=True,
+        )
+    with client.session_transaction() as sessao:
+        entrou = bool(sessao.get("user_id"))
+    if recusa:
+        if entrou:
+            raise AssertionError(
+                f"cg_login({username!r}, recusa=True): o login devia ser recusado e abriu a sessão")
+        return resposta
+    if not entrou:
+        caminho = " → ".join(
+            f"{r.status_code} {r.request.path}" for r in [*resposta.history, resposta])
+        partes = [f"cg_login({username!r}): o login não abriu a sessão — POST /login: {caminho}"]
+        if recados:
+            partes.append("a tela disse: " + " | ".join(recados))
+        if excecoes:
+            partes.append("exceção: " + " | ".join(excecoes))
+        partes.append(RELOGIO_DA_ASSINATURA.resumo())
+        raise AssertionError("; ".join(partes))
+    return resposta
 
 
 @pytest.fixture(scope="module")

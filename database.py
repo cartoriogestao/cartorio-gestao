@@ -121,7 +121,7 @@ from ia_uso import init_ia_schema
 from dois_fatores import init_dois_fatores_schema
 from selo_portal import init_selo_portal_schema
 from compliance import init_schema as init_compliance_schema
-from gestor_schema import init_gestor_schema
+from gestor_schema import init_gestor_schema, init_rotina_schema
 from gestor_expedientes import init_schema as init_triagem_schema
 from gestor_leitura import init_leitura_schema
 from malote_agente import init_schema as init_malote_schema
@@ -969,6 +969,10 @@ class Database:
         # carga leva está em `docs/VIRADA_TABELAS_E_ACERVO.md`.
         init_compliance_schema(con)
         init_gestor_schema(con)
+        # A ROTINA DA SERVENTIA (26/11/2026, `rotina_da_casa`) — o cadastro da
+        # rotina de manutenção e o «feito» de cada vencimento. Aponta para
+        # `users`, que nasceu lá em cima.
+        init_rotina_schema(con)
         init_triagem_schema(con)
         init_leitura_schema(con)
         init_malote_schema(con)
@@ -1018,6 +1022,11 @@ class Database:
         # diferimento entra em `cx_protocolo_atos`.
         import ato_selado
         ato_selado.init_trava_do_selo_schema(con)
+        # O VALOR DE TERCEIRO DA MATERIALIZAÇÃO (F010, 25/11/2026): aponta para
+        # `cx_protocolos`, `cx_lancamentos` e `rc_materializacoes`, e por isso
+        # vem depois do caixa.
+        import rc_materializacao_repasse
+        rc_materializacao_repasse.init_rc_materializacao_repasse_schema(con)
         # A NFS-e DOS EMOLUMENTOS (LG01, 19/10/2026) — `nfse_*` e as duas
         # colunas do recibo que guardam o número e a chave da nota. Logo depois
         # do caixa, porque as notas apontam para `cx_recibos`.

@@ -364,7 +364,7 @@ def test_login_recusado_e_gravado_pelo_servidor(cg_casa):
     from conftest import cg_login
     db = cg_casa["db"]
     _pessoas(db)
-    cg_login(cg_casa["c"], "mario", "senha-errada")
+    cg_login(cg_casa["c"], "mario", "senha-errada", recusa=True)
     with db.connect() as con:
         linha = banco(con).um(
             "SELECT * FROM audit_logs WHERE user_id IS NULL AND action ILIKE %s "

@@ -1,0 +1,24 @@
+{# OS PEDIDOS DO ONR PARADOS — ver onr_pedidos_avisos.py (A005, ordem do oficial
+   de 26/11/2026). Só para quem recebe os avisos. O aviso SIMPLES do 1º dia útil
+   se fecha (volta na tela seguinte) e por isso mora em `_faixas_compactas.html`;
+   do 2º dia útil em diante é esta FAIXA VERMELHA, como a da gratuidade: não tem botão de fechar e some sozinha
+   na verificação seguinte ao andamento do pedido no ONR. #}
+{% if onr_pedidos_aviso %}
+{% set oa = onr_pedidos_aviso %}
+{% if oa.faixa %}
+<div role="alert" data-onr-pedidos-aviso="faixa"
+     style="position:sticky;top:0;z-index:40;background:#b00020;color:#fff;
+     padding:12px 18px;font-size:16px;font-weight:700;border-bottom:4px solid #6d0014">
+  {{ oa.faixa|length + oa.faixa_mais }} pedido(s) do ONR parado(s) há mais de um dia útil, esperando você:
+  <ul style="margin:6px 0 4px 18px;padding:0;font-weight:600">
+    {% for a in oa.faixa %}
+    <li>{{ a.fonte_rotulo }} <code style="color:#fff">{{ a.protocolo }}</code> — {{ a.descricao }},
+      parado desde {{ a.desde_br }} ({{ a.dias_uteis + 1 }}º dia útil).
+      {% if a.href %}<a style="color:#fff;text-decoration:underline" href="{{ a.href }}">Abrir o pedido</a>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% if oa.faixa_mais %}E mais {{ oa.faixa_mais }}. {% endif %}A faixa sai quando o pedido tiver andamento no ONR.
+  <a style="color:#fff;text-decoration:underline" href="{{ url_for('onr_pedidos_avisos') }}">Ver todos os pedidos parados</a>.
+</div>
+{% endif %}
+{% endif %}

@@ -381,7 +381,9 @@ def test_a_tela_mostra_a_rotina_primeiro_e_o_debito_recolhido(cg_casa_logada):
     antigo = (date.today() - timedelta(days=60)).isoformat() + "T07:30:00"
     _achado(db, "T:1", "CENSEC", "VENCIDO", "NOTAS", visto=antigo,
             titulo="Quinzena antiga sem envio")
-    _achado(db, "T:2", "NOTAS_PDF", "ATENCAO", "NOTAS", visto=hoje,
+    # G007: a lista é só da TI e do administrador — o PDF do ato é do
+    # escrevente; a pendência da CENSEC desta semana fica.
+    _achado(db, "T:2", "CENSEC_AUTOMATICO", "ATENCAO", "NOTAS", visto=hoje,
             titulo="PDF desta semana sem assinatura")
     html = c.get("/administrativo/gestor/checklist").get_data(as_text=True)
     notas = html[html.index("<h3>Notas"):]

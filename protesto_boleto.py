@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import boleto_api as BAPI
@@ -457,7 +457,8 @@ def cancelar(db: Any, boleto_id: int, *, motivo: str, quem: str = "",
             "Este boleto foi registrado em outro ambiente ou noutro provedor do "
             "que está ligado agora.")
     try:
-        if getattr(transporte, "PAGA_POR_LINK", False):
+        if getattr(transporte, "CANCELA_COM_MOTIVO", False) or \
+                getattr(transporte, "PAGA_POR_LINK", False):
             transporte.cancelar(b["nosso_numero"], porque)
         else:
             transporte.cancelar(b["nosso_numero"])
@@ -664,13 +665,14 @@ def _assentar(con: Any, liq: dict, *, cfg: dict, sv: dict, data_extenso: str,
     # registrada, CN-MA art. 925, § 2º), e a identificação diz o Pix: a forma
     # PIX do Livro exige o PIX de `protesto_pix`, com comprovante, e aqui quem
     # conferiu o crédito foi a Parcela. Cartão é «por cartão».
-    if b["provedor"] == "PARCELA":
+    nome_do_provedor = PROVEDORES_COM_FORMA.get(b["provedor"])
+    if nome_do_provedor:
         como = {"PIX": "por Pix", "CARTAO": "por cartão",
                 "BOLETO": "por boleto"}.get(forma, "")
         forma_do_livro = "CARTAO" if forma == "CARTAO" else "BOLETO"
-        identificacao = (f"cobrança Parcela Express {b['nosso_numero']}"
-                         + (f", paga {como}" if como else "")
-                         + f" em {quando} (baixa pela consulta da Parcela)")
+        identificacao = (f"boleto {nome_do_provedor} {b['nosso_numero']}"
+                         + (f", pago {como}" if como else "")
+                         + f" em {quando} (baixa pela consulta do provedor)")
     else:
         forma_do_livro = "BOLETO"
         identificacao = (f"boleto nosso número {b['nosso_numero']}, pago em "
@@ -798,6 +800,13 @@ def boletos_do_titulo(con: Any, titulo_id: int) -> list[dict]:
 #   - DESLIGADA ATÉ O OFICIAL LIGAR: precisa da integração do boleto ligada
 #     (`protesto_integracoes`) E da chave `CHAVE_DO_AVISO` em «SIM».
 
+# OS PROVEDORES QUE DIZEM A FORMA EM QUE O DEVEDOR PAGOU (boleto ou Pix, no
+# mesmo boleto híbrido). O Pix pago pelo boleto entra como «por boleto» no
+# Livro (a cobrança registrada, CN-MA art. 925, § 2º), e a identificação diz o
+# Pix: a forma PIX do Livro exige o PIX de `protesto_pix`, com comprovante, e
+# aqui quem conferiu o crédito foi o provedor.
+PROVEDORES_COM_FORMA = {"PARCELA": "Parcela Express", "INTER": "Banco Inter",
+                        "UNICRED": "Unicred"}
 CHAVE_DO_AVISO = "protesto_aviso_com_cobranca"
 LIGADA_NO_AVISO = "SIM"
 
@@ -948,14 +957,27 @@ def cancelar_os_encerrados(db: Any, *, quem: str = "", pasta: Any = None,
     return {"cancelados": feitos, "recusados": recusados}
 
 
+def _resposta(b: dict) -> dict:
+    try:
+        lido = json.loads(b.get("resposta") or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return lido if isinstance(lido, dict) else {}
+
+
 def bloco_de_pagamento(con: Any, aviso: Any) -> dict | None:
     """O que o aviso imprime para o devedor pagar, ou None. SÓ LÊ.
 
     Só com a intimação ligada à cobrança (`ligada_no_aviso`) e com a cobrança
-    EMITIDA do título, no ambiente ligado agora. O QR é o do Pix copia-e-cola
-    quando a cobrança o trouxe (paga-se em qualquer banco); senão, o do LINK,
-    que abre a página com Pix, boleto e cartão. Na homologação o bloco diz,
-    em letra grande, que não se paga.
+    EMITIDA do título, no ambiente ligado agora. O boleto registrado vai com a
+    LINHA DIGITÁVEL e o QR do PIX (copia-e-cola) — é o mesmo boleto, pago de
+    um jeito ou de outro. O endereço de uma página só se imprime quando não
+    há linha (o link da primeira versão). Na homologação o bloco diz, em
+    letra grande, que não se paga.
+
+    O VALOR IMPRESSO É O DA LINHA DIGITÁVEL quando o provedor soma a taxa do
+    boleto por cima (a Parcela: `taxa_do_devedor_centavos`): o devedor paga o
+    que o banco vai cobrar, e o papel diz que a diferença é a taxa.
     """
     av = dict(aviso)
     bd = banco(con)
@@ -971,22 +993,29 @@ def bloco_de_pagamento(con: Any, aviso: Any) -> dict | None:
     if not b:
         return None
     b = dict(b)
+    taxa = 0
+    try:
+        taxa = max(0, int(_resposta(b).get("taxa_do_devedor_centavos") or 0))
+    except (TypeError, ValueError):
+        taxa = 0
     linhas = []
     if cfg["ambiente"] != INTEG.PRODUCAO:
         linhas.append("HOMOLOGAÇÃO — COBRANÇA DE TESTE, NÃO PAGUE")
-    linhas.append(f"PARA PAGAR: R$ {AV._reais(b['valor_centavos'])} até "
+    linhas.append(f"PARA PAGAR: R$ {AV._reais(int(b['valor_centavos']) + taxa)} até "
                   f"{_br(b['vencimento'])}")
     linhas.append(f"Título R$ {AV._reais(b['valor_titulo_centavos'])} + emolumentos "
                   f"e despesas R$ {AV._reais(b['emolumentos_centavos'])}"
                   + (f" + tarifa R$ {AV._reais(b['tarifa_centavos'])}"
-                     if int(b["tarifa_centavos"] or 0) else ""))
+                     if int(b["tarifa_centavos"] or 0) else "")
+                  + (f" + taxa do boleto R$ {AV._reais(taxa)}" if taxa else ""))
     if b.get("linha_digitavel"):
         linhas.append(f"Linha digitável: {b['linha_digitavel']}")
     if b.get("pix_copia_e_cola"):
         linhas.append(f"Pix copia e cola: {b['pix_copia_e_cola']}")
-    if b.get("link_pagamento"):
+    if b.get("link_pagamento") and not b.get("linha_digitavel"):
         linhas.append(f"Pague por Pix, boleto ou cartão em: {b['link_pagamento']}")
-    qr = b.get("pix_copia_e_cola") or b.get("link_pagamento") or ""
+    qr = b.get("pix_copia_e_cola") or ("" if b.get("linha_digitavel")
+                                       else b.get("link_pagamento") or "")
     if not (b.get("linha_digitavel") or qr):
         return None
     legenda = ("Aponte a câmera do aplicativo do banco para pagar por Pix"
@@ -994,3 +1023,135 @@ def bloco_de_pagamento(con: Any, aviso: Any) -> dict | None:
                "Aponte a câmera do celular para abrir a página de pagamento")
     return {"boleto_id": int(b["id"]), "linhas": linhas, "qr": qr,
             "legenda_do_qr": legenda, "homologacao": cfg["ambiente"] != INTEG.PRODUCAO}
+
+
+def boleto_sem_linha_do_titulo(con: Any, titulo_id: int) -> int | None:
+    """A cobrança EMITIDA do título no ambiente ligado, ainda sem a linha
+    digitável — a que `completar_linha` pergunta ao banco. SÓ LÊ."""
+    bd = banco(con)
+    cfg = INTEG.configuracao(bd, INTEG.BOLETO)
+    if not cfg["ambiente"]:
+        return None
+    return bd.valor(
+        """SELECT id AS v FROM pt_boletos WHERE titulo_id=%s AND ambiente=%s
+              AND provedor=%s AND situacao='EMITIDO' AND linha_digitavel IS NULL
+            ORDER BY id DESC LIMIT 1""",
+        (int(titulo_id), cfg["ambiente"], cfg["provedor"]))
+
+
+def completar_linha(db: Any, boleto_id: int, *, pasta: Any = None,
+                    transporte: Any = None, cfg: dict | None = None) -> bool:
+    """A linha digitável e o Pix que o banco gerou DEPOIS da emissão. LÊ LÁ,
+    e grava aqui só esses campos. Devolve se completou.
+
+    O Inter e a Unicred registram de forma assíncrona: o número vem na hora e
+    a linha quando a CIP termina. Quem imprime o aviso chama isto antes, fora
+    de transação; o que falha fica como estava (o aviso sai sem a cobrança,
+    e a tela diz por quê).
+    """
+    with db.connect() as con:
+        b = banco(con).um("SELECT * FROM pt_boletos WHERE id=%s", (int(boleto_id),))
+    if not b or b["situacao"] != EMITIDO or b.get("linha_digitavel"):
+        return False
+    if transporte is None or cfg is None:
+        with db.connect() as con:
+            cfg, transporte = INTEG.transporte_em_uso(con, INTEG.BOLETO, pasta=pasta)
+    if b["ambiente"] != cfg["ambiente"] or b["provedor"] != cfg["provedor"]:
+        return False
+    ler = getattr(transporte, "ler_registro", None)
+    if ler is None or not b.get("nosso_numero"):
+        return False
+    try:
+        lido = ler(b["nosso_numero"])
+    except BAPI.BoletoError:
+        return False
+    if not lido or not lido.get("linha_digitavel"):
+        return False
+    resposta = {**_resposta(dict(b)), **(lido.get("resposta") or {})}
+    with db.transaction() as con:
+        banco(con).escrever(
+            """UPDATE pt_boletos SET linha_digitavel=%s, codigo_barras=%s,
+                      pix_copia_e_cola=COALESCE(%s, pix_copia_e_cola), resposta=%s
+                WHERE id=%s AND situacao='EMITIDO' AND linha_digitavel IS NULL""",
+            (lido["linha_digitavel"], lido.get("codigo_barras") or None,
+             lido.get("pix_copia_e_cola") or None,
+             json.dumps(resposta, ensure_ascii=False)[:4000], int(boleto_id)))
+    return True
+
+
+# ------------------------------------------------- a cobrança de teste
+
+#: O valor da cobrança de teste: R$ 10,00 — acima do mínimo do Inter (R$ 2,50).
+VALOR_DO_TESTE = 1000
+
+
+def cobranca_de_teste(*, cfg: dict, transporte: Any, pagador: dict, hoje: str,
+                      pagar: bool = False, dormir: Any = None) -> dict:
+    """Emite, lê e baixa UM boleto no SANDBOX do provedor ligado. ESCREVE LÁ
+    (no sandbox), e nada aqui: não há título, aviso nem `pt_boletos`.
+
+    É o teste do caminho inteiro sem gastar número de aviso e sem mandar
+    devedor de verdade ao sandbox: o pagador é a própria serventia. Responde
+    às perguntas do oficial (25/11/2026): o boleto já sai registrado (linha
+    digitável e Pix), o valor da linha é o pedido, e a taxa — se o provedor a
+    soma — fica com quem paga. Com `pagar`, o sandbox paga (só onde o
+    provedor tem isso) e a venda mostra o que o devedor pagou.
+    """
+    if cfg.get("ambiente") != INTEG.HOMOLOGACAO:
+        raise BoletoDominioError("A cobrança de teste só roda com o boleto em "
+                                 "homologação (o sandbox do provedor).")
+    INTEG.recusar_simulador_em_producao(cfg["ambiente"], transporte)
+    vencimento = (date.fromisoformat(str(hoje)[:10]) + timedelta(days=5)).isoformat()
+    ident = "PTT" + datetime.now().strftime("%y%m%d%H%M")
+    pedido = {"valor_centavos": VALOR_DO_TESTE, "vencimento": vencimento,
+              "pagador": dict(pagador), "identificador": ident,
+              "mensagem": "Cobrança de teste do protesto — não pagar."}
+    try:
+        BAPI.conferir_pedido(pedido)
+        r = transporte.registrar(pedido)
+    except BAPI.BoletoError as erro:
+        raise BoletoDominioError(f"O provedor não emitiu o boleto de teste: {erro}") from erro
+    nosso = str(r.get("nosso_numero") or "")
+    ler = getattr(transporte, "ler_registro", None)
+    if not r.get("linha_digitavel") and ler and nosso:
+        for _ in range(3):
+            (dormir or __import__("time").sleep)(2.0)
+            try:
+                lido = ler(nosso)
+            except BAPI.BoletoError:
+                lido = None
+            if lido and lido.get("linha_digitavel"):
+                r = {**r, **{k: v for k, v in lido.items() if v}}
+                break
+    resposta = dict(r.get("resposta") or {})
+    linha = str(r.get("linha_digitavel") or "")
+    digitos = "".join(ch for ch in linha if ch.isdigit())
+    valor_da_linha = int(digitos[-10:]) if len(digitos) == 47 else None
+    fora = {"provedor": cfg["provedor"], "nosso_numero": nosso,
+            "identificador": ident, "vencimento": vencimento,
+            "valor_pedido_centavos": VALOR_DO_TESTE,
+            "registrado": bool(linha), "tem_pix": bool(r.get("pix_copia_e_cola")),
+            "valor_da_linha_centavos": valor_da_linha,
+            "taxa_do_devedor_centavos": (valor_da_linha - VALOR_DO_TESTE
+                                         if valor_da_linha is not None else None),
+            "pago": False, "baixado": False, "avisos": []}
+    if pagar and getattr(transporte, "PAGA_NO_SANDBOX", False) and nosso:
+        try:
+            transporte.pagar_no_sandbox(nosso)
+            fora["pago"] = True
+            lista = transporte.liquidacoes(str(hoje)[:10], vencimento, nossos=[nosso])
+            fora["liquidacoes"] = lista
+            fora["avisos"].extend(getattr(transporte, "avisos", None) or [])
+        except BAPI.BoletoError as erro:
+            fora["avisos"].append(f"O sandbox não pagou: {erro}")
+    if not fora["pago"] and nosso:
+        try:
+            transporte.cancelar(nosso, "cobrança de teste do protesto")
+            fora["baixado"] = True
+        except BAPI.BoletoError as erro:
+            fora["avisos"].append(f"A baixa do boleto de teste falhou: {erro}. Baixe "
+                                  f"{nosso} no portal do sandbox.")
+    fora["resposta"] = {k: v for k, v in resposta.items()
+                        if k in ("banco_status", "status", "banco", "expira_em",
+                                 "valor_da_linha_centavos", "taxa_do_devedor_centavos")}
+    return fora

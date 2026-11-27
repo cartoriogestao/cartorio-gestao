@@ -24,6 +24,28 @@
 </div>
 {% endif %}
 
+{# OS PEDIDOS DO ONR NO 1º DIA ÚTIL (A005): aviso simples a quem os recebe. Se
+   fecha e volta na próxima carga; do 2º dia útil em diante vira a faixa vermelha
+   de `_onr_pedidos_aviso.html`, que não fecha. #}
+{% if onr_pedidos_aviso and onr_pedidos_aviso.simples %}
+{% set oa = onr_pedidos_aviso %}
+<div class="flash warning flash-compact" data-onr-pedidos-aviso="simples" data-aviso>
+  <div class="flash-compact-linha">
+    <strong>{{ oa.simples|length + oa.simples_mais }} pedido(s) do ONR chegaram e esperam andamento</strong>
+    <a href="{{ url_for('onr_pedidos_avisos') }}">Ver os pedidos</a>
+  </div>
+  <ul class="small" style="margin:4px 0 0 18px;padding:0">
+    {% for a in oa.simples %}
+    <li>{{ a.fonte_rotulo }} <code>{{ a.protocolo }}</code> — {{ a.descricao }}, desde {{ a.desde_br }}.
+      {% if a.href %}<a href="{{ a.href }}">Abrir</a>{% endif %}</li>
+    {% endfor %}
+    {% if oa.simples_mais %}<li>E mais {{ oa.simples_mais }}.</li>{% endif %}
+  </ul>
+  <p class="small" style="margin:4px 0 0">Sem andamento até o próximo dia útil, vira faixa vermelha.</p>
+  {{ aviso.fechar() }}
+</div>
+{% endif %}
+
 {% if nu_avisos_faixa_critica %}
 <div class="flash flash-compact flash-compact-aviso-critico" data-aviso>
   <div class="flash-compact-linha flash-compact-linha-avisos-criticos">

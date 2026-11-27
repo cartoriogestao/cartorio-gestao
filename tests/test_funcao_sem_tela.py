@@ -764,6 +764,21 @@ ACHADAS_EM_23_11_2026: dict[str, str] = {
 }
 
 
+# 26/11/2026: a carga em lote da rotina da serventia. A porta é o script do
+# agente 11 (o superusuário), fora do repositório, que a chama para cadastrar a
+# rotina com a auditoria de cada item; a tela é o cadastro item a item.
+# test_rotina_da_casa guarda a carga e a trilha.
+# 26/11/2026: os avisos dos pedidos do ONR parados (A005). Entrada do catálogo
+# da central de automação, que o despachante chama; a tela «ONR — pedidos
+# parados» tem o botão «Verificar agora», que chama a mesma verificação.
+ACHADAS_EM_26_11_2026: dict[str, str] = {
+    "importar_e_auditar": "rotina_da_casa — a porta é a carga do agente 11; "
+                          "test_rotina_da_casa guarda a trilha",
+    "rodada_dos_avisos": "onr_pedidos_avisos — chamada pelo catálogo da central de "
+                         "automação; test_onr_pedidos_avisos guarda o processo",
+}
+
+
 def _conhecidas() -> set[str]:
     """As medições datadas que formam o piso do varredor."""
     return (set(JA_SABIDAS) | set(NASCIDAS_DEPOIS_DA_3_6_51)
@@ -783,7 +798,8 @@ def _conhecidas() -> set[str]:
             | set(ACHADAS_EM_29_10_2026_REPASSE)
             | set(ACHADAS_EM_30_10_2026)
             | set(ACHADAS_EM_11_11_2026)
-            | set(ACHADAS_EM_16_11_2026) | set(ACHADAS_EM_23_11_2026))
+            | set(ACHADAS_EM_16_11_2026) | set(ACHADAS_EM_23_11_2026)
+            | set(ACHADAS_EM_26_11_2026))
 
 
 def test_nenhuma_funcao_nova_fica_sem_tela():

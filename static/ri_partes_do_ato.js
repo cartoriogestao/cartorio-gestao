@@ -54,6 +54,14 @@
     contagem.textContent = frase + " — bloco em branco não é gravado";
   }
 
+  /* O «REMOVER» NASCE ESCONDIDO pela mesma razão do botão de acrescentar:
+     sem este arquivo ele não faria nada. */
+  function mostrarRemover(raiz) {
+    Array.prototype.forEach.call(
+      raiz.querySelectorAll("[data-remover-parte]"),
+      function (b) { b.hidden = false; });
+  }
+
   function ligar(raiz) {
     var caixa = raiz.querySelector("[data-partes-vazias]");
     var molde = raiz.querySelector("[data-modelo-parte]");
@@ -61,14 +69,28 @@
     if (!caixa || !molde || !botao) return;
 
     botao.hidden = false;
+    mostrarRemover(raiz);
 
     botao.addEventListener("click", function () {
       caixa.appendChild(molde.content.cloneNode(true));
       var novo = caixa.lastElementChild;
       var primeiro = novo && novo.querySelector("input");
+      mostrarRemover(raiz);
       /* O FOCO VAI PARA O CAMPO NOVO: quem clicou em «acrescentar parte» vai
          digitar — e sem isto o cursor ficaria onde estava, três blocos acima. */
       if (primeiro) primeiro.focus();
+      recontar(raiz);
+    });
+
+    /* REMOVER O BLOCO (T022, 26/11/2026, os donos da abertura): o bloco sai do
+       formulário inteiro, e por isso as listas do `getlist` continuam com uma
+       entrada por bloco. O primeiro bloco não tem o botão. */
+    raiz.addEventListener("click", function (evento) {
+      var alvo = evento.target && evento.target.closest
+        ? evento.target.closest("[data-remover-parte]") : null;
+      if (!alvo || !raiz.contains(alvo)) return;
+      var bloco = alvo.closest("[data-parte]");
+      if (bloco && bloco.parentNode) bloco.parentNode.removeChild(bloco);
       recontar(raiz);
     });
 

@@ -127,6 +127,15 @@ LISTAS: tuple[dict, ...] = (
                "ESTE sistema lavra (`origem='MANUAL'`) depois do corte "
                "`rc_digitalizacao_obrigatoria_desde`; o acervo (EOFICIO, "
                "IMPORTACAO, ARQUIVO) fica de fora por construção"},
+    # O SALDO DE REPASSE DA CRC NASCEU EM 25/11/2026 (F010) E NÃO SE DECLAROU
+    # — cobrado por este varredor no próprio PR.
+    {"modulo": "rc_materializacao_repasse", "funcao": "pendentes",
+     "conta_o_acervo": False,
+     "porque": "é **dinheiro de terceiro, e não prazo de ato**: "
+               "`rc_materializacao_repasses` só guarda o pedido da CRC que o "
+               "balcão recebeu do cliente, e a carga nunca escreve nela — o "
+               "acervo fica de fora por construção, e o que a lista mostra "
+               "não tem prazo (quando recarregar a CRC é decisão do oficial)"},
 )
 
 
@@ -185,6 +194,11 @@ def _quantas(nome_modulo, nome_funcao, con):
     parametros = inspect.signature(funcao).parameters
     r = (funcao(con, hoje="2026-08-30") if "hoje" in parametros
          else funcao(con))
+    if isinstance(r, dict):
+        # A LISTA QUE DEVOLVE UM PAINEL (`rc_materializacao_repasse.pendentes`:
+        # `no_saldo`, `desfeitos` e o `saldo`) conta as listas dele, e não as
+        # chaves do dicionário.
+        return sum(len(v) for v in r.values() if isinstance(v, list))
     return r if isinstance(r, int) else len(r)
 
 

@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""A cobrança da intimação pela Parcela Express (PR007): um link só, com o
-prazo do aviso, uma viva por título, baixa pela venda paga e cancelamento do
-que não vale mais.
+"""A cobrança da intimação pela Parcela Express (PR007): um boleto híbrido
+registrado (linha digitável e Pix no mesmo documento), com o prazo do aviso,
+uma viva por título, baixa pela venda paga e cancelamento do que não vale mais.
 
 A PARCELA AQUI É DE MENTIRA, E SEM REDE: `ParcelaDeMentira` responde como a
-API dos links (`cobranca_parcela`, cabeçalho) e guarda o estado em memória.
+API dos boletos (`protesto_boleto_parcela`, cabeçalho) e guarda o estado em memória.
 Nenhum teste fala com o sandbox nem com a produção da Parcela; o transporte
 recusa qualquer endereço que não seja um dos dois e não abre conexão.
 """
@@ -40,14 +40,32 @@ HOMOLOGACAO = {**PRODUCAO, "modo": "HOMOLOGACAO", "ambiente": "HOMOLOGACAO"}
 
 
 class ParcelaDeMentira:
-    """A API de links da Parcela, em memória. Só os caminhos que o protesto usa."""
+    """A API de boletos da Parcela, em memória. Só os caminhos que o protesto usa.
 
-    def __init__(self, *, com_linha: bool = False, com_titulo: bool = True):
-        self.links: dict[str, dict] = {}
+    `taxa` é o que a Parcela soma por cima na linha digitável; `em_reais`
+    simula a Parcela lendo o `value` como real (a linha volta cem vezes maior).
+    """
+
+    def __init__(self, *, sem_linha: bool = False, com_metadata: bool = True,
+                 taxa: int = 0, em_reais: bool = False):
+        self.boletos: dict[str, dict] = {}
+        self.vendas: dict[str, dict] = {}
         self.chamadas: list[tuple[str, str]] = []
-        self.com_linha = com_linha
-        self.com_titulo = com_titulo
+        self.sem_linha = sem_linha
+        self.com_metadata = com_metadata
+        self.taxa = taxa
+        self.em_reais = em_reais
         self.seq = 0
+
+    @staticmethod
+    def linha(valor: int) -> str:
+        return "0019" + "0" * 33 + f"{int(valor):010d}"
+
+    def _publico(self, b: dict) -> dict:
+        fora = {k: v for k, v in b.items() if k != "corpo"}
+        if not self.com_metadata:
+            fora.pop("metadata", None)
+        return fora
 
     def __call__(self, metodo, url, *, json_corpo=None, cabecalhos=None):
         base = next((b for b in CP.ENDERECOS.values() if url.startswith(b)), None)
@@ -56,37 +74,56 @@ class ParcelaDeMentira:
         self.chamadas.append((metodo, caminho))
         if caminho == CP.CAMINHO_DO_TOKEN:
             return Resposta(200, {"id_token": "jwt-de-teste"}, "application/json")
-        if metodo == "POST" and caminho == "/v1/payment-links":
+        if metodo == "POST" and caminho == f"/v2/billets/{SELLER}/hybrid":
+            assert isinstance(json_corpo, list) and len(json_corpo) == 1
+            corpo = json_corpo[0]
             self.seq += 1
-            ident = f"link-{self.seq}"
-            link = {"id": ident, "token": f"tok-{self.seq}", "status": "ACTIVE",
-                    "url": f"https://pagar.site-exemplo.invalid/{ident}",
-                    "amount": json_corpo["amount"], "seller": {"id": SELLER},
-                    "expires_in": json_corpo["expires_in"], "corpo": json_corpo}
-            if self.com_titulo:
-                link["link_title"] = json_corpo["link_title"]
-            if self.com_linha:
-                link["billet_data"] = {"barcode": "00190000090000000000000000000000000000000000000"}
-                link["pix"] = {"qrcode_data": "00020126PIX-DE-TESTE"}
-            self.links[ident] = link
-            return Resposta(201, {k: link[k] for k in ("id", "token", "url", "status")},
-                            "application/json")
-        if metodo == "GET" and "/payment-links?" in caminho:
-            linhas = [{k: v for k, v in x.items() if k != "corpo"} for x in self.links.values()]
+            ident = f"bol-{self.seq}"
+            valor = int(corpo["value"]) * (100 if self.em_reais else 1) + self.taxa
+            b = {"id": ident, "status": "pending", "sale_id": None,
+                 "url": f"https://boleto.site-exemplo.invalid/{ident}.pdf",
+                 "barcode": "" if self.sem_linha else self.linha(valor),
+                 "barcode_raw": "" if self.sem_linha else "0019" + "0" * 40,
+                 "billet_data": {"qrcode_data": f"00020126PIX-{ident}",
+                                 "nosso_numero": f"000{self.seq}"},
+                 "metadata": corpo.get("metadata"), "corpo": corpo, "_valor": valor}
+            self.boletos[ident] = b
+            return Resposta(201, [self._publico(b)], "application/json")
+        if metodo == "GET" and caminho.startswith("/v1/billets/"):
+            b = self.boletos.get(caminho.split("/")[-1])
+            if b is None:
+                return Resposta(404, {}, "application/json")
+            return Resposta(201, self._publico(b), "application/json")
+        if metodo == "GET" and caminho.startswith(f"/v1/sellers/{SELLER}/billets?"):
+            linhas = [self._publico(b) for b in self.boletos.values()]
             return Resposta(200, {"results": linhas, "has_more": False}, "application/json")
-        if metodo == "POST" and caminho.endswith("/cancel"):
-            ident = caminho.split("/")[-2]
-            self.links[ident]["status"] = "CANCELED"
+        if metodo == "GET" and caminho.startswith(f"/v1/sellers/{SELLER}/sales/"):
+            v = self.vendas.get(caminho.split("/")[-1])
+            return Resposta(200 if v else 404, v or {}, "application/json")
+        if metodo == "POST" and caminho.endswith("/void"):
+            b = self.boletos[caminho.split("/")[-2]]
+            if b["status"] == "succeeded":
+                return Resposta(400, {"message": "Boleto já pago."}, "application/json")
+            b["status"] = "canceled"
             return Resposta(200, {}, "application/json")
+        if metodo == "POST" and caminho.endswith("/pay"):
+            self.pagar(caminho.split("/")[-2], forma="BILLET")
+            return Resposta(201, {}, "application/json")
         raise AssertionError(f"caminho não previsto: {metodo} {caminho}")
 
-    def pagar(self, ident, *, forma="PIX", valor=None, venda="venda-1",
+    def pagar(self, ident, *, forma="PIX", valor=None, venda=None,
               quando="2026-10-20T13:00:00Z"):
-        link = self.links[ident]
-        link["status"] = "PAID"
-        link["sale"] = {"id": venda, "status": "SUCCEEDED", "form_payment": forma,
-                        "amount": link["amount"] if valor is None else valor,
-                        "updated_at": quando}
+        b = self.boletos[ident]
+        venda = venda or f"venda-{ident}"
+        b["status"] = "succeeded"
+        b["sale_id"] = venda
+        principal = int(b["corpo"]["value"])
+        self.vendas[venda] = {"id": venda, "status": "SUCCEEDED", "form_payment": forma,
+                              "amount": principal if valor is None else valor,
+                              "original_amount": b["_valor"], "updated_at": quando}
+
+    def so(self, ident):
+        return self.boletos[ident]
 
 
 @pytest.fixture()
@@ -154,7 +191,7 @@ def test_homologacao_vai_ao_sandbox(casa):
 # ------------------------------------------------ a cobrança que vai com o aviso
 
 
-def test_a_cobranca_do_aviso_e_um_link_so_com_o_prazo_do_aviso(casa):
+def test_a_cobranca_do_aviso_e_um_boleto_hibrido_registrado_com_o_prazo_do_aviso(casa):
     db = casa["db"]
     tid = APOIO.titulo_apontado(db)
     aviso = APOIO.aviso_emitido(db, tid)
@@ -168,24 +205,59 @@ def test_a_cobranca_do_aviso_e_um_link_so_com_o_prazo_do_aviso(casa):
     assert b["vencimento"] == esperado and b["aviso_id"] == aviso
     assert b["provedor"] == "PARCELA" and b["situacao"] == BOL.EMITIDO
     assert b["valor_centavos"] == 131045 + 4510
-    assert b["link_pagamento"].startswith("https://pagar.")
-    # UM POST SÓ, com as três formas no mesmo link
-    posts = [c for c in falsa.chamadas if c == ("POST", "/v1/payment-links")]
-    assert len(posts) == 1
-    corpo = next(iter(falsa.links.values()))["corpo"]
-    assert corpo["payment_methods"] == ["pix", "billet", "card"]
-    assert corpo["amount"] == 135555 and corpo["expires_in"].startswith(esperado)
-    assert corpo["link_title"] == f"Protesto {b['identificador']}"
+    # O BOLETO JÁ SAI REGISTRADO: linha digitável e Pix no mesmo documento
+    assert b["nosso_numero"] == "bol-1"
+    assert PBP.valor_da_linha(b["linha_digitavel"]) == 135555
+    assert b["pix_copia_e_cola"] == "00020126PIX-bol-1"
+    assert b["link_pagamento"].endswith("bol-1.pdf")
+    # UM POST SÓ, um boleto só, no CPF/CNPJ do devedor, sem cartão
+    posts = [c for c in falsa.chamadas if c[0] == "POST" and c[1].endswith("/hybrid")]
+    assert len(posts) == 1 and not any("payment-links" in c[1] for c in falsa.chamadas)
+    corpo = falsa.so("bol-1")["corpo"]
+    assert "payment_methods" not in corpo
+    assert corpo["value"] == 135555 and corpo["delivery_date"].startswith(esperado)
+    assert len(corpo["social_security_number"]) in (11, 14)
+    assert corpo["metadata"] == {"protesto": b["identificador"]}
+    assert corpo["protocol"] == b["identificador"]
 
 
-def test_linha_e_pix_entram_quando_a_consulta_os_traz(casa):
+def test_a_taxa_que_a_parcela_soma_fica_com_o_devedor_e_vai_ao_papel(casa):
     db = casa["db"]
     tid = APOIO.titulo_apontado(db)
     aviso = APOIO.aviso_emitido(db, tid)
-    t, _ = _parcela(com_linha=True)
+    t, _ = _parcela(taxa=110)
     b = _boleto(db, _do_aviso(casa, aviso, t)["boleto_id"])
-    assert b["linha_digitavel"].startswith("0019")
-    assert b["pix_copia_e_cola"] == "00020126PIX-DE-TESTE"
+    assert json.loads(b["resposta"])["taxa_do_devedor_centavos"] == 110
+    with db.transaction() as con:
+        INTEG.gravar_configuracao(con, INTEG.BOLETO, modo="PRODUCAO", provedor="PARCELA")
+    _ligar_no_aviso(db)
+    with db.connect() as con:
+        texto = "\n".join(BOL.bloco_de_pagamento(con, AV.ler(con, aviso))["linhas"])
+    assert "R$ 1.356,65" in texto and "taxa do boleto R$ 1,10" in texto
+
+
+def test_linha_com_valor_errado_baixa_o_boleto_e_recusa(casa):
+    db = casa["db"]
+    tid = APOIO.titulo_apontado(db)
+    t, falsa = _parcela(em_reais=True)
+    with pytest.raises(BOL.BoletoDominioError, match="baixado na hora"):
+        _do_aviso(casa, APOIO.aviso_emitido(db, tid), t)
+    assert falsa.so("bol-1")["status"] == "canceled"
+    assert APOIO.um(db, "SELECT situacao FROM pt_boletos")["situacao"] == BOL.RECUSADO
+
+
+def test_linha_que_nao_veio_na_emissao_se_busca_antes_de_imprimir(casa):
+    db = casa["db"]
+    tid = APOIO.titulo_apontado(db)
+    t, falsa = _parcela(sem_linha=True)
+    r = _do_aviso(casa, APOIO.aviso_emitido(db, tid), t)
+    assert _boleto(db, r["boleto_id"])["linha_digitavel"] is None
+    falsa.so("bol-1")["barcode"] = falsa.linha(135555)
+    with db.connect() as con:
+        assert BOL.boleto_sem_linha_do_titulo(con, tid) is None  # integração desligada
+    assert BOL.completar_linha(db, r["boleto_id"], transporte=t, cfg=PRODUCAO)
+    assert PBP.valor_da_linha(_boleto(db, r["boleto_id"])["linha_digitavel"]) == 135555
+    assert not BOL.completar_linha(db, r["boleto_id"], transporte=t, cfg=PRODUCAO)
 
 
 def test_emolumentos_em_branco_nao_saem(casa):
@@ -207,11 +279,11 @@ def test_aviso_reemitido_reaproveita_a_mesma_cobranca(casa):
     segundo = _do_aviso(casa, segundo_aviso, t)
     assert segundo["acao"] == "REAPROVEITADA"
     assert segundo["boleto_id"] == primeiro["boleto_id"]
-    assert len(falsa.links) == 1
+    assert len(falsa.boletos) == 1
     assert _boleto(db, primeiro["boleto_id"])["aviso_id"] == segundo_aviso
 
 
-def test_aviso_reemitido_com_outro_valor_cancela_o_link_antes(casa):
+def test_aviso_reemitido_com_outro_valor_baixa_o_boleto_antes(casa):
     db = casa["db"]
     tid = APOIO.titulo_apontado(db)
     t, falsa = _parcela()
@@ -223,7 +295,7 @@ def test_aviso_reemitido_com_outro_valor_cancela_o_link_antes(casa):
     vivos = APOIO.ler(db, """SELECT id FROM pt_boletos WHERE titulo_id=%s
                               AND situacao IN ('PENDENTE','EMITIDO','SEM_RESPOSTA')""", (tid,))
     assert [v["id"] for v in vivos] == [segundo["boleto_id"]]
-    assert [x["status"] for x in falsa.links.values()] == ["CANCELED", "ACTIVE"]
+    assert [x["status"] for x in falsa.boletos.values()] == ["canceled", "pending"]
 
 
 def test_cobranca_sem_resposta_trava_o_aviso_novo(casa):
@@ -236,10 +308,10 @@ def test_cobranca_sem_resposta_trava_o_aviso_novo(casa):
                             (r["boleto_id"],))
     with pytest.raises(BOL.BoletoDominioError, match="Conferir no banco"):
         _do_aviso(casa, APOIO.aviso_emitido(db, tid), t, emolumentos="50")
-    assert len(falsa.links) == 1
+    assert len(falsa.boletos) == 1
 
 
-def test_sem_resposta_se_confere_pelo_titulo_do_link(casa):
+def test_sem_resposta_se_confere_pelo_metadata_do_boleto(casa):
     db = casa["db"]
     tid = APOIO.titulo_apontado(db)
     t, _ = _parcela()
@@ -251,9 +323,9 @@ def test_sem_resposta_se_confere_pelo_titulo_do_link(casa):
                                  cfg=PRODUCAO)["situacao"] == BOL.EMITIDO
 
 
-def test_sem_o_titulo_do_link_a_conferencia_nao_libera_outra(casa):
-    t, falsa = _parcela(com_titulo=False)
-    falsa.links["x"] = {"id": "x", "status": "ACTIVE", "seller": {"id": SELLER}}
+def test_sem_o_metadata_a_conferencia_nao_libera_outra(casa):
+    t, falsa = _parcela(com_metadata=False)
+    falsa.boletos["x"] = {"id": "x", "status": "pending", "corpo": {}}
     with pytest.raises(BAPI.BoletoError, match="portal"):
         t.consultar("PT1-1")
 
@@ -261,12 +333,12 @@ def test_sem_o_titulo_do_link_a_conferencia_nao_libera_outra(casa):
 # -------------------------------------------------------------- a baixa
 
 
-def test_link_pago_por_pix_da_baixa_uma_vez_e_cai_no_repasse(casa):
+def test_boleto_pago_por_pix_da_baixa_uma_vez_e_cai_no_repasse(casa):
     db = casa["db"]
     tid = APOIO.titulo_apontado(db)
     t, falsa = _parcela()
     r = _do_aviso(casa, APOIO.aviso_emitido(db, tid), t)
-    falsa.pagar("link-1", forma="PIX")
+    falsa.pagar("bol-1", forma="PIX")
     res = _pagamentos(casa, t)
     assert len(res["baixadas"]) == 1 and res["conferir"] == []
     assert APOIO.um(db, "SELECT situacao FROM pt_titulos WHERE id=%s", (tid,))["situacao"] == "PAGO"
@@ -288,7 +360,7 @@ def test_link_pago_por_pix_da_baixa_uma_vez_e_cai_no_repasse(casa):
     with db.connect() as con:
         pend = REP.pendentes(con, hoje="2026-10-22")
     assert any(int(p.get("titulo_id") or 0) == tid for p in pend)
-    # e o caixa não ganha cobrança: o link do protesto não é `cb_cobrancas`
+    # e o caixa não ganha cobrança: o boleto do protesto não é `cb_cobrancas`
     assert APOIO.um(db, "SELECT count(*) AS n FROM cb_cobrancas")["n"] == 0
 
 
@@ -297,7 +369,7 @@ def test_a_mesma_venda_lida_de_novo_entra_uma_vez(casa):
     tid = APOIO.titulo_apontado(db)
     t, falsa = _parcela()
     _do_aviso(casa, APOIO.aviso_emitido(db, tid), t)
-    falsa.pagar("link-1", forma="BILLET")
+    falsa.pagar("bol-1", forma="BILLET")
     _pagamentos(casa, t)
     with db.transaction() as con:
         banco(con).escrever("UPDATE pt_boletos SET situacao='EMITIDO'")
@@ -305,18 +377,20 @@ def test_a_mesma_venda_lida_de_novo_entra_uma_vez(casa):
     assert segunda["baixadas"] == [] and segunda["ja_vistas"] == 1
 
 
-def test_link_do_caixa_na_mesma_conta_nao_vira_pendencia(casa):
+def test_boleto_do_caixa_na_mesma_conta_nao_e_consultado(casa):
     db = casa["db"]
     tid = APOIO.titulo_apontado(db)
     t, falsa = _parcela()
     _do_aviso(casa, APOIO.aviso_emitido(db, tid), t)
-    falsa.links["do-caixa"] = {"id": "do-caixa", "status": "PAID", "amount": 999,
-                               "seller": {"id": SELLER},
-                               "sale": {"id": "venda-caixa", "status": "SUCCEEDED",
-                                        "form_payment": "PIX", "amount": 999,
-                                        "updated_at": "2026-10-20T10:00:00Z"}}
+    falsa.boletos["do-caixa"] = {"id": "do-caixa", "status": "succeeded",
+                                 "sale_id": "venda-caixa", "corpo": {"value": 999},
+                                 "_valor": 999}
+    falsa.vendas["venda-caixa"] = {"id": "venda-caixa", "status": "SUCCEEDED",
+                                   "form_payment": "PIX", "amount": 999,
+                                   "updated_at": "2026-10-20T10:00:00Z"}
     res = _pagamentos(casa, t)
     assert res["vistas"] == 0 and res["conferir"] == []
+    assert ("GET", "/v1/billets/do-caixa") not in falsa.chamadas
 
 
 def test_valor_pago_diferente_vira_conferir(casa):
@@ -324,19 +398,19 @@ def test_valor_pago_diferente_vira_conferir(casa):
     tid = APOIO.titulo_apontado(db)
     t, falsa = _parcela()
     r = _do_aviso(casa, APOIO.aviso_emitido(db, tid), t)
-    falsa.pagar("link-1", valor=100)
+    falsa.pagar("bol-1", valor=100)
     res = _pagamentos(casa, t)
     assert res["baixadas"] == [] and len(res["conferir"]) == 1
     assert _boleto(db, r["boleto_id"])["situacao"] == BOL.CONFERIR
     assert APOIO.um(db, "SELECT situacao FROM pt_titulos WHERE id=%s", (tid,))["situacao"] != "PAGO"
 
 
-def test_link_pago_sem_dados_da_venda_vira_aviso_e_nao_baixa(casa):
+def test_boleto_pago_sem_a_venda_vira_aviso_e_nao_baixa(casa):
     db = casa["db"]
     tid = APOIO.titulo_apontado(db)
     t, falsa = _parcela()
     _do_aviso(casa, APOIO.aviso_emitido(db, tid), t)
-    falsa.links["link-1"]["status"] = "PAID"
+    falsa.so("bol-1")["status"] = "succeeded"
     res = _pagamentos(casa, t)
     assert res["baixadas"] == [] and len(res["avisos"]) == 1
 
@@ -346,7 +420,7 @@ def test_na_homologacao_o_titulo_nao_muda(casa):
     tid = APOIO.titulo_apontado(db)
     t, falsa = _parcela("HOMOLOGACAO")
     r = _do_aviso(casa, APOIO.aviso_emitido(db, tid), t, cfg=HOMOLOGACAO)
-    falsa.pagar("link-1")
+    falsa.pagar("bol-1")
     res = _pagamentos(casa, t, cfg=HOMOLOGACAO)
     assert len(res["baixadas"]) == 1 and res["baixadas"][0]["situacao"] == BOL.ENSAIO
     assert _boleto(db, r["boleto_id"])["situacao"] == BOL.PAGO
@@ -356,7 +430,7 @@ def test_na_homologacao_o_titulo_nao_muda(casa):
 # ---------------------------------------------- o que não pode mais ser pago
 
 
-def test_desistido_e_sustado_tem_o_link_cancelado(casa):
+def test_desistido_e_sustado_tem_o_boleto_baixado(casa):
     db = casa["db"]
     desistido = APOIO.titulo_apontado(db, numero="PR7/1")
     sustado = APOIO.titulo_apontado(db, numero="PR7/2", protocolo="2610190002")
@@ -375,16 +449,16 @@ def test_desistido_e_sustado_tem_o_link_cancelado(casa):
     assert sorted(int(x["titulo_id"]) for x in lista) == sorted([desistido, sustado])
     r = BOL.cancelar_os_encerrados(db, quem="escrevente", transporte=t, cfg=PRODUCAO)
     assert len(r["cancelados"]) == 2 and r["recusados"] == []
-    estados = {lk["corpo"]["link_title"]: lk["status"] for lk in falsa.links.values()}
-    assert sorted(estados.values()) == ["ACTIVE", "CANCELED", "CANCELED"]
+    estados = [b["status"] for b in falsa.boletos.values()]
+    assert sorted(estados) == ["canceled", "canceled", "pending"]
 
 
-def test_link_ja_pago_nao_se_cancela_e_fica_na_lista(casa):
+def test_boleto_ja_pago_nao_se_baixa_e_fica_na_lista(casa):
     db = casa["db"]
     tid = APOIO.titulo_apontado(db)
     t, falsa = _parcela()
     _do_aviso(casa, APOIO.aviso_emitido(db, tid), t)
-    falsa.pagar("link-1")
+    falsa.pagar("bol-1")
     with db.transaction() as con:
         PT.lancar_desistencia(con, tid, motivo="pedido do apresentante",
                               agora=db.now(), usuario="escrevente")
@@ -411,9 +485,10 @@ def test_o_papel_so_leva_a_cobranca_com_a_chave_ligada(casa):
     _ligar_no_aviso(db)
     with db.connect() as con:
         bloco = BOL.bloco_de_pagamento(con, AV.ler(con, aviso))
-    assert bloco and bloco["qr"].startswith("https://pagar.")
+    assert bloco and bloco["qr"] == "00020126PIX-bol-1"
     texto = "\n".join(bloco["linhas"])
-    assert "R$ 1.355,55" in texto and "Pix, boleto ou cartão" in texto
+    assert "R$ 1.355,55" in texto and "Linha digitável: 0019" in texto
+    assert "cartão" not in texto and ".pdf" not in texto
     assert "NÃO PAGUE" not in texto
 
 
@@ -421,7 +496,7 @@ def test_o_papel_da_homologacao_diz_que_nao_se_paga(casa):
     db = casa["db"]
     tid = APOIO.titulo_apontado(db)
     aviso = APOIO.aviso_emitido(db, tid)
-    t, _ = _parcela("HOMOLOGACAO", com_linha=True)
+    t, _ = _parcela("HOMOLOGACAO")
     _do_aviso(casa, aviso, t, cfg=HOMOLOGACAO)
     with db.transaction() as con:
         INTEG.gravar_configuracao(con, INTEG.BOLETO, modo="HOMOLOGACAO", provedor="PARCELA")
@@ -430,7 +505,7 @@ def test_o_papel_da_homologacao_diz_que_nao_se_paga(casa):
         bloco = BOL.bloco_de_pagamento(con, AV.ler(con, aviso))
     assert bloco["homologacao"] and "NÃO PAGUE" in bloco["linhas"][0]
     # com o Pix na mão, o QR é o do Pix — paga-se em qualquer banco
-    assert bloco["qr"] == "00020126PIX-DE-TESTE"
+    assert bloco["qr"] == "00020126PIX-bol-1"
 
 
 # ---------------------------------------------------------------- as telas
@@ -494,7 +569,7 @@ def test_ligada_o_aviso_sai_com_a_cobranca_e_o_papel_com_o_qr(tela):
         nomes = z.namelist()
         conteudo = z.read("content.xml").decode("utf-8")
     assert "Pictures/qr-de-pagar.png" in nomes and "Pictures/qr-do-papel.png" in nomes
-    assert "NÃO PAGUE" in conteudo and "pagar.site-exemplo.invalid" in conteudo
+    assert "NÃO PAGUE" in conteudo and "Linha digitável" in conteudo
 
 
 def test_ligada_sem_emolumentos_o_aviso_sai_sem_cobranca_e_diz(tela):

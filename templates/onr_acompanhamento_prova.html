@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% block title %}ONR — chamada de prova{% endblock %}
+{% block heading %}<h1>ONR — chamada de prova de 1 título</h1>{% endblock %}
+{% block content %}
+{# A008 (26/11/2026). UM andamento de UM título, para conferir na Central antes
+   de a rotina mandar o resto. O ONR avisa o apresentante de verdade. #}
+<section class="card">
+  <p class="{{ 'warning' if producao else '' }}" style="font-size:1.1em">
+    Ambiente: <strong>{{ 'PRODUÇÃO' if producao else 'HOMOLOGAÇÃO (teste)' }}</strong> — {{ endereco }}.
+    {% if producao %}<strong>O que subir aparece ao apresentante na Central, e o ONR o avisa por e-mail
+    ou SMS.</strong>{% endif %}
+    <br>Envio: <strong>{{ 'LIGADO' if ligado else 'desligado — a prova não sai' }}</strong>.</p>
+  <p class="small">Escolha um título (de preferência sem exigência, de apresentante conhecido). A tela
+    mostra o primeiro andamento dele que subiria, com os campos e o envelope exatos. Vale como a
+    liberação deste único andamento; as outras travas continuam.</p>
+  <form method="get" action="{{ url_for('onr_acompanhamento_prova') }}">
+    <label>Protocolo
+      <select name="protocolo_id">
+        {% for c in candidatos %}
+        <option value="{{ c.protocolo_id }}" {% if protocolo_id == c.protocolo_id %}selected{% endif %}>
+          {{ c.protocolo_numero or c.protocolo_id }} ({{ c.pendentes }} na fila)</option>
+        {% endfor %}
+      </select></label>
+    <button class="button" type="submit">Ver o que sobe</button>
+    <a class="button" href="{{ url_for('onr_acompanhamento') }}">Voltar à fila</a>
+  </form>
+</section>
+
+{% if erro %}<p class="warning">{{ erro }}</p>{% endif %}
+{% if previa %}
+<section class="card" id="previa">
+  <h2>Protocolo {{ previa.protocolo.numero }}</h2>
+  {% if previa.titulo %}<p class="small">Já está no ONR como título nº {{ previa.titulo.id_titulo_onr }}:
+    sobe só o andamento (InsertStatusAT).</p>{% endif %}
+  {% for a in previa.anulados %}
+    <p class="small muted">Antes, sai como anulado: {{ a.evento.descricao }} — {{ a.motivo }}.</p>
+  {% endfor %}
+  {% if previa.segura %}
+    <p class="warning" data-trava="{{ previa.segura.espera }}"><strong>A prova não sai:</strong> {{ previa.segura.frase }}</p>
+  {% elif previa.vai %}
+    <p>Sobe <strong>{{ previa.vai.rotulo }}</strong>, pelo método <code>{{ previa.vai.metodo }}</code>:</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Campo</th><th>Valor</th></tr></thead>
+      <tbody>
+      {% for campo, valor in previa.vai.campos %}
+        <tr><td><code>{{ campo }}</code></td><td style="white-space:pre-line">{{ valor }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <details><summary>O envelope SOAP (o Hash é calculado na hora da chamada)</summary>
+      <pre style="white-space:pre-wrap">{{ previa.vai.envelope }}</pre></details>
+    <form method="post" action="{{ url_for('onr_acompanhamento_prova') }}"
+          onsubmit="return confirm('Mandar este andamento ao ONR? O apresentante é avisado.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="protocolo_id" value="{{ previa.protocolo.id }}">
+      <input type="hidden" name="evento_id" value="{{ previa.vai.evento.id }}">
+      <label>Para confirmar, digite o número do protocolo
+        <input type="text" name="confirmacao" required autocomplete="off"></label>
+      <button class="button primary" type="submit" {% if not ligado %}disabled{% endif %}>
+        Mandar este andamento ao ONR</button>
+    </form>
+  {% else %}
+    <p>Este título não tem nada pendente a subir.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

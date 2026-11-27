@@ -133,7 +133,9 @@ REGRAS_SEM_TAREFA = frozenset({
     "PROTESTO_PROTOCOLO_TARDIO", "PROTESTO_FORA_DO_TRIDUO",
     "PROTESTO_RETORNO_TARDIO", "PROTESTO_INTIMACAO_TARDIA",
     "PROTESTO_FORA_DO_SISTEMA", "PROTESTO_MODELO_DO_TERMO",
-    "PROTESTO_ANTES_DO_CORTE", "PROTESTO_PAGAMENTO_SEM_LIVRO",
+    "PROTESTO_ANTES_DO_CORTE",
+    # PROTESTO_PAGAMENTO_SEM_LIVRO saiu no G007 («pode» do titular, 25/11/2026):
+    # o lançamento no Livro de Pagamentos é do escrevente e vira tarefa.
     # A pasta legada que não se acha não é tarefa de escrevente: o dia da CRA
     # se mede no banco, e a pasta é configuração (do titular).
     "PROTESTO_PASTA_CRA",

@@ -162,6 +162,7 @@ ROTULOS = {
     "CAIXA_DIFERENCA": "Caixas com diferença sem justificativa",
     "CAIXA_ABERTO": "Caixas esquecidos abertos",
     "FECHAMENTO_DO_MES": "Fechamento do mês: selos × caixa",
+    "REPASSE_DE_TERCEIRO": "Valor de outro cartório com o lançamento desfeito no caixa",
     "PLD_COAF": "PLD/COAF — casos que esperam análise ou comunicação",
     "IDENTIDADE_DOS_ROBOS": "Robôs e rotinas que não dizem quem são nem a mando de quem",
 }
@@ -204,12 +205,12 @@ REGRAS_SEM_TAREFA = frozenset({
     "OBITO_MENSAL",           # juiz eleitoral, Receita, Junta: sanção administrativa
     "IBGE",                   # multa do art. 224, não indenização
     "DOI",                    # multa da Receita, não indenização
-    "DIGITALIZACAO_DA_FICHA",  # rotina interna (o aviso vermelho da tela continua)
-    "DIGITALIZACAO_ATRASADA",
-    "CAIXA_DO_DIA_ABERTO",    # dinheiro da casa (o aviso vermelho da tela continua)
-    "CAIXA_ABERTO",
+    # G007, «pode» do titular em 25/11/2026: a digitalização (DIGITALIZACAO_DA_FICHA
+    # e DIGITALIZACAO_ATRASADA) e o caixa do balcão (CAIXA_DO_DIA_ABERTO,
+    # CAIXA_ABERTO e CAIXA_DIFERENCA) saíram desta lista. São trabalho do
+    # escrevente no cartório, e a Checklist do dia agora só mostra o da TI e
+    # do admin: sem tarefa, ninguém os veria. Ver `gestor_destino`.
     "CAIXA_COM_PONTOS",
-    "CAIXA_DIFERENCA",
     "CAIXA_PRONTO_PARA_VISTO",
     "FECHAMENTO_DO_MES",
     "DADO_DE_TESTE",

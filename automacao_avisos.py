@@ -104,15 +104,35 @@ def decidir(processo: dict, execucao: dict, *, agora: datetime, lembrar_h: int) 
 
 
 def responsavel(con, processo: dict) -> int | None:
-    """O responsável do processo, ou o oficial: o titular da Gestão, senão o 1º ADMIN."""
+    """O responsável do processo; o que os `parametros` do processo apontam
+    (`responsavel_chave`, `responsavel_setor`); ou o oficial: o titular da
+    Gestão, senão o 1º ADMIN."""
     if processo.get("responsavel_user_id"):
         return int(processo["responsavel_user_id"])
     bd = banco(con)
+    robo = "AND COALESCE(eh_robo,0)=0" if bd.tem_coluna("users", "eh_robo") else ""
+    # O PROCESSO QUE DIZ DE QUEM É O TRABALHO (A008, 26/11/2026): o do
+    # acompanhamento do ONR aponta a configuração do responsável do ONR (a da
+    # A005, `onr_pedidos_responsavel_id`) e o setor RI. Usuário inativo, robô
+    # ou chave vazia seguem para o próximo — nunca para ninguém.
+    par = processo.get("parametros") if isinstance(processo.get("parametros"), dict) else {}
+    chave = str(par.get("responsavel_chave") or "").strip()
+    if chave and bd.tem_tabela("settings"):
+        linha = bd.um("SELECT value FROM settings WHERE key=%s", (chave,))
+        bruto = str((linha or {}).get("value") or "").strip()
+        if bruto.isdigit():
+            achado = bd.um(f"SELECT id FROM users WHERE id=%s AND active=1 {robo}", (int(bruto),))
+            if achado:
+                return int(achado["id"])
+    setor = str(par.get("responsavel_setor") or "").strip()
+    if setor and bd.tem_tabela("ge_responsaveis"):
+        linha = bd.um("SELECT user_id FROM ge_responsaveis WHERE setor=%s LIMIT 1", (setor,))
+        if linha and linha["user_id"]:
+            return int(linha["user_id"])
     if bd.tem_tabela("ge_responsaveis"):
         linha = bd.um("SELECT user_id FROM ge_responsaveis WHERE setor='GESTAO' LIMIT 1")
         if linha and linha["user_id"]:
             return int(linha["user_id"])
-    robo = "AND COALESCE(eh_robo,0)=0" if bd.tem_coluna("users", "eh_robo") else ""
     linha = bd.um(f"SELECT id FROM users WHERE role='ADMIN' AND active=1 {robo} ORDER BY id LIMIT 1")
     return int(linha["id"]) if linha else None
 

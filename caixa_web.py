@@ -30,9 +30,11 @@ import portal_cliente as PORTAL
 import contato_do_cliente as CONTATO
 import protocolo_documentos as PDOC
 import modelos_da_casa as MODELOS
+import rc_materializacao_repasse as RMR
 from bd_nativo import banco
 from caixa_import import importar as importar_caixa
 from caixa_schema import (FORMAS_PAGAMENTO, FUNCOES, NATUREZAS,
+                          NATUREZAS_DO_BALCAO, NATUREZAS_SO_DO_SISTEMA,
                           PECA_DO_AVISO_ORCAMENTO,
                           TIPOS_DOCUMENTO, TIPOS_PROTOCOLO, CaixaError,
                           centavos, cobrar_item_do_protocolo, conferir_pagamento_anterior,
@@ -86,6 +88,26 @@ SITUACOES = {
 # continua respondendo — ver `__getattr__` no fim deste módulo.
 
 
+#: O bloco do valor de terceiro (F010, 25/11/2026) — o MESMO do padrão do
+#: recibo (`modelos_padrao/caixa/CAIXA_RECIBO.txt`). Só se usa quando o modelo
+#: ajustado pela casa não o tem: o papel não pode dizer «recebemos R$ X» sem
+#: dizer que parte é do outro cartório. O teste confere que os dois são iguais.
+BLOCO_DE_TERCEIROS_DO_RECIBO = (
+    "<p><b>VALORES DE TERCEIROS — não são emolumentos nem fundos desta serventia</b></p>\n"
+    "<p>Recebidos para repasse ao cartório que emitiu a certidão materializada nesta "
+    "serventia:</p>\n"
+    "<table border=\"1\" cols=\"5.4cm,2.6cm,2.4cm,2.2cm,2.0cm,2.2cm\">\n"
+    "<tr><td><b>Cartório de origem</b></td><td><b>Pedido CRC</b></td>"
+    "<td><b>Emolumentos de lá</b></td><td><b>Fundos de lá</b></td>"
+    "<td><b>Taxa CRC</b></td><td><b>Total</b></td></tr>\n"
+    "{% for t in terceiros %}<tr><td>{{ t.cartorio }}</td><td>{{ t.pedido_crc }}</td>"
+    "<td>{{ t.emolumentos_origem }}</td><td>{{ t.fundos_origem }}</td>"
+    "<td>{{ t.taxa_crc }}</td><td>{{ t.valor }}</td></tr>\n{% endfor %}"
+    "</table>\n"
+    "<p><b>Desta serventia:</b> R$ {{ total_serventia }}. <b>De terceiros, a repassar:</b> "
+    "R$ {{ total_terceiros }}.</p>\n")
+
+
 def html_do_recibo(con, r, *, settings, emitido_por, funcao, data_extenso,
                    agora, acompanhamento=None) -> str:
     """O recibo como ele sai no papel, em HTML. SÓ LÊ.
@@ -111,6 +133,9 @@ def html_do_recibo(con, r, *, settings, emitido_por, funcao, data_extenso,
     html = env.from_string(modelo).render(
         r=dict(r), itens=dados.get("itens", []), fundos=fundos,
         tem_fundos=tem_fundos, lancamento=dados.get("lancamento"),
+        terceiros=dados.get("terceiros") or [],
+        total_serventia=dados.get("total_serventia"),
+        total_terceiros=dados.get("total_terceiros"),
         # a discriminação do recibo do depósito prévio é ORÇAMENTO (art. 197)
         orcamento=bool(dados.get("orcamento")),
         sv=dados_serventia(settings),
@@ -120,6 +145,13 @@ def html_do_recibo(con, r, *, settings, emitido_por, funcao, data_extenso,
         data_extenso=data_extenso,
         emitido_por=emitido_por, funcao=funcao, agora=agora,
         acompanhamento=acompanhamento)
+    # O MODELO AJUSTADO PELA CASA ANTES DO F010 não conhece o bloco do valor
+    # de terceiro. Sem ele, o papel diria «recebemos R$ X» sem dizer que parte
+    # é do outro cartório — então o bloco vai no fim, do jeito do padrão.
+    if dados.get("terceiros") and "terceiros" not in modelo:
+        html += env.from_string(BLOCO_DE_TERCEIROS_DO_RECIBO).render(
+            terceiros=dados["terceiros"], total_serventia=dados.get("total_serventia"),
+            total_terceiros=dados.get("total_terceiros"))
     # O AJUSTE DA CASA SAI SEM O QUE EXECUTA (22/10/2026, A7); o padrão,
     # como saía.
     return MODELOS.sem_o_que_executa(modelo, html)
@@ -385,6 +417,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
             if acao == "lancar":
                 natureza = request.form.get("natureza") or "RECEBIMENTO"
+                # O VALOR DE TERCEIRO NÃO SE DIGITA AQUI (F010, 25/11/2026): ele
+                # nasce na tela da materialização, ligado ao pedido da CRC e ao
+                # cartório de origem. Avulso, seria dinheiro alheio sem dono no caixa.
+                if natureza in NATUREZAS_SO_DO_SISTEMA:
+                    flash("«Valor de terceiro» se recebe na tela da materialização "
+                          "(Registro Civil → Materializar certidão → valor do outro "
+                          "cartório), que o liga ao pedido e ao cartório de origem. "
+                          "Lançamento não feito.", "danger")
+                    return redirect(url_for("caixa"))
                 sentido = NATUREZAS.get(natureza, ("ENTRADA", ""))[0]
                 # «Outra entrada»: quem lança diz se é receita do titular
                 # (carnê-leão). Ordem do oficial, 26/10/2026.
@@ -473,6 +514,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     if not orig or orig["estornado"]:
                         flash("Lançamento não encontrado ou já estornado.", "danger")
                         return redirect(url_for("caixa"))
+                    # O VALOR DE TERCEIRO JÁ REPASSADO não se estorna (F010):
+                    # o dinheiro já está no outro cartório.
+                    recusa = RMR.recusa_ao_desfazer(con, lid)
+                    if recusa:
+                        flash(recusa, "danger")
+                        return redirect(url_for("caixa"))
                     # ESTORNO DE CAIXA JÁ FECHADO É DE DUAS PESSOAS (22/10/2026,
                     # M2) — ver `segunda_assinatura_do_estorno`.
                     if int(orig["caixa_id"] or 0) != int(aberto["id"]):
@@ -548,6 +595,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     flash("Informe um valor maior que zero.", "danger")
                     return redirect(url_for("caixa"))
                 natureza = request.form.get("natureza") or l["natureza"]
+                # O VALOR DE TERCEIRO NÃO SE EDITA NEM SE CRIA POR EDIÇÃO (F010):
+                # o valor e o pedido moram no registro do pedido da CRC, e mudar só o
+                # lançamento deixaria os dois dizendo coisas diferentes.
+                if (l["natureza"] in NATUREZAS_SO_DO_SISTEMA
+                        or natureza in NATUREZAS_SO_DO_SISTEMA):
+                    flash("Valor de terceiro não se altera no caixa: estorne-o e "
+                          "receba de novo na tela da materialização. Alteração não "
+                          "feita.", "danger")
+                    return redirect(url_for("caixa"))
                 receita_titular = None
                 if natureza == "OUTRA_ENTRADA":
                     anterior = dict(l).get("receita_do_titular")
@@ -604,6 +660,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 if l["recibo_id"]:
                     flash("Este lançamento tem recibo emitido. Cancele o recibo antes — "
                           "o cliente tem uma via na mão.", "danger")
+                    return redirect(url_for("caixa"))
+                with db.connect() as con:
+                    recusa = RMR.recusa_ao_desfazer(con, lid)
+                if recusa:
+                    flash(recusa, "danger")
                     return redirect(url_for("caixa"))
                 with db.transaction() as con:
                     banco(con).escrever(
@@ -681,6 +742,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                a_conferir=a_conferir, operador=operador,
                                caixa_geral=caixa_geral, resumo_geral=resumo_geral,
                                FORMAS=FORMAS_PAGAMENTO, NATUREZAS=NATUREZAS,
+                               NATUREZAS_DO_BALCAO=NATUREZAS_DO_BALCAO,
+                               NATUREZAS_SO_DO_SISTEMA=NATUREZAS_SO_DO_SISTEMA,
                                reais=reais, hoje=date.today().isoformat())
 
     # -------------------------------------------------- depósito prévio
@@ -1184,6 +1247,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                            "converte em emolumentos quando o ato for praticado "
                            "(art. 202), e o que sobrar é devolvido.")
         pagador = (l["pagador"] or l["interessado"] or "").strip() or "Não informado"
+        # O RECIBO DO VALOR DE TERCEIRO SOZINHO (F010): sem emolumento nem
+        # fundo desta casa, e com o bloco de terceiro — é a prova do que o
+        # cliente pagou para o outro cartório.
+        terceiros = []
+        if l["natureza"] in NATUREZAS_SO_DO_SISTEMA:
+            with db.connect() as con:
+                registro = RMR.do_lancamento(con, lancamento_id)
+            if registro:
+                terceiros = [RMR.bloco_do_recibo(registro)]
+                itens = []
+                fundos = {f: "0,00" for f in fundos}
 
         with db.transaction() as con:
             bd = banco(con)
@@ -1211,7 +1285,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                  "documento": l["pagador_documento"] or l["interessado_documento"],
                  "telefone": l["telefone"],
                  "lancamento": f"{l['numero']}/{l['ano']}" if l["numero"] else None,
-                 **({"orcamento": True} if orcamento else {})},
+                 **({"orcamento": True} if orcamento else {}),
+                 **({"terceiros": terceiros, "total_serventia": "0,00",
+                     "total_terceiros": l["valor"]} if terceiros else {})},
                 ensure_ascii=False)
             h = hash_recibo(numero, ano, pagador, l["valor"],
                             date.today().isoformat(), corpo)
@@ -1301,7 +1377,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         (pt["depositante_documento"] for pt in partes
                          if pt["depositante_documento"]), None)
                     i["_partes"] = partes
-        if not itens:
+        # O VALOR DE TERCEIRO VAI NO MESMO PAPEL, EM BLOCO PRÓPRIO (F010,
+        # 25/11/2026): o cliente da materialização paga o 14.5.1 desta casa e a
+        # certidão do outro cartório, e leva a prova do total — com o que é de
+        # terceiro dito com todas as letras, fora dos emolumentos e dos fundos.
+        with db.connect() as con:
+            terceiros = RMR.terceiros_para_o_recibo(con, protocolo_id)
+        if not itens and not terceiros:
             flash("Nenhum serviço deste protocolo entrou no caixa ainda. "
                   "Recibo é prova de pagamento — quite os itens primeiro.",
                   "warning")
@@ -1309,12 +1391,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                                     protocolo_id=protocolo_id))
 
         ano = date.today().year
-        total = sum(centavos(i["valor_total"]) for i in itens)
+        total_serventia = sum(centavos(i["valor_total"]) for i in itens)
+        total_terceiros = sum(centavos(t["valor"]) for t in terceiros)
+        total = total_serventia + total_terceiros
         fundos = {f: reais(sum(centavos(i[f]) for i in itens))
                   for f in ("emolumentos", "ferc", "fadep", "femp", "ferrfis")}
-        pagador = ((itens[0]["pagador"] or p["interessado"] or "").strip()
+        primeiro = itens[0] if itens else {}
+        pagador = ((primeiro.get("pagador") or p["interessado"] or "").strip()
                    or "Não informado")
-        documento = (itens[0]["pagador_documento"]
+        documento = (primeiro.get("pagador_documento")
                      or p["interessado_documento"])
         # TODAS AS FORMAS, COM O VALOR DE CADA UMA (F005): «Dinheiro R$ 400,00;
         # Cartão (Parcela Express) R$ 600,00». A forma do primeiro item só
@@ -1328,6 +1413,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             else:
                 for pt in i.pop("_partes"):
                     por_forma[pt["rotulo"]] = por_forma.get(pt["rotulo"], 0) + pt["valor"]
+        for t in terceiros:
+            rotulo = FORMAS_PAGAMENTO.get(t["forma_pagamento"] or "", "")
+            por_forma[rotulo] = por_forma.get(rotulo, 0) + centavos(t["valor"])
         if len(por_forma) == 1:
             forma = next(iter(por_forma))
         else:
@@ -1343,7 +1431,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             com_recibo = {r["id"] for r in bd.ler(
                 """SELECT id, recibo_id FROM cx_lancamentos
                     WHERE id = ANY(%s) ORDER BY id FOR UPDATE""",
-                ([int(i["lancamento_id"]) for i in itens if i["lancamento_id"]],))
+                ([int(i["lancamento_id"]) for i in itens if i["lancamento_id"]]
+                 + [t["lancamento_id"] for t in terceiros],))
                 if r["recibo_id"]}
             # O item pago pelo depósito leva a marca nele mesmo (não tem
             # lançamento), conferida do mesmo jeito: presa, depois da trava.
@@ -1353,6 +1442,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 ([int(i["id"]) for i in pelo_deposito],)) if r["recibo_id"]}
             ja = [i for i in itens if i["lancamento_id"] in com_recibo
                   or (not i["lancamento_id"] and i["id"] in itens_com_recibo)]
+            ja += [t for t in terceiros if t["lancamento_id"] in com_recibo]
             if ja:
                 flash(f"{len(ja)} serviço(s) deste protocolo já estão num recibo. "
                       f"Dois recibos do mesmo dinheiro é o que ninguém consegue "
@@ -1367,7 +1457,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             corpo = json.dumps(
                 {"itens": [dict(i) for i in itens], "fundos": fundos,
                  "documento": documento, "telefone": p["telefone"],
-                 "protocolo": p["numero"], "de_protocolo": True},
+                 "protocolo": p["numero"], "de_protocolo": True,
+                 **({"terceiros": terceiros,
+                     "total_serventia": reais(total_serventia),
+                     "total_terceiros": reais(total_terceiros)} if terceiros else {})},
                 ensure_ascii=False, default=str)
             h = hash_recibo(numero, ano, pagador, reais(total),
                             date.today().isoformat(), corpo)
@@ -1396,13 +1489,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 else:
                     bd.escrever("UPDATE cx_protocolo_atos SET recibo_id=%s WHERE id=%s",
                                 (recibo_id, i["id"]))
+            for t in terceiros:
+                bd.escrever("UPDATE cx_lancamentos SET recibo_id=%s WHERE id=%s",
+                            (recibo_id, t["lancamento_id"]))
             # O código de acompanhamento nasce no POST, como no recibo do
             # lançamento — a impressão é o GET seguinte.
             ACOMP.codigo_para_o_papel(con, protocolo_id)
 
         audit("RECIBO_DO_PROTOCOLO", "RECIBO", recibo_id,
               {"numero": numero, "ano": ano, "protocolo": p["numero"],
-               "itens": len(itens), "valor": reais(total)})
+               "itens": len(itens), "valor": reais(total),
+               "terceiros": reais(total_terceiros)})
         _avisar_nfse_do_recibo(recibo_id, numero, ano)
         return redirect(url_for("caixa_recibo_odt", recibo_id=recibo_id))
 
@@ -1905,7 +2002,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             with db.connect() as con:
                 return CB.instituicao_ligada(CB.configuracao(con))
 
+        with db.connect() as con:
+            terceiros_do_protocolo = RMR.do_protocolo(con, protocolo_id)
         return render_template("caixa_protocolo.html", p=p, atos=atos,
+                               terceiros_do_protocolo=terceiros_do_protocolo,
+                               terceiros_sem_recibo=[t for t in terceiros_do_protocolo
+                                                     if t["lancamento_vivo"]
+                                                     and not t.get("recibo_id")
+                                                     and t["situacao"] in RMR.VIVAS],
                                abas_da_ficha=abas_da_ficha,
                                quitados=quitados,
                                servico_desde_sugerido=CXP.data_do_servico_sugerida(

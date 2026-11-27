@@ -55,12 +55,25 @@ NATUREZAS = {
     "DEPOSITO_PREVIO": ("ENTRADA", "Depósito prévio"),
     "COMPLEMENTO": ("ENTRADA", "Complemento de emolumentos"),
     "OUTRA_ENTRADA": ("ENTRADA", "Outra entrada"),
+    # O VALOR DE TERCEIRO (F010, 25/11/2026): o dinheiro do outro cartório na
+    # materialização pedida pela CRC. Entra na gaveta e forma o saldo de
+    # repasse da CRC — não é receita do titular, nem base do ISS, nem receita
+    # do Livro Diário. Só nasce pela tela da materialização
+    # (`rc_materializacao_repasse`), que o liga ao protocolo, ao pedido e ao
+    # cartório de origem: digitado no lançamento avulso, ficaria sem nada disso.
+    "VALOR_DE_TERCEIRO": ("ENTRADA", "Valor de terceiro (certidão de outro cartório, pela CRC)"),
     "DEVOLUCAO": ("SAIDA", "Devolução ao cliente"),
     "SANGRIA": ("SAIDA", "Sangria / retirada"),
     "DESPESA": ("SAIDA", "Despesa da serventia"),
     "OUTRA_SAIDA": ("SAIDA", "Outra saída"),
     "ESTORNO": ("ESTORNO", "Estorno de lançamento"),
 }
+
+#: As naturezas que o lançamento avulso do balcão NÃO oferece: nascem só pelo
+#: caminho que as liga ao que elas são (ver `VALOR_DE_TERCEIRO` acima).
+NATUREZAS_SO_DO_SISTEMA = frozenset({"VALOR_DE_TERCEIRO"})
+NATUREZAS_DO_BALCAO = {k: v for k, v in NATUREZAS.items()
+                       if k not in NATUREZAS_SO_DO_SISTEMA}
 
 # Fundos do selo do TJMA, na ordem em que aparecem no proprio selo.
 FUNDOS = ("emolumentos", "ferc", "fadep", "femp", "ferrfis", "fermoju", "outros")

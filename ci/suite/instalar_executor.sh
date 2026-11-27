@@ -29,7 +29,9 @@ EXECUTOR="$CASA/actions-runner"
 TRABALHO="$EXECUTOR/_work"
 BREW="/opt/homebrew/bin"
 CPUS="${CG_CI_CPUS:-14}"
-MEMORIA="${CG_CI_MEMORIA_GB:-18}"
+# 12 GB (27/11/2026; eram 18): a suíte usa uns 9 GB, e o resto fica para a IA local.
+MEMORIA="${CG_CI_MEMORIA_GB:-12}"
+MEMORIA_CONTEINER="${CG_SUITE_MEMORIA:-$((MEMORIA - 2))g}"
 
 [ "$(id -u)" -eq 0 ] || { echo "Rode com sudo."; exit 1; }
 QUEM="${SUDO_USER:?rode com sudo a partir do seu usuário}"
@@ -106,6 +108,7 @@ cat > /Library/LaunchDaemons/br.cartoriogestao.ci-colima.plist <<EOF
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
+  <key>ExitTimeOut</key><integer>180</integer>
   <key>StandardOutPath</key><string>$CASA/colima.log</string>
   <key>StandardErrorPath</key><string>$CASA/colima.log</string>
 </dict></plist>
@@ -122,6 +125,7 @@ cat > /Library/LaunchDaemons/br.cartoriogestao.ci-executor.plist <<EOF
     <key>PATH</key><string>$BREW:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>CG_DOCKER_CONTEXTO</key><string>colima-ci</string>
     <key>CG_SUITE_PROCESSOS</key><string>$CPUS</string>
+    <key>CG_SUITE_MEMORIA</key><string>$MEMORIA_CONTEINER</string>
   </dict>
   <key>ProgramArguments</key><array><string>$EXECUTOR/run.sh</string></array>
   <key>RunAtLoad</key><true/>
@@ -133,6 +137,7 @@ EOF
 chmod 644 /Library/LaunchDaemons/br.cartoriogestao.ci-*.plist
 for s in ci-colima ci-executor; do
   launchctl bootout system "/Library/LaunchDaemons/br.cartoriogestao.$s.plist" 2>/dev/null || true
+  launchctl enable "system/br.cartoriogestao.$s"   # a chave da suíte pode tê-lo desligado
   launchctl bootstrap system "/Library/LaunchDaemons/br.cartoriogestao.$s.plist"
 done
 

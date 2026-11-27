@@ -77,6 +77,60 @@ enableOwnership`) exige conferir antes o acesso da reserva aos próprios arquivo
 - **Mudança de dependência ou da CI:** revise e ponha `ci-revisado`.
 - Cada PR na fila leva o tempo de uma suíte: cerca de 20 minutos no contêiner (medido em 10/11/2026: 18.617 testes em 19 min 10 s, o mesmo resultado da rodada direta no Mac).
 
+## A chave da suíte (suíte × IA local)
+
+O servidor reserva também roda a IA local (Ollama), e as duas disputam a memória: a VM da
+suíte segura o que já usou enquanto estiver ligada. A **chave da suíte** reparte o Mac por
+horário:
+
+- **Suíte**: a VM e o executor ligados, como sempre foi;
+- **IA**: a suíte em andamento **termina** (nunca é derrubada), o executor sai do ar e a VM
+  desliga — a memória volta toda para o Mac. As suítes pedidas nesse meio-tempo **esperam na
+  fila do GitHub** e rodam quando a chave volta (o GitHub desiste de uma rodada parada há
+  24 h; nenhuma janela da IA deve passar disso).
+
+O **app da barra de menus** (Chave da Suíte) mostra a posição, a memória da VM e quantas
+suítes esperam, e muda a chave: **Automático** (segue a agenda), **Suíte sempre**, **IA
+sempre**, **IA agora por 1–8 h**, **Suíte agora por 1–8 h** e **Agenda da IA…** (as
+janelas, por dia e hora). Padrão: IA de segunda a sexta, 8h–18h; suíte no resto.
+Com a suíte em andamento, **Interromper a suíte agora…** cancela a rodada no GitHub e a põe
+de volta na fila assim que o executor sai do ar; ela roda do começo quando a chave voltar.
+
+| Peça | Onde | O que faz |
+|---|---|---|
+| `ci/chave/controlador.py` | LaunchDaemon `br.cartoriogestao.ci-chave` (root) | a cada 5 s lê o pedido, decide a posição e liga/desliga os dois serviços (`launchctl enable/disable` + `bootstrap/bootout`: o desligado não volta nem depois de reiniciar o Mac); publica o estado |
+| `/Users/Shared/CartorioGestao/chave-da-suite/pedido.json` | pasta do proprietário | o que o app pede: `modo` (`auto`/`suite`/`ia`), `ate` (prazo) e `agenda` |
+| `/Library/Application Support/CartorioGestao/chave-da-suite/estado.json` | pasta do root | o que o controlador vê e fez; o app lê daqui |
+| `ci/chave/ChaveDaSuite.swift` | `~/Applications/ChaveDaSuite.app`, abre no login | o app; sem privilégio nenhum, só grava o pedido e usa o `gh` do proprietário |
+
+Segurança: o controlador roda como root e **não executa nada do pedido** — lê três campos,
+confere cada um (modo de uma lista, horas `HH:MM`, dias 0–6) e ignora o resto; só aceita o
+arquivo se for do dono da pasta, numa pasta que ninguém mais grava, sem seguir link. O
+próprio controlador fica numa pasta do root, não na do repositório.
+
+O teto da VM caiu de 18 para **12 GB** (o contêiner, de 16 para 10 GB) em 27/11/2026: a
+suíte usa uns 9 GB medidos no Mac, com 14 processos, e o tempo dela não muda. Se uma suíte
+morrer por memória (código 137 no relatório), volte com
+`sudo CG_CI_MEMORIA_GB=18 bash ci/chave/instalar_chave.sh`.
+
+Instalar (uma vez):
+
+```bash
+sudo bash ci/chave/instalar_chave.sh
+```
+
+```bash
+bash ci/chave/montar_app.sh
+```
+
+Ver a decisão sem mexer em nada: `/usr/bin/python3 ci/chave/controlador.py --simular`.
+O registro das trocas fica em `/Library/Logs/CartorioGestao/chave-da-suite.log`.
+
+Desfazer: `sudo launchctl bootout system/br.cartoriogestao.ci-chave`, apagar o plist dele, e
+religar os dois serviços (`sudo launchctl enable system/br.cartoriogestao.ci-colima`, idem
+`ci-executor`, e `bootstrap` de cada um). O app: apagar `~/Applications/ChaveDaSuite.app` e
+`~/Library/LaunchAgents/br.com.cartoriogestao.chave-da-suite.plist`.
+
 ## Instalar o executor (uma vez)
 
 ```bash
@@ -114,3 +168,6 @@ e, se quiser, apague o usuário: `sudo sysadminctl -deleteUser ci-runner`.
   do github-actions[bot], e o GitHub deixa o anti-leak de `pull_request` nele esperando aprovação
   manual; a regra do `main` olha essa rodada parada (#408, #424). Com o teste vencido, a fila
   agora só pede a suíte de novo: ela já junta o PR com o `main` atual, e a branch não muda.
+- 27/11/2026: a chave da suíte. A VM (18 GB, ligada o dia todo) tirava a memória da IA local;
+  agora ela desliga nas janelas da IA, com a suíte em andamento terminando antes, e o teto
+  caiu para 12 GB. Um app na barra de menus muda a chave e a agenda.

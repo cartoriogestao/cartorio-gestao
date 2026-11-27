@@ -123,6 +123,14 @@ def test_todos_os_prazos_sao_em_dias_uteis_menos_o_do_sigef():
     assert corridos == ["SIGEF"]
 
 
+def test_recurso_e_contrarrazoes_contam_em_dias_uteis():
+    """§ 4º: «10 (dez) dias úteis». § 5º: «10 (dez) dias» — em dias úteis por
+    decisão do titular (27/11/2026, RI021)."""
+    for chave in ("RECORRER", "CONTRARRAZOAR"):
+        assert RT.prazo(chave)["uteis"] is True
+        assert RT.prazo(chave)["dias"] == 10
+
+
 def test_o_prazo_do_sigef_e_da_serventia_e_de_trinta_dias():
     """É a obrigação que nasce DEPOIS do ato, quando o cliente já foi embora —
     e é o tipo de prazo que se perde."""

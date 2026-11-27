@@ -22,7 +22,9 @@ O QUE ESTE MÓDULO NÃO FAZ, E CADA UM TEM MOTIVO
 
     **Não calcula data.** Contar dia útil é do núcleo, que já conhece os
     feriados desta comarca. Uma segunda contagem divergiria da prenotação e da
-    do edital do usucapião.
+    do edital do usucapião. Quando o prazo nasce de um ato registrado aqui (o
+    recurso, as contrarrazões e a transação do art. 600), `prazo_ate` pede a
+    data ao núcleo — `ri_schema.soma_dias_uteis` com os feriados da casa.
 """
 from __future__ import annotations
 
@@ -50,8 +52,9 @@ FASES: tuple[tuple[str, str], ...] = (
     ("NOTIFICACAO", "Notificação dos confrontantes (art. 598)"),
     ("PRAZO", "Aguardando o prazo de impugnação (15 dias úteis, art. 599)"),
     ("IMPUGNACAO", "Impugnação oferecida (art. 600)"),
-    ("MEDIACAO", "Mediação ou conciliação (art. 600, § 2º)"),
-    ("AO_JUIZ", "Remetido ao Juiz (art. 601)"),
+    ("MEDIACAO", "Mediação ou conciliação (15 dias úteis, art. 600, § 2º)"),
+    ("AO_JUIZ", "Remetido ao Juiz corregedor permanente (art. 600, §§ 3º e "
+                "5º; art. 601)"),
     ("DECISAO", "Pronto para a decisão do oficial (art. 604)"),
     ("AVERBACAO", "Decidido procedente — aguardando a averbação"),
     ("SIGEF", "Averbado — requerer o registro no SIGEF (30 dias, art. 620 § 2º)"),
@@ -441,6 +444,10 @@ def excluir_confrontante(con, processo_id: int, confrontante_id: int, *,
     if not linha:
         raise RetificacaoError("Não achei esse confrontante neste processo.")
     trava = _trava_de_exclusao(linha)
+    if not trava and banco(con).um(
+            "SELECT 1 FROM rt_impugnacoes WHERE confrontante_id = %s",
+            (int(confrontante_id),)):
+        trava = "a impugnação dele tem andamento"
     if trava:
         raise RetificacaoError(
             f"{linha['nome']} não se exclui: {trava}. O prazo e o papel "
@@ -705,6 +712,765 @@ def situacao_dos_prazos(con: sqlite3.Connection, processo_id: int, *,
     }
 
 
+# ------------------------------------------------ as impugnações (art. 600)
+#
+# O QUE ESTA PARTE FAZ: guarda o caminho que o OFICIAL deu a cada impugnação
+# e conta, pelo núcleo, os prazos que nascem disso. O que ela NÃO faz é dizer
+# se a impugnação procede: «considerada a impugnação infundada» (§ 4º) é juízo
+# do oficial, e o texto dele é obrigatório. As hipóteses do § 6º aparecem como
+# apoio, para ele marcar a que fundamenta a decisão que ELE escreveu.
+
+REQUERENTE = "REQUERENTE"
+PROFISSIONAL = "PROFISSIONAL"
+
+#: Quem pode pedir a transação amigável (art. 600, § 2º).
+QUEM_PEDE_TRANSACAO = {
+    REQUERENTE: "o requerente",
+    PROFISSIONAL: "o profissional que assinou a planta e o memorial",
+}
+
+SEM_RECURSO = "SEM_RECURSO"
+ACORDO = "ACORDO"
+AO_JUIZ = "AO_JUIZ"
+JUIZ_DECIDIU = "JUIZ_DECIDIU"
+
+NOME_DO_DESFECHO = {
+    SEM_RECURSO: "Rejeitada de plano, sem recurso no prazo — o procedimento "
+                 "prossegue (art. 600, § 4º)",
+    ACORDO: "Transação formalizada (art. 600, § 2º)",
+    AO_JUIZ: "Remetida ao Juiz corregedor permanente (art. 601)",
+    JUIZ_DECIDIU: "O Juiz corregedor permanente decidiu",
+}
+
+#: Os desfechos depois dos quais o procedimento segue para a decisão do art.
+#: 604. AO_JUIZ não está aqui: com os autos no Juiz, não se decide.
+DESFECHOS_QUE_LIBERAM = (SEM_RECURSO, ACORDO, JUIZ_DECIDIU)
+
+_COLUNAS_DA_IMPUGNACAO = (
+    "rejeitada_em", "rejeitada_por", "rejeicao_hipotese", "rejeicao_fundamento",
+    "rejeicao_intimada_em", "recurso_prazo_ate", "recurso_em", "recurso_razoes",
+    "contrarrazoes_intimadas_em", "contrarrazoes_prazo_ate", "contrarrazoes_em",
+    "contrarrazoes", "transacao_pedida_em", "transacao_pedida_por",
+    "transacao_prazo_ate", "transacao_prorrogada_em", "acordo", "remetida_em",
+    "remetida_por", "remessa_paragrafo", "remessa_informacoes",
+    "juiz_decidiu_em", "juiz_decisao", "desfecho", "desfecho_em")
+
+
+def prazo_ate(con, inicio: str, chave: str) -> str:
+    """A data-limite do prazo `chave` da norma, contado de `inicio`. Só lê.
+
+    **QUEM CONTA É O NÚCLEO** — `ri_schema.soma_dias_uteis`, com os feriados
+    locais de Configurações (`rotina_da_casa.feriados_da_casa`), a mesma conta
+    da prenotação. Só prazo em dias úteis: o corrido (o do SIGEF) este módulo
+    não conta.
+    """
+    from ri_schema import soma_dias_uteis
+    from rotina_da_casa import feriados_da_casa
+    regra = NORMA.prazo(chave)
+    if not regra["uteis"]:
+        raise ValueError(f"O prazo {chave} é em dias corridos e não se conta "
+                         "aqui.")
+    dia = _data(inicio, "o início do prazo")
+    return soma_dias_uteis(dia, int(regra["dias"]),
+                           feriados_da_casa(con)).isoformat()
+
+
+def _data(valor: Any, campo: str):
+    from datetime import date
+    try:
+        return date.fromisoformat(str(valor or "")[:10])
+    except ValueError:
+        raise RetificacaoError(
+            f"Informe {campo} como data (AAAA-MM-DD).") from None
+
+
+def _data_passada(valor: Any, campo: str, agora: str) -> str:
+    """A data como o balcão a informou, conferida: válida e não futura."""
+    dia = _data(valor, campo).isoformat()
+    if dia > str(agora or "")[:10]:
+        raise RetificacaoError(
+            f"{campo[0].upper()}{campo[1:]} não pode ser futura: o prazo "
+            "contaria de um dia que ainda não chegou.")
+    return dia
+
+
+def etapa_da_impugnacao(i: dict, *, hoje: str) -> str:
+    """Em que ponto do art. 600 a impugnação está. Só calcula.
+
+    ABERTA, TRANSACAO, INTIMAR_REJEICAO, PRAZO_DE_RECURSO, RECURSO_VENCIDO,
+    INTIMAR_CONTRARRAZOES, CONTRARRAZOES, ou o desfecho.
+    """
+    if i.get("desfecho"):
+        return str(i["desfecho"])
+    if i.get("rejeitada_em"):
+        if i.get("recurso_em"):
+            return ("CONTRARRAZOES" if i.get("contrarrazoes_intimadas_em")
+                    else "INTIMAR_CONTRARRAZOES")
+        if not i.get("rejeicao_intimada_em"):
+            return "INTIMAR_REJEICAO"
+        if str(i.get("recurso_prazo_ate") or "") >= str(hoje)[:10]:
+            return "PRAZO_DE_RECURSO"
+        return "RECURSO_VENCIDO"
+    if i.get("transacao_pedida_em"):
+        return "TRANSACAO"
+    return "ABERTA"
+
+
+def impugnacoes(con, processo_id: int, *, hoje: str) -> list[dict]:
+    """Cada confrontante que impugnou, com o caminho que ela tomou. Só lê.
+
+    A linha de `rt_impugnacoes` só nasce quando o oficial faz alguma coisa com
+    a impugnação; até lá ela aparece aqui como ABERTA.
+    """
+    colunas = ", ".join(f"i.{c}" for c in _COLUNAS_DA_IMPUGNACAO)
+    linhas = banco(con).ler(
+        f"""SELECT c.id AS confrontante_id, c.nome, c.papel,
+                   c.impugnacao AS alegacao, c.respondido_em,
+                   i.id AS impugnacao_id, {colunas}
+              FROM rt_confrontantes c
+              LEFT JOIN rt_impugnacoes i ON i.confrontante_id = c.id
+             WHERE c.processo_id = %s AND c.resposta = %s
+          ORDER BY c.id""", (processo_id, IMPUGNOU))
+    saida = []
+    for linha in linhas:
+        i = dict(linha)
+        i["etapa"] = etapa_da_impugnacao(i, hoje=hoje)
+        saida.append(i)
+    return saida
+
+
+def _impugnacao_para_gravar(con, processo_id: int, confrontante_id: int, *,
+                            agora: str, usuario: str | None) -> dict:
+    """A impugnação de um confrontante, PRESA até o fim da transação.
+
+    Nasce aqui, na primeira coisa que o oficial faz com ela. Recusa quem não
+    impugnou e o processo que já foi decidido — depois do art. 604, mexer na
+    impugnação reescreveria o que sustentou a decisão.
+    """
+    p = _exigir_para_gravar(con, processo_id)
+    if p["decidido_em"]:
+        raise RetificacaoError(
+            f"Este processo já foi decidido em {p['decidido_em']}; a "
+            "impugnação fica como estava quando a decisão saiu.")
+    bd = banco(con)
+    c = bd.um("""SELECT * FROM rt_confrontantes
+                  WHERE id = %s AND processo_id = %s FOR UPDATE""",
+              (int(confrontante_id), int(processo_id)))
+    if not c:
+        raise RetificacaoError("Não achei esse confrontante neste processo.")
+    if c.get("resposta") != IMPUGNOU:
+        raise RetificacaoError(
+            f"{c['nome']} não impugnou. Registre a impugnação na resposta dele "
+            "antes (art. 599).")
+    bd.escrever(
+        """INSERT INTO rt_impugnacoes (processo_id, confrontante_id, criado_em,
+               criado_por)
+           VALUES (%s,%s,%s,%s) ON CONFLICT (confrontante_id) DO NOTHING""",
+        (int(processo_id), int(confrontante_id), agora, usuario))
+    i = dict(bd.um("""SELECT * FROM rt_impugnacoes
+                       WHERE confrontante_id = %s FOR UPDATE""",
+                   (int(confrontante_id),)))
+    i["nome"] = c["nome"]
+    i["processo"] = p
+    return i
+
+
+def _gravar_impugnacao(con, impugnacao_id: int, **campos) -> None:
+    sets = ", ".join(f"{k} = %s" for k in campos)
+    banco(con).escrever(f"UPDATE rt_impugnacoes SET {sets} WHERE id = %s",
+                        (*campos.values(), int(impugnacao_id)))
+
+
+def _sem_desfecho(i: dict) -> None:
+    if i.get("desfecho"):
+        raise RetificacaoError(
+            f"A impugnação de {i['nome']} já tem desfecho: "
+            f"{NOME_DO_DESFECHO.get(i['desfecho'], i['desfecho'])}.")
+
+
+def _texto_obrigatorio(texto: str, frase: str) -> str:
+    if len(_texto(texto)) < MINIMO_DO_MOTIVO:
+        raise RetificacaoError(
+            f"{frase} Escreva ao menos {MINIMO_DO_MOTIVO} letras.")
+    return _texto(texto)
+
+
+def _acertar_fase(con, processo_id: int, *, hoje: str, agora: str) -> str:
+    """A fase do processo pelo estado das impugnações. ESCREVE se mudou.
+
+    Autos no Juiz pesam mais que mediação, mediação mais que impugnação
+    aberta; sem nenhuma aberta, o procedimento prossegue para a DECISAO —
+    o que mais faltar para decidir, `o_que_falta_para_decidir` diz.
+    """
+    p = _exigir(con, processo_id)
+    if p["decidido_em"]:
+        return p["fase"]
+    etapas = [i["etapa"] for i in impugnacoes(con, processo_id, hoje=hoje)]
+    if not etapas:
+        return p["fase"]
+    if AO_JUIZ in etapas:
+        fase = "AO_JUIZ"
+    elif "TRANSACAO" in etapas:
+        fase = "MEDIACAO"
+    elif any(e not in DESFECHOS_QUE_LIBERAM for e in etapas):
+        fase = "IMPUGNACAO"
+    else:
+        fase = "DECISAO"
+    if fase != p["fase"]:
+        banco(con).escrever(
+            "UPDATE rt_processos SET fase = %s, atualizado_em = %s WHERE id = %s",
+            (fase, agora, int(processo_id)))
+    return fase
+
+
+def rejeitar_impugnacao(con, processo_id: int, confrontante_id: int, *,
+                        hipotese: str, fundamento: str, agora: str,
+                        usuario: str | None, intimado_em: str = "") -> dict:
+    """Grava a decisão DO OFICIAL que rejeita de plano a impugnação. ESCREVE.
+
+    Art. 600, § 4º: «considerada a impugnação infundada, o oficial de registro
+    deverá rejeitá-la, de plano, por decisão fundamentada». O sistema não
+    considera nada: guarda o fundamento que o oficial escreveu, a hipótese do
+    § 6º que ele marcou como apoio, quem decidiu e quando.
+
+    Com `intimado_em`, registra também a intimação do impugnante, de onde os
+    10 dias úteis do recurso contam.
+    """
+    i = _impugnacao_para_gravar(con, processo_id, confrontante_id,
+                                agora=agora, usuario=usuario)
+    _sem_desfecho(i)
+    if i.get("rejeitada_em"):
+        raise RetificacaoError(
+            f"A impugnação de {i['nome']} já foi rejeitada em "
+            f"{i['rejeitada_em']}, por {i['rejeitada_por']}.")
+    if not _texto(usuario):
+        raise RetificacaoError(
+            "A rejeição de plano é decisão do oficial, e precisa de quem a "
+            "tomou.")
+    inciso = _texto(hipotese).upper()
+    if inciso not in NORMA.HIPOTESE_POR_INCISO:
+        raise RetificacaoError(
+            "Marque a hipótese do art. 600, § 6º que fundamenta a sua decisão: "
+            + "; ".join(f"{h['inciso']} — {h['o_que']}"
+                        for h in NORMA.HIPOTESES_DE_IMPUGNACAO_INFUNDADA)
+            + ".")
+    texto = _texto_obrigatorio(
+        fundamento,
+        "O art. 600, § 4º pede decisão FUNDAMENTADA. A hipótese marcada é "
+        "apoio; o fundamento é o seu texto.")
+    _gravar_impugnacao(con, i["id"], rejeitada_em=agora,
+                       rejeitada_por=_texto(usuario),
+                       rejeicao_hipotese=inciso, rejeicao_fundamento=texto)
+    hip = NORMA.HIPOTESE_POR_INCISO[inciso]
+    _anotar(con, processo_id, tipo="IMPUGNACAO_REJEITADA", quando=agora,
+            quem=usuario, confrontante_id=confrontante_id,
+            artigo="art. 600, § 4º",
+            o_que=(f"Impugnação de {i['nome']} rejeitada de plano pelo "
+                   f"oficial ({_texto(usuario)}), com apoio no {hip['artigo']} "
+                   f"— {hip['o_que']}. Fundamento: {texto}"))
+    saida = {"rejeitada_em": agora}
+    if _texto(intimado_em):
+        saida.update(intimar_da_rejeicao(
+            con, processo_id, confrontante_id, intimado_em=intimado_em,
+            agora=agora, usuario=usuario))
+    else:
+        _acertar_fase(con, processo_id, hoje=agora[:10], agora=agora)
+    return saida
+
+
+def intimar_da_rejeicao(con, processo_id: int, confrontante_id: int, *,
+                        intimado_em: str, agora: str,
+                        usuario: str | None = None) -> dict:
+    """Registra a intimação do impugnante da rejeição. ESCREVE.
+
+    É dela que contam os 10 dias úteis do recurso (art. 600, § 4º), e quem os
+    conta é o núcleo (`prazo_ate`).
+    """
+    i = _impugnacao_para_gravar(con, processo_id, confrontante_id,
+                                agora=agora, usuario=usuario)
+    _sem_desfecho(i)
+    if not i.get("rejeitada_em"):
+        raise RetificacaoError(
+            "Só se intima da rejeição a impugnação que o oficial rejeitou de "
+            "plano (art. 600, § 4º).")
+    if i.get("rejeicao_intimada_em"):
+        raise RetificacaoError(
+            f"{i['nome']} já foi intimado da rejeição em "
+            f"{i['rejeicao_intimada_em']}. Uma segunda intimação recomeçaria "
+            "o prazo do recurso.")
+    dia = _data_passada(intimado_em, "a data da intimação", agora)
+    if dia < str(i["rejeitada_em"])[:10]:
+        raise RetificacaoError(
+            "A intimação não pode ser anterior à rejeição, que foi em "
+            f"{str(i['rejeitada_em'])[:10]}.")
+    limite = prazo_ate(con, dia, "RECORRER")
+    _gravar_impugnacao(con, i["id"], rejeicao_intimada_em=dia,
+                       recurso_prazo_ate=limite)
+    _anotar(con, processo_id, tipo="IMPUGNACAO_INTIMADA", quando=agora,
+            quem=usuario, confrontante_id=confrontante_id,
+            artigo="art. 600, § 4º",
+            o_que=(f"{i['nome']} intimado da rejeição em {dia}; prazo de "
+                   f"recurso até {limite} (10 dias úteis)."))
+    _acertar_fase(con, processo_id, hoje=agora[:10], agora=agora)
+    return {"recurso_prazo_ate": limite}
+
+
+def registrar_recurso(con, processo_id: int, confrontante_id: int, *,
+                      em: str, razoes: str, agora: str,
+                      usuario: str | None = None) -> dict:
+    """Registra o recurso do impugnante contra a rejeição. ESCREVE.
+
+    O recurso cabe nos 10 dias úteis da intimação (§ 4º); depois disso, a
+    norma diz que o procedimento prossegue, e a recusa diz isso.
+    """
+    i = _impugnacao_para_gravar(con, processo_id, confrontante_id,
+                                agora=agora, usuario=usuario)
+    _sem_desfecho(i)
+    if not i.get("rejeicao_intimada_em"):
+        raise RetificacaoError(
+            "O prazo do recurso conta da intimação do impugnante (art. 600, "
+            "§ 4º). Registre a intimação da rejeição antes.")
+    if i.get("recurso_em"):
+        raise RetificacaoError(
+            f"O recurso de {i['nome']} já foi registrado em {i['recurso_em']}.")
+    dia = _data_passada(em, "a data do recurso", agora)
+    if dia > str(i["recurso_prazo_ate"]):
+        raise RetificacaoError(
+            f"O prazo de recurso de {i['nome']} venceu em "
+            f"{i['recurso_prazo_ate']} (10 dias úteis da intimação, art. 600, "
+            "§ 4º). Sem recurso no prazo, o procedimento prossegue.")
+    texto = _texto_obrigatorio(
+        razoes, "O § 5º fala nas razões do impugnante: escreva o que ele "
+                "alegou no recurso.")
+    _gravar_impugnacao(con, i["id"], recurso_em=dia, recurso_razoes=texto)
+    _anotar(con, processo_id, tipo="IMPUGNACAO_RECURSO", quando=agora,
+            quem=usuario, confrontante_id=confrontante_id,
+            artigo="art. 600, § 5º",
+            o_que=f"{i['nome']} recorreu da rejeição em {dia}. Razões: {texto}")
+    _acertar_fase(con, processo_id, hoje=agora[:10], agora=agora)
+    return {"recurso_em": dia}
+
+
+def intimar_para_contrarrazoes(con, processo_id: int, confrontante_id: int, *,
+                               intimado_em: str, agora: str,
+                               usuario: str | None = None) -> dict:
+    """Registra a intimação do interessado para as contrarrazões. ESCREVE.
+
+    Art. 600, § 5º: «no prazo de 10 (dez) dias», contados em dias úteis por
+    decisão do titular (27/11/2026) — `rt_tjma`, prazo CONTRARRAZOAR.
+    """
+    i = _impugnacao_para_gravar(con, processo_id, confrontante_id,
+                                agora=agora, usuario=usuario)
+    _sem_desfecho(i)
+    if not i.get("recurso_em"):
+        raise RetificacaoError(
+            "Só há contrarrazões depois do recurso do impugnante (art. 600, "
+            "§ 5º).")
+    if i.get("contrarrazoes_intimadas_em"):
+        raise RetificacaoError(
+            "O interessado já foi intimado para as contrarrazões em "
+            f"{i['contrarrazoes_intimadas_em']}.")
+    dia = _data_passada(intimado_em, "a data da intimação", agora)
+    if dia < str(i["recurso_em"])[:10]:
+        raise RetificacaoError(
+            "A intimação para contrarrazões não pode ser anterior ao recurso, "
+            f"que foi em {i['recurso_em']}.")
+    limite = prazo_ate(con, dia, "CONTRARRAZOAR")
+    _gravar_impugnacao(con, i["id"], contrarrazoes_intimadas_em=dia,
+                       contrarrazoes_prazo_ate=limite)
+    _anotar(con, processo_id, tipo="IMPUGNACAO_CONTRARRAZOES", quando=agora,
+            quem=usuario, confrontante_id=confrontante_id,
+            artigo="art. 600, § 5º",
+            o_que=(f"Interessado intimado em {dia} para contrarrazões ao "
+                   f"recurso de {i['nome']}, até {limite} (10 dias úteis)."))
+    return {"contrarrazoes_prazo_ate": limite}
+
+
+def registrar_contrarrazoes(con, processo_id: int, confrontante_id: int, *,
+                            em: str, texto: str, agora: str,
+                            usuario: str | None = None) -> dict:
+    """Guarda as contrarrazões do interessado, se ele as apresentou. ESCREVE.
+
+    «Querendo» (§ 5º): sem contrarrazões, os autos vão ao Juiz depois do
+    prazo, e `remeter_ao_juiz` confere isso.
+    """
+    i = _impugnacao_para_gravar(con, processo_id, confrontante_id,
+                                agora=agora, usuario=usuario)
+    _sem_desfecho(i)
+    if not i.get("contrarrazoes_intimadas_em"):
+        raise RetificacaoError(
+            "Registre antes a intimação do interessado para as contrarrazões "
+            "(art. 600, § 5º).")
+    if i.get("contrarrazoes_em"):
+        raise RetificacaoError(
+            f"As contrarrazões já foram juntadas em {i['contrarrazoes_em']}.")
+    dia = _data_passada(em, "a data das contrarrazões", agora)
+    corpo = _texto_obrigatorio(texto, "Escreva o que o interessado alegou.")
+    _gravar_impugnacao(con, i["id"], contrarrazoes_em=dia, contrarrazoes=corpo)
+    _anotar(con, processo_id, tipo="IMPUGNACAO_CONTRARRAZOES", quando=agora,
+            quem=usuario, confrontante_id=confrontante_id,
+            artigo="art. 600, § 5º",
+            o_que=(f"Contrarrazões ao recurso de {i['nome']} apresentadas em "
+                   f"{dia}."))
+    return {"contrarrazoes_em": dia}
+
+
+def prosseguir_sem_recurso(con, processo_id: int, confrontante_id: int, *,
+                           hoje: str, agora: str,
+                           usuario: str | None = None) -> dict:
+    """O prazo de recurso venceu sem recurso: o procedimento prossegue. ESCREVE.
+
+    Art. 600, § 4º, parte final. Só depois do último dia do prazo — antes
+    disso, o impugnante ainda pode recorrer.
+    """
+    i = _impugnacao_para_gravar(con, processo_id, confrontante_id,
+                                agora=agora, usuario=usuario)
+    _sem_desfecho(i)
+    if not i.get("rejeicao_intimada_em"):
+        raise RetificacaoError(
+            "O prazo de recurso conta da intimação do impugnante, e ela ainda "
+            "não foi registrada (art. 600, § 4º).")
+    if i.get("recurso_em"):
+        raise RetificacaoError(
+            f"{i['nome']} recorreu em {i['recurso_em']}: os autos vão ao Juiz "
+            "depois das contrarrazões (art. 600, § 5º).")
+    if str(hoje)[:10] <= str(i["recurso_prazo_ate"]):
+        raise RetificacaoError(
+            f"O prazo de recurso de {i['nome']} corre até "
+            f"{i['recurso_prazo_ate']} (10 dias úteis, art. 600, § 4º). Até "
+            "lá, ele ainda pode recorrer.")
+    _gravar_impugnacao(con, i["id"], desfecho=SEM_RECURSO, desfecho_em=agora)
+    _anotar(con, processo_id, tipo="IMPUGNACAO_SEM_RECURSO", quando=agora,
+            quem=usuario, confrontante_id=confrontante_id,
+            artigo="art. 600, § 4º",
+            o_que=(f"O prazo de recurso de {i['nome']} venceu em "
+                   f"{i['recurso_prazo_ate']} sem recurso: o procedimento "
+                   "prossegue."))
+    return {"desfecho": SEM_RECURSO,
+            "fase": _acertar_fase(con, processo_id, hoje=hoje, agora=agora)}
+
+
+def pedir_transacao(con, processo_id: int, confrontante_id: int, *,
+                    quem_pediu: str, em: str, agora: str,
+                    usuario: str | None = None) -> dict:
+    """Abre o relógio da conciliação. ESCREVE.
+
+    Art. 600, § 2º: «manifestando-se o requerente ou o profissional pela busca
+    de transação amigável, será concedido o prazo de 15 (quinze) dias úteis»
+    para formalizá-la ou agendar a sessão.
+    """
+    i = _impugnacao_para_gravar(con, processo_id, confrontante_id,
+                                agora=agora, usuario=usuario)
+    _sem_desfecho(i)
+    quem = _texto(quem_pediu).upper()
+    if quem not in QUEM_PEDE_TRANSACAO:
+        raise RetificacaoError(
+            "A transação do § 2º é pedida pelo requerente ou pelo profissional "
+            "que assinou a planta: " + ", ".join(QUEM_PEDE_TRANSACAO) + ".")
+    if i.get("rejeitada_em"):
+        raise RetificacaoError(
+            f"A impugnação de {i['nome']} foi rejeitada de plano: o caminho "
+            "agora é o do recurso (art. 600, §§ 4º e 5º).")
+    if i.get("transacao_pedida_em"):
+        raise RetificacaoError(
+            f"A transação já foi pedida em {i['transacao_pedida_em']}; o prazo "
+            f"corre até {i['transacao_prazo_ate']}.")
+    dia = _data_passada(em, "a data do pedido", agora)
+    limite = prazo_ate(con, dia, "TRANSACAO")
+    _gravar_impugnacao(con, i["id"], transacao_pedida_em=dia,
+                       transacao_pedida_por=quem, transacao_prazo_ate=limite)
+    _anotar(con, processo_id, tipo="TRANSACAO", quando=agora, quem=usuario,
+            confrontante_id=confrontante_id, artigo="art. 600, § 2º",
+            o_que=(f"Transação amigável pedida por {QUEM_PEDE_TRANSACAO[quem]} "
+                   f"em {dia}, sobre a impugnação de {i['nome']}: 15 dias "
+                   f"úteis, até {limite}, para formalizá-la ou agendar a "
+                   "sessão."))
+    _acertar_fase(con, processo_id, hoje=agora[:10], agora=agora)
+    return {"transacao_prazo_ate": limite}
+
+
+def prorrogar_transacao(con, processo_id: int, confrontante_id: int, *,
+                        em: str, agora: str,
+                        usuario: str | None = None) -> dict:
+    """A prorrogação do § 2º — a pedido, UMA ÚNICA VEZ, por mais 15 dias úteis.
+
+    ESCREVE. Os 15 contam do fim do prazo original, e não do pedido: quem
+    pede cedo não perde os dias que ainda tinha.
+    """
+    i = _impugnacao_para_gravar(con, processo_id, confrontante_id,
+                                agora=agora, usuario=usuario)
+    _sem_desfecho(i)
+    if not i.get("transacao_pedida_em"):
+        raise RetificacaoError(
+            "Não há prazo de transação a prorrogar: ele nasce do pedido do "
+            "requerente ou do profissional (art. 600, § 2º).")
+    if i.get("transacao_prorrogada_em"):
+        raise RetificacaoError(
+            "O prazo da transação já foi prorrogado em "
+            f"{i['transacao_prorrogada_em']}, e o § 2º só admite uma "
+            "prorrogação.")
+    dia = _data_passada(em, "a data do pedido de prorrogação", agora)
+    antes = str(i["transacao_prazo_ate"])
+    limite = prazo_ate(con, antes, "TRANSACAO_PRORROGADA")
+    _gravar_impugnacao(con, i["id"], transacao_prorrogada_em=dia,
+                       transacao_prazo_ate=limite)
+    _anotar(con, processo_id, tipo="TRANSACAO", quando=agora, quem=usuario,
+            confrontante_id=confrontante_id, artigo="art. 600, § 2º",
+            o_que=(f"Prazo da transação prorrogado, a pedido de {dia}, por "
+                   f"mais 15 dias úteis: de {antes} para {limite}. Não cabe "
+                   "outra prorrogação."))
+    return {"transacao_prazo_ate": limite}
+
+
+def registrar_acordo(con, processo_id: int, confrontante_id: int, *,
+                     texto: str, agora: str,
+                     usuario: str | None = None) -> dict:
+    """A transação formalizada: a impugnação se resolve. ESCREVE."""
+    i = _impugnacao_para_gravar(con, processo_id, confrontante_id,
+                                agora=agora, usuario=usuario)
+    _sem_desfecho(i)
+    if not i.get("transacao_pedida_em"):
+        raise RetificacaoError(
+            "O acordo é o fim da transação do § 2º: registre antes quem a "
+            "pediu e quando.")
+    corpo = _texto_obrigatorio(texto, "Escreva o que as partes acordaram.")
+    _gravar_impugnacao(con, i["id"], acordo=corpo, desfecho=ACORDO,
+                       desfecho_em=agora)
+    _anotar(con, processo_id, tipo="TRANSACAO", quando=agora, quem=usuario,
+            confrontante_id=confrontante_id, artigo="art. 600, § 2º",
+            o_que=f"Transação formalizada com {i['nome']}: {corpo}")
+    return {"desfecho": ACORDO,
+            "fase": _acertar_fase(con, processo_id, hoje=agora[:10],
+                                  agora=agora)}
+
+
+def _prorrogar_a_prenotacao(con, p: dict, *, hoje: str,
+                            usuario: str | None) -> str:
+    """Art. 600, § 3º (e TJMA 452, § 3º, II): a remessa prorroga a prenotação.
+
+    ESCREVE na prenotação, pelo `ri_prenotacao_prazo` — que é quem guarda esse
+    prazo —, e devolve a frase do que aconteceu. Não recusa a remessa: os
+    autos vão ao Juiz de qualquer jeito, e o que não deu para fazer na
+    prenotação vira aviso no andamento.
+
+    A PRENOTAÇÃO VENCIDA NÃO É SUSPENSA: suspensa, nenhuma tela a conta como
+    vencida, e suspender agora esconderia um vencimento que já aconteceu.
+    """
+    import ri_prenotacao_prazo as PRAZO
+    if not p.get("prenotacao_id"):
+        return ("Este processo não tem prenotação ligada: ligue-a em "
+                "«Prenotação e protocolo» e suspenda o prazo dela na ficha da "
+                "prenotação, para que os efeitos fiquem prorrogados.")
+    bd = banco(con)
+    pre = bd.um("SELECT * FROM ri_protocolos WHERE id = %s",
+                (int(p["prenotacao_id"]),))
+    if not pre:
+        return (f"Não achei a prenotação ligada (id {p['prenotacao_id']}): "
+                "confira o vínculo do processo.")
+    numero = pre.get("numero")
+    if PRAZO.suspensa(pre):
+        motivo = PRAZO.MOTIVOS.get(pre.get("prazo_suspenso_motivo"),
+                                   pre.get("prazo_suspenso_motivo"))
+        return (f"O prazo da prenotação {numero} já está suspenso desde "
+                f"{str(pre['prazo_suspenso_desde'])[:10]} ({motivo}): os "
+                "efeitos seguem prorrogados.")
+    if pre.get("situacao") != "ABERTO":
+        return (f"A prenotação {numero} está {pre.get('situacao')}, e o prazo "
+                "dela não foi suspenso. Confira na ficha da prenotação.")
+    limite = str(pre.get("data_limite") or "")[:10]
+    if limite and limite < str(hoje)[:10]:
+        return (f"A prenotação {numero} venceu em {limite}, antes da remessa: "
+                "o sistema não a suspendeu, para não esconder o vencimento. "
+                "Confira na ficha da prenotação.")
+    try:
+        PRAZO.suspender(con, int(pre["id"]), motivo="RETIFICACAO",
+                        quem=usuario, hoje=_data(hoje, "a data de hoje"))
+    except PRAZO.PrazoError as erro:
+        return f"O prazo da prenotação {numero} não foi suspenso: {erro}"
+    return (f"O prazo da prenotação {numero} ficou suspenso a partir de "
+            f"{str(hoje)[:10]}: os efeitos seguem prorrogados enquanto os "
+            "autos estão com o Juiz. Ao voltarem, retome o prazo na ficha da "
+            "prenotação.")
+
+
+def remeter_ao_juiz(con, processo_id: int, confrontante_id: int, *,
+                    informacoes: str, hoje: str, agora: str,
+                    usuario: str | None = None) -> dict:
+    """Registra a remessa dos autos ao Juiz corregedor permanente. ESCREVE.
+
+    Dois caminhos, e o módulo não escolhe entre eles — eles saem do que o
+    oficial já fez:
+
+    - **impugnação rejeitada de plano, com recurso** (§ 5º): só depois das
+      contrarrazões, ou do prazo delas;
+    - **impugnação fundada, com a controvérsia mantida** ou impedimento
+      constatado (§ 3º).
+
+    Nos dois, a remessa é ato fundamentado com as informações dos
+    assentamentos (art. 601) — texto obrigatório — e a prenotação fica com os
+    efeitos prorrogados (§ 3º; TJMA 452, § 3º, II).
+    """
+    i = _impugnacao_para_gravar(con, processo_id, confrontante_id,
+                                agora=agora, usuario=usuario)
+    _sem_desfecho(i)
+    if i.get("rejeitada_em"):
+        if not i.get("recurso_em"):
+            raise RetificacaoError(
+                f"A impugnação de {i['nome']} foi rejeitada de plano e não há "
+                "recurso: ela só vai ao Juiz com recurso (art. 600, § 5º); "
+                "sem ele, o procedimento prossegue (§ 4º).")
+        if not i.get("contrarrazoes_intimadas_em"):
+            raise RetificacaoError(
+                "Antes da remessa, intime o interessado para as contrarrazões "
+                "(art. 600, § 5º).")
+        if not i.get("contrarrazoes_em") \
+                and str(hoje)[:10] <= str(i["contrarrazoes_prazo_ate"]):
+            raise RetificacaoError(
+                "O prazo das contrarrazões corre até "
+                f"{i['contrarrazoes_prazo_ate']} (art. 600, § 5º). Remeta "
+                "depois dele, ou quando elas vierem.")
+        paragrafo = "art. 600, § 5º"
+    else:
+        paragrafo = "art. 600, § 3º"
+    corpo = _texto_obrigatorio(
+        informacoes,
+        "A remessa é ato fundamentado, com as informações dos assentamentos "
+        "sobre o imóvel e os confinantes (art. 601).")
+    _gravar_impugnacao(con, i["id"], remetida_em=agora,
+                       remetida_por=_texto(usuario) or None,
+                       remessa_paragrafo=paragrafo, remessa_informacoes=corpo,
+                       desfecho=AO_JUIZ, desfecho_em=agora)
+    _anotar(con, processo_id, tipo="AO_JUIZ", quando=agora, quem=usuario,
+            confrontante_id=confrontante_id, artigo=f"{paragrafo}; art. 601",
+            o_que=(f"Autos remetidos ao Juiz corregedor permanente sobre a "
+                   f"impugnação de {i['nome']}. Informações: {corpo}"))
+    aviso = _prorrogar_a_prenotacao(con, i["processo"], hoje=hoje,
+                                    usuario=usuario)
+    _anotar(con, processo_id, tipo="PRENOTACAO", quando=agora, quem=usuario,
+            artigo=NORMA.PRENOTACAO_PRORROGADA_NA_REMESSA["artigo"],
+            o_que=aviso)
+    return {"desfecho": AO_JUIZ, "prenotacao": aviso,
+            "fase": _acertar_fase(con, processo_id, hoje=hoje, agora=agora)}
+
+
+def registrar_retorno_do_juiz(con, processo_id: int, confrontante_id: int, *,
+                              em: str, decisao: str, agora: str,
+                              usuario: str | None = None) -> dict:
+    """Guarda o que o Juiz corregedor permanente decidiu. ESCREVE.
+
+    Só registra: a decisão é do Juiz, e o texto que se guarda é o dele. Com
+    ela, a impugnação deixa de travar a decisão do art. 604.
+    """
+    i = _impugnacao_para_gravar(con, processo_id, confrontante_id,
+                                agora=agora, usuario=usuario)
+    if i.get("desfecho") != AO_JUIZ:
+        raise RetificacaoError(
+            f"A impugnação de {i['nome']} não foi remetida ao Juiz.")
+    dia = _data_passada(em, "a data da decisão do Juiz", agora)
+    corpo = _texto_obrigatorio(decisao, "Escreva o que o Juiz decidiu.")
+    _gravar_impugnacao(con, i["id"], juiz_decidiu_em=dia, juiz_decisao=corpo,
+                       desfecho=JUIZ_DECIDIU, desfecho_em=agora)
+    _anotar(con, processo_id, tipo="JUIZ_DECIDIU", quando=agora, quem=usuario,
+            confrontante_id=confrontante_id, artigo="art. 601",
+            o_que=(f"Retorno do Juiz corregedor permanente ({dia}) sobre a "
+                   f"impugnação de {i['nome']}: {corpo}"))
+    if i["processo"].get("prenotacao_id"):
+        _anotar(con, processo_id, tipo="AVISO", quando=agora, quem=usuario,
+                artigo="TJMA 452, § 3º",
+                o_que=("Se o prazo da prenotação foi suspenso na remessa, "
+                       "retome-o na ficha da prenotação."))
+    return {"desfecho": JUIZ_DECIDIU,
+            "fase": _acertar_fase(con, processo_id, hoje=agora[:10],
+                                  agora=agora)}
+
+
+def passos_das_impugnacoes(con, processo_id: int, *, hoje: str) -> list[dict]:
+    """O que fazer com cada impugnação, com o prazo e o artigo. Só lê."""
+    passos: list[dict] = []
+    abertas = []
+    for i in impugnacoes(con, processo_id, hoje=hoje):
+        nome, etapa = i["nome"], i["etapa"]
+        if etapa == "ABERTA":
+            abertas.append(i)
+        elif etapa == "TRANSACAO":
+            vencido = str(i["transacao_prazo_ate"]) < str(hoje)[:10]
+            prorrogavel = not i.get("transacao_prorrogada_em")
+            if vencido:
+                o_que = (f"O prazo da transação com {nome} venceu em "
+                         f"{i['transacao_prazo_ate']}: registre o acordo ou, "
+                         "mantida a controvérsia, remeta ao Juiz corregedor "
+                         "permanente.")
+            else:
+                o_que = (f"Transação com {nome}: prazo até "
+                         f"{i['transacao_prazo_ate']} para formalizá-la ou "
+                         "agendar a sessão ("
+                         + ("15 dias úteis, prorrogáveis uma única vez por "
+                            "mais 15, a pedido" if prorrogavel
+                            else "já prorrogado; não cabe outra prorrogação")
+                         + ").")
+            passos.append({"o_que": o_que, "artigo": "art. 600, § 2º",
+                           "prazo_ate": i["transacao_prazo_ate"],
+                           "urgente": vencido})
+        elif etapa == "INTIMAR_REJEICAO":
+            passos.append({
+                "o_que": f"Intimar {nome} da rejeição de plano — o prazo de "
+                         "recurso, de 10 dias úteis, conta da intimação.",
+                "artigo": "art. 600, § 4º"})
+        elif etapa == "PRAZO_DE_RECURSO":
+            passos.append({
+                "o_que": f"Prazo de recurso de {nome} até "
+                         f"{i['recurso_prazo_ate']} (10 dias úteis da "
+                         "intimação). Sem recurso, o procedimento prossegue.",
+                "artigo": "art. 600, § 4º",
+                "prazo_ate": i["recurso_prazo_ate"]})
+        elif etapa == "RECURSO_VENCIDO":
+            passos.append({
+                "o_que": f"O prazo de recurso de {nome} venceu em "
+                         f"{i['recurso_prazo_ate']}: registre que o "
+                         "procedimento prossegue.",
+                "artigo": "art. 600, § 4º",
+                "prazo_ate": i["recurso_prazo_ate"], "urgente": True})
+        elif etapa == "INTIMAR_CONTRARRAZOES":
+            passos.append({
+                "o_que": f"{nome} recorreu: intimar o interessado para, "
+                         "querendo, apresentar contrarrazões em 10 dias úteis.",
+                "artigo": "art. 600, § 5º"})
+        elif etapa == "CONTRARRAZOES":
+            if not i.get("contrarrazoes_em") \
+                    and str(i["contrarrazoes_prazo_ate"]) >= str(hoje)[:10]:
+                passos.append({
+                    "o_que": f"Contrarrazões ao recurso de {nome} até "
+                             f"{i['contrarrazoes_prazo_ate']} (10 dias úteis); "
+                             "depois, os autos vão ao Juiz corregedor "
+                             "permanente.",
+                    "artigo": "art. 600, § 5º",
+                    "prazo_ate": i["contrarrazoes_prazo_ate"]})
+            else:
+                passos.append({
+                    "o_que": f"Remeter ao Juiz corregedor permanente o recurso "
+                             f"de {nome}, com as suas informações "
+                             "complementares.",
+                    "artigo": "art. 600, § 5º; art. 601", "urgente": True})
+        elif etapa == AO_JUIZ:
+            passos.append({
+                "o_que": f"Impugnação de {nome} com o Juiz corregedor "
+                         f"permanente desde {str(i['remetida_em'])[:10]} — os "
+                         "efeitos da prenotação ficam prorrogados. Registre o "
+                         "retorno quando vier.",
+                "artigo": "art. 600, § 3º"})
+    if abertas:
+        nomes = ", ".join(i["nome"] for i in abertas)
+        passos.append({
+            "o_que": f"Ouvir o requerente e o profissional sobre "
+                     f"{len(abertas)} impugnação(ões) ({nomes}), em 5 dias "
+                     "úteis, e tentar a mediação. Se a considerar infundada, "
+                     "rejeite-a de plano por decisão fundamentada (§ 4º); "
+                     "fundada e mantida a controvérsia, remeta ao Juiz "
+                     "(§ 3º).",
+            "artigo": "art. 600"})
+    return passos
+
+
 # ------------------------------------------------------------------- decidir
 
 
@@ -730,11 +1496,22 @@ def o_que_falta_para_decidir(con: sqlite3.Connection, processo_id: int, *,
         faltas.append(
             f"{len(prazos['no_prazo'])} confrontante(s) ainda dentro do prazo "
             "de impugnação (art. 599).")
-    if prazos["impugnaram"]:
+    #  A IMPUGNACAO SO DEIXA DE TRAVAR COM DESFECHO: rejeitada sem recurso no
+    #  prazo (§ 4º), transação formalizada (§ 2º) ou o retorno do Juiz. Com os
+    #  autos no Juiz, não se decide.
+    sem_desfecho = [i for i in impugnacoes(con, processo_id, hoje=hoje)
+                    if i["etapa"] not in DESFECHOS_QUE_LIBERAM]
+    no_juiz = [i for i in sem_desfecho if i["etapa"] == AO_JUIZ]
+    if no_juiz:
         faltas.append(
-            f"{len(prazos['impugnaram'])} impugnação(ões) sem desfecho — "
-            "o art. 600 manda ouvir o requerente e o profissional e tentar a "
-            "mediação antes.")
+            f"{len(no_juiz)} impugnação(ões) com o Juiz corregedor permanente "
+            "(art. 601) — a decisão espera o retorno.")
+    if len(sem_desfecho) > len(no_juiz):
+        faltas.append(
+            f"{len(sem_desfecho) - len(no_juiz)} impugnação(ões) sem desfecho "
+            "— o art. 600 manda ouvir o requerente e o profissional e tentar a "
+            "mediação; a infundada se rejeita de plano (§ 4º), com prazo de "
+            "recurso.")
     return faltas
 
 
@@ -950,12 +1727,7 @@ def proximos_passos(con: sqlite3.Connection, processo_id: int, *,
                      "anuência se presume. Marque o silêncio para ficar no "
                      "andamento.",
             "artigo": "art. 599, § 1º"})
-    if prazos["impugnaram"]:
-        passos.append({
-            "o_que": f"Ouvir o requerente e o profissional sobre "
-                     f"{len(prazos['impugnaram'])} impugnação(ões), em 5 dias "
-                     "úteis, e tentar a mediação.",
-            "artigo": "art. 600"})
+    passos.extend(passos_das_impugnacoes(con, processo_id, hoje=hoje))
 
     if not passos:
         passos.append({

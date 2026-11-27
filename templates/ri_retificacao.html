@@ -274,6 +274,159 @@
   {% endif %}
 {% endfor %}
 
+{# AS IMPUGNAÇÕES — art. 600. A tela oferece o formulário da etapa; quem
+   recusa o que não cabe é `retificacao.py`. Fundada ou infundada é decisão
+   do OFICIAL: as hipóteses do § 6º estão aqui como apoio. #}
+{% if impugnacoes %}
+<h2>As impugnações <span class="small muted">(art. 600)</span></h2>
+{% for i in impugnacoes %}
+{% set acao = url_for('ri_retificacao_impugnacao', processo_id=p.id) %}
+<div class="card">
+  <p><strong>{{ i.nome }}</strong> impugnou{% if i.respondido_em %} em {{ i.respondido_em[:10] }}{% endif %}:
+     <span class="muted">{{ i.alegacao }}</span></p>
+  {% if i.rejeitada_em %}
+  <p class="small">Rejeitada de plano em {{ i.rejeitada_em[:10] }} por {{ i.rejeitada_por }}
+     — art. 600, § 6º, {{ i.rejeicao_hipotese }}. {{ i.rejeicao_fundamento }}</p>
+  {% endif %}
+  {% if i.rejeicao_intimada_em %}<p class="small">Intimado da rejeição em {{ i.rejeicao_intimada_em }};
+     recurso até <strong>{{ i.recurso_prazo_ate }}</strong> (10 dias úteis, art. 600, § 4º).</p>{% endif %}
+  {% if i.recurso_em %}<p class="small">Recurso em {{ i.recurso_em }}: {{ i.recurso_razoes }}</p>{% endif %}
+  {% if i.contrarrazoes_intimadas_em %}<p class="small">Contrarrazões: intimado em {{ i.contrarrazoes_intimadas_em }},
+     até <strong>{{ i.contrarrazoes_prazo_ate }}</strong> (10 dias úteis, art. 600, § 5º){% if i.contrarrazoes_em %};
+     apresentadas em {{ i.contrarrazoes_em }}{% endif %}.</p>{% endif %}
+  {% if i.transacao_pedida_em %}<p class="small">Transação pedida por {{ RT.QUEM_PEDE_TRANSACAO.get(i.transacao_pedida_por, i.transacao_pedida_por) }}
+     em {{ i.transacao_pedida_em }}; prazo até <strong>{{ i.transacao_prazo_ate }}</strong>
+     (15 dias úteis, art. 600, § 2º){% if i.transacao_prorrogada_em %} — prorrogado em {{ i.transacao_prorrogada_em }}, sem nova prorrogação{% endif %}.</p>{% endif %}
+  {% if i.remetida_em %}<p class="small">Remetida ao Juiz corregedor permanente em {{ i.remetida_em[:10] }}
+     ({{ i.remessa_paragrafo }}; art. 601).</p>{% endif %}
+  {% if i.desfecho %}<p><strong>{{ RT.NOME_DO_DESFECHO.get(i.desfecho, i.desfecho) }}</strong>
+     {% if i.juiz_decisao %}— {{ i.juiz_decisao }}{% endif %}{% if i.acordo %}— {{ i.acordo }}{% endif %}</p>{% endif %}
+
+  {% if not p.decidido_em %}
+  {% if i.etapa in ('ABERTA', 'TRANSACAO') %}
+  <details>
+    <summary>Rejeitar de plano, por decisão fundamentada (art. 600, § 4º)</summary>
+    <form method="post" action="{{ acao }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="rejeitar">
+      <input type="hidden" name="confrontante_id" value="{{ i.confrontante_id }}">
+      <p class="small muted">A decisão é sua. As hipóteses do § 6º são apoio:
+         marque a que fundamenta o que você escreveu.</p>
+      {% for h in norma.HIPOTESES_DE_IMPUGNACAO_INFUNDADA %}
+      <label class="small"><input type="radio" name="hipotese" value="{{ h.inciso }}" required>
+        {{ h.inciso }} — {{ h.o_que }}</label><br>
+      {% endfor %}
+      <p><label>Fundamento<br><textarea name="fundamento" rows="4" cols="80" required></textarea></label></p>
+      <p><label>Impugnante intimado em (se já foi) <input type="date" name="intimado_em"></label></p>
+      <p><button class="button">Rejeitar de plano</button></p>
+    </form>
+  </details>
+  {% endif %}
+  {% if i.etapa == 'ABERTA' %}
+  <form method="post" action="{{ acao }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="transacao">
+    <input type="hidden" name="confrontante_id" value="{{ i.confrontante_id }}">
+    Transação amigável pedida por
+    <select name="quem_pediu">{% for k, v in RT.QUEM_PEDE_TRANSACAO.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+    em <input type="date" name="em" value="{{ hoje }}" required>
+    <button class="link-button">abrir os 15 dias úteis (§ 2º)</button>
+  </form>
+  {% endif %}
+  {% if i.etapa == 'TRANSACAO' %}
+    {% if not i.transacao_prorrogada_em %}
+    <form method="post" action="{{ acao }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="prorrogar">
+      <input type="hidden" name="confrontante_id" value="{{ i.confrontante_id }}">
+      Prorrogação pedida em <input type="date" name="em" value="{{ hoje }}" required>
+      <button class="link-button">prorrogar por mais 15 dias úteis (uma única vez)</button>
+    </form>
+    {% endif %}
+    <form method="post" action="{{ acao }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="acordo">
+      <input type="hidden" name="confrontante_id" value="{{ i.confrontante_id }}">
+      <input name="texto" size="60" placeholder="o que as partes acordaram" required>
+      <button class="link-button">registrar o acordo</button>
+    </form>
+  {% endif %}
+  {% if i.etapa in ('ABERTA', 'TRANSACAO') or (i.etapa == 'CONTRARRAZOES' and (i.contrarrazoes_em or i.contrarrazoes_prazo_ate < hoje)) %}
+  <details>
+    <summary>Remeter ao Juiz corregedor permanente ({{ 'art. 600, § 5º' if i.rejeitada_em else 'art. 600, § 3º' }}; art. 601)</summary>
+    <form method="post" action="{{ acao }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="remeter">
+      <input type="hidden" name="confrontante_id" value="{{ i.confrontante_id }}">
+      <p><label>Informações (ato fundamentado, art. 601)<br>
+        <textarea name="texto" rows="4" cols="80" required></textarea></label></p>
+      <p class="small muted">{{ norma.PRENOTACAO_PRORROGADA_NA_REMESSA.o_que }}
+         O sistema suspende o prazo da prenotação ligada a este processo.</p>
+      <p><button class="button">Remeter</button></p>
+    </form>
+  </details>
+  {% endif %}
+  {% if i.etapa == 'INTIMAR_REJEICAO' %}
+  <form method="post" action="{{ acao }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="intimar_rejeicao">
+    <input type="hidden" name="confrontante_id" value="{{ i.confrontante_id }}">
+    Impugnante intimado da rejeição em <input type="date" name="intimado_em" required>
+    <button class="link-button">registrar a intimação</button>
+  </form>
+  {% endif %}
+  {% if i.etapa == 'PRAZO_DE_RECURSO' %}
+  <form method="post" action="{{ acao }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="recurso">
+    <input type="hidden" name="confrontante_id" value="{{ i.confrontante_id }}">
+    Recurso em <input type="date" name="em" value="{{ hoje }}" required>
+    <input name="texto" size="50" placeholder="as razões do impugnante" required>
+    <button class="link-button">registrar o recurso</button>
+  </form>
+  {% endif %}
+  {% if i.etapa == 'RECURSO_VENCIDO' %}
+  <form method="post" action="{{ acao }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="prosseguir">
+    <input type="hidden" name="confrontante_id" value="{{ i.confrontante_id }}">
+    <button class="button">Sem recurso no prazo: prosseguir (art. 600, § 4º)</button>
+  </form>
+  {% endif %}
+  {% if i.etapa == 'INTIMAR_CONTRARRAZOES' %}
+  <form method="post" action="{{ acao }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="intimar_contrarrazoes">
+    <input type="hidden" name="confrontante_id" value="{{ i.confrontante_id }}">
+    Interessado intimado para contrarrazões em <input type="date" name="intimado_em" required>
+    <button class="link-button">registrar (10 dias úteis, § 5º)</button>
+  </form>
+  {% endif %}
+  {% if i.etapa == 'CONTRARRAZOES' and not i.contrarrazoes_em %}
+  <form method="post" action="{{ acao }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="contrarrazoes">
+    <input type="hidden" name="confrontante_id" value="{{ i.confrontante_id }}">
+    Contrarrazões em <input type="date" name="em" value="{{ hoje }}" required>
+    <input name="texto" size="50" placeholder="o que o interessado alegou" required>
+    <button class="link-button">juntar as contrarrazões</button>
+  </form>
+  {% endif %}
+  {% if i.etapa == 'AO_JUIZ' %}
+  <form method="post" action="{{ acao }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="retorno">
+    <input type="hidden" name="confrontante_id" value="{{ i.confrontante_id }}">
+    O Juiz decidiu em <input type="date" name="em" required>
+    <input name="texto" size="50" placeholder="o que o Juiz decidiu" required>
+    <button class="link-button">registrar o retorno</button>
+  </form>
+  {% endif %}
+  {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+
 <h2>A decisão</h2>
 {% if p.decidido_em %}
 <div class="card">

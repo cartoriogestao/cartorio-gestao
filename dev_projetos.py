@@ -1187,6 +1187,13 @@ def _transitar(bd, fase: dict, nova: str, *, por: str, ts: str, quando: str | No
         f"UPDATE dev_projetos_fases SET {colunas}, atualizado_em=%s WHERE id=%s",
         list(sets.values()) + [ts, int(fase["id"])],
     )
+    if nova in FASE_FEITA:
+        # QUEM CUIDAVA DA FASE termina com ela (`quem_resolve`): a marca fecha
+        # como CONCLUIU, e quem chama a leva à auditoria.
+        import quem_resolve as QR
+        fechado = QR.encerrar(bd, QR.FASE, str(int(fase["id"])), por=por, agora=ts)
+        if fechado:
+            fase["_quem_resolvia"] = fechado
     bd.escrever(
         "INSERT INTO dev_projetos_fases_historico (projeto_id, fase_id, evento, situacao_antes, "
         "situacao_depois, nota, em, por) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
@@ -1315,7 +1322,8 @@ def _alterar_fase(bd, fase_id: int, dados: dict, *, por: str, ts: str,
     if mudou:
         _tocar(bd, fase["projeto_id"], ts)
     return {"mudou": mudou, "eventos": [e for e in eventos if e],
-            "concluida": "CONCLUIDA" in eventos}
+            "concluida": "CONCLUIDA" in eventos,
+            "quem_resolvia": fase.get("_quem_resolvia")}
 
 
 def alterar_fase(con, fase_id: int, dados: dict, *, por: str,
@@ -1907,6 +1915,10 @@ def _importar_fase(bd, pid: int, spec: dict, *, por: str, ts: str, r: dict, auto
         r["fases_alteradas"].setdefault(fid, {}).update(feito["mudou"])
     if feito["concluida"]:
         r["fases_concluidas"].append(fid)
+    if feito.get("quem_resolvia"):
+        r["quem_resolve_encerrados"].append({"id": int(feito["quem_resolvia"]["id"]),
+                                             "fase_id": fid, "titulo": titulo,
+                                             "por": feito["quem_resolvia"]["por"]})
     return fid
 
 
@@ -1971,7 +1983,7 @@ def importar(con, spec: dict, *, por: str, agora: datetime | str | None = None,
         "projeto_id": None, "codigo": None, "titulo": None, "projeto": "SEM_MUDANCA",
         "achado_por": None, "campos_alterados": {}, "fases_criadas": [], "fases_alteradas": {},
         "fases_concluidas": [], "comprovantes_criados": [], "andamentos_criados": [],
-        "fases_fora_da_carga": [], "mudou": False,
+        "fases_fora_da_carga": [], "quem_resolve_encerrados": [], "mudou": False,
     }
     with bd.ponto_de_retorno("dev_projetos_importar"):
         codigo = _codigo(spec.get("codigo"))

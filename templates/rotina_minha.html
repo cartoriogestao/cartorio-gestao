@@ -13,12 +13,13 @@
   para ver o passo a passo, onde se faz, como saber que ficou pronto e o que fazer se der errado.
   Quando terminar, clique em <strong>Feito</strong> e diga como foi.</p>
   <p class="small muted">O suplente cobre o responsável na falta dele: o item aparece para os dois, e o primeiro
-  que registrar o «feito» fica registrado.{% if so_ve %} O seu papel confere e não registra «feito».{% endif %}</p>
+  que registrar o «feito» fica registrado. «Eu resolvo» avisa os outros de que você está cuidando do item.{% if so_ve %} O seu papel confere e não registra «feito».{% endif %}</p>
 </section>
 
 <section class="panel" id="rotina">
-  <div class="panel-head"><h2>Para hoje e atrasados ({{ itens|length }})</h2>
+  <div class="panel-head"><h2>Para hoje e atrasados ({{ itens|length }}){% if em_resolucao %} <small class="muted">· {{ em_resolucao }} em resolução</small>{% endif %}</h2>
     <span class="small muted">{{ hoje[8:10] }}/{{ hoje[5:7] }}/{{ hoje[:4] }}</span></div>
+  {% if erro_quem %}<div class="notice">Não deu para ler quem está resolvendo cada item ({{ erro_quem }}).</div>{% endif %}
   {% if erro %}
   <div class="notice critical">Não deu para ler a sua rotina: {{ erro }}. Isto não quer dizer que não há nada para hoje.</div>
   {% elif not itens %}

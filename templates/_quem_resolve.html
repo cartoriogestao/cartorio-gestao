@@ -1,0 +1,48 @@
+{# QUEM ESTÁ RESOLVENDO (26/11/2026, `quem_resolve`): a marca de quem cuida do
+   problema e os botões «Eu resolvo», «Largar» e «Assumir no lugar». Um
+   mecanismo só para a rotina do dia, os achados da checklist e as fases dos
+   projetos. Importe `with context`: os formulários usam o `csrf_token`.
+   `alvo` são os campos que identificam o problema (rotina_id e referencia,
+   achado_id, fase_id). #}
+
+{% macro marca(x, verbo='está resolvendo') %}
+  {% if x.quem %}<span class="badge alta quem-resolve" title="Para duas pessoas não fazerem o mesmo trabalho">{{ x.quem.por }} {{ verbo }} {{ x.quem.rotulo }}</span>{% if x.quem.nota %} <small class="muted">— {{ x.quem.nota }}</small>{% endif %}{% endif %}
+{% endmacro %}
+
+{% macro campos(tipo, alvo, voltar, area) %}
+    <input type="hidden" name="tipo" value="{{ tipo }}">
+    {% for nome, valor in alvo.items() %}<input type="hidden" name="{{ nome }}" value="{{ valor }}">{% endfor %}
+    <input type="hidden" name="voltar" value="{{ voltar }}">
+    <input type="hidden" name="area" value="{{ area or '' }}">
+{% endmacro %}
+
+{% macro botoes(x, tipo, alvo, voltar, area='', rotulo='Eu resolvo') %}
+  {% if x.qr_pode_assumir %}
+  <details class="quem-resolve-assumir"><summary class="small">{{ rotulo }}</summary>
+    <form method="post" action="{{ url_for('quem_resolve_assumir') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {{ campos(tipo, alvo, voltar, area) }}
+      <label class="small">Nota (opcional) <input type="text" name="nota" maxlength="200" placeholder="ex.: liguei para a Central"></label>
+      <button type="submit" class="small">{{ rotulo }}</button>
+      <p class="small muted">Os outros passam a ver o seu nome aqui, para não fazerem o mesmo trabalho.</p>
+    </form>
+  </details>
+  {% elif x.qr_meu %}
+  <form method="post" action="{{ url_for('quem_resolve_largar') }}" class="quem-resolve-largar">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {{ campos(tipo, alvo, voltar, area) }}
+    <button type="submit" class="small">Largar</button>
+  </form>
+  {% elif x.qr_pode_tomar %}
+  <details class="quem-resolve-tomar"><summary class="small">Assumir no lugar</summary>
+    <form method="post" action="{{ url_for('quem_resolve_assumir') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {{ campos(tipo, alvo, voltar, area) }}
+      <input type="hidden" name="tomar" value="1">
+      <label class="small">Nota (opcional) <input type="text" name="nota" maxlength="200"></label>
+      <label class="small"><input type="checkbox" name="confirmo" value="1" required> Confirmo que assumo no lugar de {{ x.quem.por }}</label>
+      <button type="submit" class="small">Assumir no lugar</button>
+    </form>
+  </details>
+  {% endif %}
+{% endmacro %}

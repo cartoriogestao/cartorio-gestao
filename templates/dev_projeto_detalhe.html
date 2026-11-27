@@ -3,7 +3,10 @@
    pleno; depois as fases, cada uma com os comprovantes e os botões de mudar a
    situação e anexar; a linha do tempo, do mais novo ao mais antigo; e os
    formulários. A fase só se conclui com comprovante ou observação (o domínio
-   recusa; a tela só lembra). Retirar/devolver como no T019. #}
+   recusa; a tela só lembra). Retirar/devolver como no T019.
+   QUEM CUIDA DE CADA FASE (26/11/2026, `quem_resolve`): a marca e «Eu cuido
+   desta fase», «Largar» e «Assumir no lugar»; a fase concluída a fecha. #}
+{% from '_quem_resolve.html' import marca as marca_de_quem, botoes as botoes_de_quem with context %}
 {% macro link_do_comprovante(c) -%}
   {%- if c.attachment_id -%}
     <a href="{{ url_for('attachment_view', attachment_id=c.attachment_id) }}" target="_blank" rel="noopener">{{ c.anexo_nome or 'arquivo' }}</a>
@@ -80,7 +83,7 @@
         <td><a href="#fase-{{ f.id }}">{{ f.ordem }}. {{ f.titulo }}</a></td>
         <td class="dev-projetos-texto">{{ f.criterio or '—' }}</td>
         <td>{{ f.situacao_rotulo }}{% if f.situacao == 'AGUARDANDO' %}<br><small>{{ f.aguardando_o_que }}</small>{% endif %}</td>
-        <td>{{ f.responsavel or '—' }}</td>
+        <td>{{ f.responsavel or '—' }}{% if f.quem %}<br>{{ marca_de_quem(f, 'está cuidando') }}{% endif %}</td>
         <td>{{ f.prazo_exibicao or '—' }}{% if f.atrasada %} <span class="badge critica">atrasada há {{ f.dias_de_atraso }} dia(s)</span>{% endif %}</td>
       </tr>
       {% endfor %}
@@ -97,6 +100,7 @@
     <h3>{{ f.ordem }}. {{ f.titulo }}
       <span class="dev-projetos-fase-situacao">{{ f.situacao_rotulo }}</span>
       {% if f.atrasada %}<span class="badge critica">atrasada</span>{% endif %}</h3>
+    {% if f.quem %}<p class="small">{{ marca_de_quem(f, 'está cuidando') }}</p>{% endif %}
     {% if f.criterio %}<p class="dev-projetos-texto"><strong>Pronta quando:</strong> {{ f.criterio }}</p>{% endif %}
     <p class="small muted">Responsável: {{ f.responsavel or '—' }} · Prazo: {{ f.prazo_exibicao or '—' }}
       {% if f.iniciada_em %} · Iniciada em {{ f.iniciada_em_exibicao }}{% endif %}
@@ -115,6 +119,7 @@
       {% else %}<span class="muted small">nenhum{% if f.situacao not in ('CONCLUIDA', 'DISPENSADA') %} — para concluir, anexe um ou explique na observação{% endif %}</span>{% endif %}
     </div>
     <div class="dev-projetos-fase-acoes">
+      {{ botoes_de_quem(f, 'FASE', {'fase_id': f.id}, 'projeto', '', 'Eu cuido desta fase') }}
       <details><summary>Mudar a situação</summary>
         <form method="post" action="{{ url_for('dev_projetos_fase_alterar', projeto_id=projeto.id, fase_id=f.id) }}" class="form-grid">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

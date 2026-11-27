@@ -75,6 +75,7 @@ class Casa:
         self.paginas: list[tuple[str, str]] = []     # (endpoint, endereço)
         self.ids: dict[str, int] = {}                # o que uma semente quer contar à outra
         self._sessoes: dict[tuple[str, str], str] = {}
+        self._dia_das_sessoes: dict[tuple[str, str], str] = {}   # o dia em que a janela foi dada por fechada
         self._congelada = None
 
     # ---------------------------------------------------------------- o banco
@@ -181,7 +182,21 @@ class Casa:
 
     def preparar_sessao(self, papel: str, layout: str) -> None:
         """Uma pessoa por papel e por moldura: a escolha do layout é da pessoa."""
+        import nu_avisos_gestao as NAV
         if (papel, layout) in self._sessoes:
+            # A RODADA QUE ATRAVESSA A MEIA-NOITE (27/11/2026): fora da caixa de areia, a janela fechada
+            # vale só no dia gravado na sessão (`nu_avisos_web._overlay_fechado`). A sessão nasce na
+            # montagem do módulo, e o teste que roda depois da meia-noite via a janela de volta por cima
+            # da tela: 14 testes do navegador caíram assim na suíte do #544 (23:46 a 00:17). No dia
+            # novo, a mesma pessoa dá a janela por fechada de novo, como fez ao entrar.
+            hoje = NAV.data_local(self.db.now())
+            if self._dia_das_sessoes.get((papel, layout)) != hoje:
+                c = self.app.test_client()
+                c.set_cookie("session", self._sessoes[(papel, layout)])
+                with c.session_transaction() as sessao:
+                    sessao["nu_avisos_overlay_data"] = hoje
+                self._sessoes[(papel, layout)] = c.get_cookie("session").value
+                self._dia_das_sessoes[(papel, layout)] = hoje
             return
         # O ADMIN DE ENSAIO É O TITULAR: despesas, balanço e carnê-leão recusam os outros ADMIN, e a
         # varredura passaria sem ver essas telas. Quem cobra a recusa é `test_layout_todas_as_telas`.
@@ -193,11 +208,12 @@ class Casa:
         # normais da pessoa, e as pessoas de cada moldura, fechando em momentos diferentes, ficavam com
         # avisos diferentes (o «Dispensar» a mais em /avisos/<n>, 02/11/2026). Quem confere a janela
         # é `test_nu_avisos_gestao`.
-        import nu_avisos_gestao as NAV
+        hoje = NAV.data_local(self.db.now())
         with c.session_transaction() as sessao:
             sessao["nu_avisos_overlay_fechado"] = True
-            sessao["nu_avisos_overlay_data"] = NAV.data_local(self.db.now())
+            sessao["nu_avisos_overlay_data"] = hoje
         self._sessoes[(papel, layout)] = c.get_cookie("session").value
+        self._dia_das_sessoes[(papel, layout)] = hoje
 
     def cliente(self, papel: str = "ADMIN", layout: str = "novo"):
         """Um cliente novo com a sessão daquela pessoa. O formulário de sair não a tira dos outros."""

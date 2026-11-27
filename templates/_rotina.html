@@ -1,7 +1,10 @@
 {# A ROTINA DA SERVENTIA (26/11/2026, `rotina_da_casa`): o mesmo item na
    Checklist do dia e em «Minha rotina» — quando vence, quem faz, a situação,
    o «Como fazer» recolhido e o botão «Feito». Importe `with context`: o
-   formulário usa o `csrf_token` e os `rotina_resultados` da tela. #}
+   formulário usa o `csrf_token` e os `rotina_resultados` da tela.
+   QUEM ESTÁ RESOLVENDO (26/11/2026): a marca vem com a situação, e «Eu
+   resolvo», «Largar» e «Assumir no lugar» ao lado do «Feito» (`_quem_resolve`). #}
+{% from '_quem_resolve.html' import marca as marca_de_quem, botoes as botoes_de_quem with context %}
 
 {% macro dia(iso) %}{% if iso %}{{ iso[8:10] }}/{{ iso[5:7] }}{% endif %}{% endmacro %}
 
@@ -81,12 +84,13 @@
   <tr><th>Situação</th><th>O que fazer</th><th>Quando</th><th>Quem faz</th><th></th></tr>
   {% for r in itens %}
   <tr id="rotina-{{ r.id }}">
-    <td class="small">{{ situacao(r) }}</td>
+    <td class="small">{{ situacao(r) }}{% if r.quem %}<br>{{ marca_de_quem(r) }}{% endif %}</td>
     <td><strong>{{ r.titulo }}</strong>{% if r.prioridade == 1 %} <span class="badge alta">prioridade alta</span>{% endif %}
       {{ como_fazer(r) }}</td>
     <td class="small">{{ r.quando }}</td>
     <td class="small">{{ quem(r) }}</td>
-    <td>{{ feito(r, voltar, area) }}</td>
+    <td>{{ feito(r, voltar, area) }}
+      {{ botoes_de_quem(r, 'ROTINA', {'rotina_id': r.id, 'referencia': r.referencia}, voltar, area) }}</td>
   </tr>
   {% endfor %}
 </table>

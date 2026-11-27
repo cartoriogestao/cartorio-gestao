@@ -22,6 +22,7 @@ DE ONDE VEM O CONTRATO
 """
 from __future__ import annotations
 
+import ast
 import base64
 import hashlib
 import re
@@ -443,6 +444,31 @@ def test_so_as_escritas_estao_presas_e_todas_estao(contrato):
         assert (m in W.ESPERAM_O_PODE_DO_TITULAR) is (not leitura), m
 
 
+def _o_que_o_codigo_usa(texto: str):
+    """Os nomes e os textos que o código USA: nomes, atributos, importações e
+    textos fora das docstrings. Comentário e docstring são prosa — dizer «a P2a
+    não manda o `SetPrenotacaoAC`» não é chamá-lo (27/11/2026, #534)."""
+    arvore = ast.parse(texto)
+    docstrings = set()
+    for no in ast.walk(arvore):
+        if isinstance(no, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) \
+                and no.body and isinstance(no.body[0], ast.Expr) \
+                and isinstance(no.body[0].value, ast.Constant) \
+                and isinstance(no.body[0].value.value, str):
+            docstrings.add(id(no.body[0].value))
+    for no in ast.walk(arvore):
+        if isinstance(no, ast.Name):
+            yield no.id
+        elif isinstance(no, ast.Attribute):
+            yield no.attr
+        elif isinstance(no, ast.alias):
+            yield no.asname or no.name
+            yield no.name.rsplit(".", 1)[-1]
+        elif isinstance(no, ast.Constant) and isinstance(no.value, str) \
+                and id(no) not in docstrings:
+            yield no.value
+
+
 def test_nenhum_modulo_da_casa_monta_ou_chama_uma_escrita():
     """«Nenhuma rodada, processo, botão ou tela os chama» — até a etapa que
     ganhar o «pode» do titular mudar este teste no mesmo PR."""
@@ -455,11 +481,27 @@ def test_nenhum_modulo_da_casa_monta_ou_chama_uma_escrita():
         if rel.parts[0] in ("tests", ".git", "venv", ".venv") or arq.name == "onr_wsoficio.py":
             continue
         try:
-            texto = arq.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+            usados = list(_o_que_o_codigo_usa(arq.read_text(encoding="utf-8")))
+        except (OSError, UnicodeDecodeError, SyntaxError):
             continue
-        achados += [f"{rel}: {m.group(1)}" for m in padrao.finditer(texto)]
+        achados += [f"{rel}: {m.group(1)}" for u in usados for m in padrao.finditer(u)]
     assert achados == []
+
+
+def test_o_varredor_ve_a_chamada_e_ignora_a_prosa():
+    """A régua do teste acima: prosa não conta, chamada conta."""
+    prosa = '''"""A P2a não manda o `SetPrenotacaoAC`."""
+# nem o SetPrenotacaoAC aqui
+def f():
+    """Nem pedido_prenotacao_ac."""
+    return 1
+'''
+    assert not any("SetPrenotacaoAC" in u or "pedido_prenotacao_ac" in u
+                   for u in _o_que_o_codigo_usa(prosa))
+    for chamada in ('s.chamar("SetPrenotacaoAC")', "W.pedido_prenotacao_ac()",
+                    "from onr_wsoficio import pedido_prenotacao_ac"):
+        assert any(re.search(r"\b(SetPrenotacaoAC|pedido_prenotacao_ac)\b", u)
+                   for u in _o_que_o_codigo_usa(chamada)), chamada
 
 
 # ----------------------------------------- as respostas de leitura da e-Intimação

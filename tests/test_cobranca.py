@@ -513,6 +513,35 @@ def test_a_rodada_emite_consulta_guarda_o_pdf_e_avisa_a_paga(casa, tmp_path, mon
     assert _c(casa, i)["situacao"] == CB.LANCADA
 
 
+def _auditoria(casa, cobranca_id):
+    with casa["db"].connect() as con:
+        return banco(con).ler(
+            """SELECT user_id, agente, a_mando_de FROM audit_logs
+                WHERE entity_type = 'cb_cobrancas' AND entity_id = %s
+                  AND action = 'COBRANCA_ATUALIZADA_PELO_BANCO' ORDER BY id""",
+            (cobranca_id,))
+
+
+def test_a_rodada_diz_na_auditoria_quem_agiu_e_a_mando_de_quem(casa, tmp_path, monkeypatch):
+    """Ordem do oficial, 26/10/2026: todo robô diz quem é e a mando de quem
+    age. Sem isso a linha caía na conferência «sem identificação»."""
+    i = _cadastrar(casa)
+    monkeypatch.setattr(CBB, "cliente_da_casa", lambda cfg, **kw: casa["c_inter"])
+    AUT.acompanhar(_Contexto(casa["db"], tmp_path))
+    linhas = _auditoria(casa, i)
+    assert linhas, "a rodada mudou a cobrança e tem de deixar a linha"
+    for linha in linhas:
+        assert linha["user_id"] is None
+        assert linha["agente"] == AUT.AGENTE
+        # o responsável pelas rotinas: vazio na configuração, o primeiro ADMIN
+        assert linha["a_mando_de"] == "MARIO EXEMPLO DOS SANTOS"
+    import identidade_do_robo as IDR
+    with casa["db"].connect() as con:
+        c = IDR.conferencia(con, datetime.now().date())
+    assert not [s for s in c["sem_identificacao"] if s["entity_type"] == "cb_cobrancas"]
+    assert not [s for s in c["agentes_sem_mandante"] if s["agente"] == AUT.AGENTE]
+
+
 def test_com_a_emissao_desligada_a_rodada_nao_emite(casa, tmp_path, monkeypatch):
     with casa["db"].transaction() as con:
         CB.gravar_configuracao(con, {**CB.PADRAO, "cobranca_ligada": "0"})
@@ -604,6 +633,9 @@ def test_a_vigilia_confirma_o_pix_na_segunda_pergunta(casa, tmp_path, monkeypatc
     assert r["situacao"] == "OK" and falsa.n == 2, r
     assert _c(casa, i)["situacao"] in (CB.RECEBIDA, CB.LANCADA)
     assert _c(casa, i)["valor_recebido"] == 12345
+    linhas = _auditoria(casa, i)
+    assert linhas and all(l["agente"] == AUT.AGENTE_DA_MAQUINA and l["a_mando_de"]
+                          for l in linhas)
 
 
 def test_a_vigilia_nao_fica_perguntando_cobranca_velha_do_dia(casa, tmp_path, monkeypatch):

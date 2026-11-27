@@ -95,6 +95,7 @@ import modelos_elementos as ELEM
 import ri_documentos as RDOC
 import notas_selo as NSELO
 import caixa_protocolo as CXPROT
+import onr_eprotocolo_prenotacao as EPP
 import pastas_da_casa as PDC
 import contato_do_cliente as CONTATO
 import emolumentos as EMOL
@@ -3299,9 +3300,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                     flash("O protocolo geral indicado não existe, não é do Registro de "
                           "Imóveis ou já tem prenotação. Nada foi prenotado.", "danger")
                     return None
+            # O TÍTULO DO E-PROTOCOLO DO ONR (RI013 P2a, 25/11/2026) vem por
+            # este MESMO caminho, com o pedido escondido no formulário.
+            ep_pedido = (request.form.get("onr_ep_pedido_id") or "").strip()
+            eletronico = None
             with db.transaction() as con:
                 bd = banco(con)
                 bd.travar("ri_protocolos.numero")
+                if ep_pedido:
+                    # A ordem da remessa se confere AQUI, sob a trava do número:
+                    # a fila pode ter andado depois que a tela abriu. A recusa
+                    # sobe como exceção, desfaz a transação e nenhum número se gasta.
+                    eletronico = EPP.conferir(con, ep_pedido,
+                                              pulo_id=request.form.get("onr_ep_pulo_id"))
                 ultimo = bd.valor("SELECT MAX(numero) AS n FROM ri_protocolos WHERE livro=%s",
                                   (livro,))
                 numero = int((ultimo or 0)) + 1
@@ -3336,8 +3347,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         natureza_titulo, objeto, matricula_id, matricula_numero, data_limite,
                         telefone, email, documento_descricao, procuracao_citada,
                         reurb, reurb_tipo,
-                        situacao, anotacao, origem, criado_em, criado_por)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'ABERTO', %s, 'MANUAL', %s, %s)
+                        situacao, anotacao, origem, origem_chave, criado_em, criado_por)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, 'ABERTO', %s, %s, %s, %s, %s)
                        RETURNING id""",
                     (numero, livro, destino, data, datetime.now().strftime("%H:%M:%S"),
                      (request.form.get("apresentante") or "").strip() or None,
@@ -3354,9 +3365,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                      1 if reurb else 0,
                      tipo_reurb or None,
                      (request.form.get("anotacao") or "").strip() or None,
+                     # A ORIGEM: «MANUAL» no balcão, como sempre; o título do
+                     # e-Protocolo leva a sua e o IDContrato (para a P2b).
+                     EPP.ORIGEM if eletronico else "MANUAL",
+                     str(eletronico["id_contrato"]) if eletronico else None,
                      db.now(), app.extensions["usuario_id"]()),  # quem prenotou (robô incluso); criado_por e FK para users(id): o NOME aqui dava 500 em toda prenotacao (06/10/2026)
                 )[0]["id"]
                 novo = int(novo)
+                if eletronico:
+                    # O VÍNCULO, na mesma transação: prenotado por outra pessoa
+                    # no meio do caminho, a exceção desfaz esta prenotação.
+                    EPP.vincular(con, eletronico["id"], novo,
+                                 quem_id=app.extensions["usuario_id"](),
+                                 quem_nome=(app.extensions["usuario_nome"]() or "").strip() or None,
+                                 agora=db.now(),
+                                 pulo_id=(eletronico["pulo"] or {}).get("id"))
                 # TODA PRENOTAÇÃO TEM PROTOCOLO GERAL — decisão do oficial,
                 # 12/10/2026 («criar automático»). Medido antes: das 31
                 # prenotações abertas, 1 tinha protocolo geral; dos 22 gerais
@@ -3408,15 +3431,38 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                   {"numero": numero, "livro": livro, "livro_destino": destino,
                    "matricula": mat, "prazo_dias_uteis": prazo,
                    "reurb": reurb, "reurb_tipo": tipo_reurb or None,
-                   "limite": limite})
+                   "limite": limite,
+                   **({"origem": EPP.ORIGEM, "id_contrato": eletronico["id_contrato"],
+                       "onr_ep_pedido_id": eletronico["id"]} if eletronico else {})})
+            if eletronico:
+                pulo = eletronico["pulo"] or {}
+                audit("ONR_EPROTOCOLO_PRENOTADO", "onr_ep_pedidos", eletronico["id"],
+                      {"protocolo_id": novo, "numero": numero, "id_contrato": eletronico["id_contrato"],
+                       "protocolo_onr": eletronico.get("protocolo"), "fora_da_ordem": bool(pulo),
+                       "pulo_id": pulo.get("id"), "motivo_do_pulo": pulo.get("motivo")})
             flash(f"Protocolo {numero} prenotado em {data}. Prazo de {prazo} dias úteis"
                   f"{' (REURB-' + (tipo_reurb or 'S') + ')' if tipo_reurb else ''}: vence em {limite}. "
-                  f"Protocolo geral {geral_numero}.{selado}",
+                  f"Protocolo geral {geral_numero}.{selado}"
+                  + (f" Título do e-Protocolo {eletronico.get('protocolo') or eletronico['id_contrato']} "
+                     "ligado a esta prenotação; o aviso ao ONR ainda não é enviado (P2b)."
+                     if eletronico else ""),
                   "success")
+            if eletronico:
+                return redirect(url_for("onr_eprotocolo_ficha", pedido_id=eletronico["id"]))
             return redirect(url_for("ri_protocolo"))
 
         if request.method == "POST":
-            resposta = _prenotar_do_formulario()
+            try:
+                resposta = _prenotar_do_formulario()
+            except EPP.PrenotacaoEletronicaError as erro:
+                # A recusa do e-Protocolo saiu de dentro da transação, que se
+                # desfez. Volta à ficha do título, e não ao formulário: sem o
+                # pedido escondido, um segundo envio viraria prenotação de
+                # balcão solta, sem o vínculo.
+                flash(str(erro), "danger")
+                pid = numero_digitado(request.form.get("onr_ep_pedido_id"))
+                return redirect(url_for("onr_eprotocolo_ficha", pedido_id=pid)
+                                if pid is not None else url_for("onr_eprotocolo"))
             if resposta is not None:
                 return resposta
 
@@ -3458,6 +3504,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         if cx_arg is not None:
             de_cx = q1("""SELECT * FROM cx_protocolos WHERE id=%s AND atribuicao='RI'
                           AND ri_protocolo_id IS NULL""", (cx_arg,))
+        # VINDO DO E-PROTOCOLO DO ONR («Prenotar este título», RI013 P2a): o
+        # formulário abre preenchido com a ficha que o ONR mandou, e leva o
+        # pedido escondido. A ordem se confere aqui e, de novo, ao gravar.
+        de_onr = None
+        ep_arg = request.args.get("onr_ep")
+        if ep_arg:
+            try:
+                with db.connect() as con:
+                    p_ep = EPP.conferir(con, ep_arg, pulo_id=request.args.get("pulo"))
+                    de_onr = EPP.ficha_para_prenotar(con, p_ep)
+            except EPP.PrenotacaoEletronicaError as erro:
+                # Link velho ou fora da ordem: volta à ficha do título, e não
+                # ao formulário de balcão em branco.
+                flash(str(erro), "danger")
+                pid = numero_digitado(ep_arg)
+                return redirect(url_for("onr_eprotocolo_ficha", pedido_id=pid)
+                                if pid is not None else url_for("onr_eprotocolo"))
 
         def espera_acao():
             """O que espera ação, para o layout novo (30/10/2026). SÓ LÊ.
@@ -3482,10 +3545,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             return perto
 
         return render_template("ri_protocolo.html", rows=rows, resumo=resumo,
-                               de_cx=dict(de_cx) if de_cx else None,
+                               de_cx=dict(de_cx) if de_cx else None, de_onr=de_onr,
                                situacao=situacao, busca=busca, hoje=hoje.isoformat(),
                                prazo=PRAZO_PRENOTACAO, prazo_reurb=PRAZO_PRENOTACAO_REURB,
-                               restam=restam, espera_acao=espera_acao, form=request.form,
+                               restam=restam, espera_acao=espera_acao,
+                               form=request.form or (de_onr["campos"] if de_onr else request.form),
                                MOTIVOS_DA_GRATUIDADE_DO_RI=AS.MOTIVOS_DA_GRATUIDADE_DO_RI)
 
     # ===================================== a tela do título, com o que corrigir

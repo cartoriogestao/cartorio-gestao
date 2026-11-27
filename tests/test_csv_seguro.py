@@ -85,7 +85,8 @@ def test_a_resposta_leva_o_bom_e_o_nome(cg_app):
 #: Telas que entregam `text/csv` montado noutro módulo — o módulo que monta é
 #: quem tem de passar pelo helper.
 QUEM_MONTA = {"selo_portal_web.py": "selo_portal.py",
-              "produtividade_web.py": "produtividade.py"}
+              "produtividade_web.py": "produtividade.py",
+              "onr_ir_lotes_web.py": "onr_ir_lotes.py"}
 
 
 def _fontes() -> list[Path]:

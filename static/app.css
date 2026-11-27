@@ -98,6 +98,10 @@ a.modo-botao:hover{text-decoration:none;filter:brightness(.95)}
   border-radius:7px;padding:18px 20px;max-height:520px;overflow:auto}
 .teor-previa p{margin:0 0 9px;text-indent:2em}
 .teor-previa p:first-child{text-indent:0}
+/* A caixa do teor guarda a marca interna das assinaturas: impressa, a ficha
+   mostra só a prévia, e a prévia não tem limite de altura (G002). */
+@media print{[data-teor-edicao]{display:none!important}
+  .teor-previa{max-height:none;overflow:visible}}
 /* A barra de marcas do teor. Botoes pequenos, coladas na caixa de texto — e a
    dica ao lado, porque quem nunca marcou nao adivinha que precisa selecionar
    antes. */
@@ -1054,6 +1058,30 @@ details.panel.tasks-nova-tarefa{margin-left:auto;margin-right:auto;max-width:960
 .dev-projetos-pendencia-cel { font-size: 0.9rem; max-width: 22rem; line-height: 1.35; }
 .dev-projetos-titulo-cel a { display: inline-block; }
 .dev-projetos-atualizado-cel { white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Projetos — fases, comprovantes e linha do tempo (S006, 26/11/2026) */
+.dev-projetos-filtros { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-end; margin: 0.5rem 0 0.75rem; }
+.dev-projetos-filtros label { min-width: 12rem; }
+.dev-projetos-codigo { display: inline-block; margin-right: 0.35rem; padding: 1px 6px; border-radius: 4px; background: #eef2f4; font-size: 0.8rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dev-projetos-progresso-cel { min-width: 8rem; }
+.dev-projetos-barra { height: 8px; max-width: 12rem; border-radius: 999px; background: #e7ecef; overflow: hidden; margin: 3px 0; }
+.dev-projetos-barra span { display: block; height: 100%; background: #2e7d32; }
+.dev-projetos-texto { white-space: pre-wrap; }
+.dev-projetos-fase { border: 1px solid var(--border, #ddd); border-left: 4px solid #90a4ae; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.75rem; }
+.dev-projetos-fase h3 { font-size: 15px; margin: 0 0 0.4rem; }
+.dev-projetos-fase-em_andamento { border-left-color: #1565c0; }
+.dev-projetos-fase-aguardando { border-left-color: #e65100; }
+.dev-projetos-fase-concluida { border-left-color: #2e7d32; }
+.dev-projetos-fase-dispensada { border-left-color: #b0bec5; opacity: 0.85; }
+.dev-projetos-fase-situacao { margin-left: 0.4rem; padding: 2px 8px; border-radius: 999px; background: #eef2f4; font-size: 11px; font-weight: 700; }
+.dev-projetos-comprovantes ul { margin: 0.3rem 0 0.5rem; padding-left: 1.1rem; }
+.dev-projetos-fase-acoes { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: flex-start; margin-top: 0.5rem; }
+.dev-projetos-fase-acoes details { flex: 1 1 18rem; }
+.dev-projetos-fase-acoes summary { font-size: 13px; font-weight: 600; cursor: pointer; }
+/* Os formulários da fase (situação, comprovante, editar) moram em blocos de ~18rem, lado a lado: em duas
+   colunas, o campo de data não cabia e saía cortado na tela de 1920 px (26/11/2026). Uma coluna só. */
+.dev-projetos-fase-acoes .form-grid { grid-template-columns: minmax(0, 1fr); }
+.dev-projetos-fase-acoes .form-grid .span2 { grid-column: auto; }
+.dev-projetos-mover { display: inline; }
 /* ---- Produtividade rápida (botão global) ---- */
 .prod-rapida{position:fixed;right:18px;bottom:72px;z-index:910;font:inherit}
 .prod-rapida-btn{display:inline-flex;align-items:center;gap:8px;background:#0f3d56;color:#fff;border:0;border-radius:999px;padding:10px 16px;box-shadow:0 4px 14px rgba(15,61,86,.28);cursor:pointer;font-weight:600}
@@ -1313,3 +1341,21 @@ html[data-escala]:not([data-layout=novo]) body{zoom:var(--cg-escala,1)}
   padding: .45rem 1rem; text-align: center;
   background: #7a1f1f; color: #fff; font-size: .9rem;
 }
+/* O sinal do selo na tela do ato (P008, 24/11/2026): verde, vermelho, amarelo. */
+.selo-sinal{margin:10px 0;grid-column:1/-1}
+.selo-sinal-corpo{border:1px solid var(--border);border-left-width:6px;border-radius:8px;padding:10px 14px;background:#fff}
+.selo-sinal-corpo p{margin:0}
+.selo-sinal-titulo{display:flex;align-items:center;gap:8px}
+.selo-sinal-luz{width:14px;height:14px;border-radius:50%;flex:0 0 auto;background:#98a2b3}
+.selo-sinal-linhas{margin:6px 0 0 1.2em;padding:0}
+.selo-sinal-linhas li{margin:2px 0}
+.selo-sinal-botoes{margin-top:8px!important;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.selo-sinal--verde{border-left-color:var(--ok);background:#ecfdf3}
+.selo-sinal--verde .selo-sinal-luz{background:var(--ok)}
+.selo-sinal--vermelho{border-left-color:var(--danger);background:#fef3f2}
+.selo-sinal--vermelho .selo-sinal-luz{background:var(--danger)}
+.selo-sinal--amarelo{border-left-color:var(--warning);background:#fffaeb}
+.selo-sinal--amarelo .selo-sinal-luz{background:#f79009}
+.selo-sinal-aviso{margin-top:10px;padding:10px 12px;border:1px solid #fecdca;border-radius:8px;background:#fff}
+.selo-sinal-aviso p{margin:0 0 8px}
+.selo-sinal-aviso .selo-sinal-escolha{display:flex;gap:8px;flex-wrap:wrap}

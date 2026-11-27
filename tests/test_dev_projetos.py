@@ -32,6 +32,16 @@ def test_init_schema_coluna_proximo_passo():
     assert "proximo_passo" in cols
 
 
+def test_init_schema_fases_e_comprovantes_s006():
+    """S006: as colunas do cadastro e as três tabelas novas, só por acréscimo."""
+    con = _mem()
+    DP.init_dev_projetos_schema(con)
+    cols = {row[1] for row in con.execute("PRAGMA table_info(dev_projetos)").fetchall()}
+    assert {"codigo", "area", "responsavel", "resultado_pleno", "prazo", "origem"} <= cols
+    tables = {row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    assert {"dev_projetos_fases", "dev_projetos_fases_historico", "dev_projetos_comprovantes"} <= tables
+
+
 def test_seed_sandbox_oito_projetos():
     con = _mem()
     DP.init_dev_projetos_schema(con)
@@ -108,3 +118,12 @@ def test_listar_projetos_inclui_atualizado_em_exibicao():
     assert rows
     assert "atualizado_em_exibicao" in rows[0]
     assert rows[0]["atualizado_em_exibicao"] != "—"
+
+
+def test_seed_continua_sem_fases_e_com_progresso_zerado():
+    con = _mem()
+    DP.init_dev_projetos_schema(con)
+    DP.seed_sandbox_exemplo(con, agora=AGORA)
+    for p in DP.listar_projetos(con):
+        assert p["progresso"]["total"] == 0 and p["progresso"]["sem_fases"]
+        assert p["codigo"] is None and p["area"] == ""

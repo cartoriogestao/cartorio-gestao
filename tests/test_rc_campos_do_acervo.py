@@ -158,6 +158,9 @@ def test_o_obito_deixa_de_ficar_retido_e_a_certidao_diz_a_marca():
     aid = _assento(
         con, especie="OBITO", serie="RC_C", numero=2, nome="JOSE EXEMPLO",
         origem_chave="obito:1", dados_json=json.dumps(pacote))
+    # O ESTADO CIVIL do falecido não vem no pacote: mora na pessoa, e sem ele
+    # a CRC recusa o óbito (RC006, 26/11/2026) — a carga o retém.
+    _pessoa(con, aid, "FALECIDO", "JOSE EXEMPLO", sexo="M", estado_civil="solteiro")
     montado = CRC.montar(con, [aid], cns="000000")
     assert montado["retidos"] == [], montado["retidos"]
     xml = montado["xml"]

@@ -46,13 +46,27 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
     with db.connect() as con:
         OC.init_schema(con)
 
+    def _relogios(con, lista) -> dict:
+        """O relógio de prazo de cada pedido da lista (RI013, CNN art. 327).
+        A lista não cai se o relógio falhar: a coluna fica vazia."""
+        import onr_certidoes_auto as AUTO
+        from datetime import datetime
+        try:
+            AUTO.init_schema(con)
+            agora_dt = datetime.fromisoformat(str(agora())[:19])
+            return AUTO.relogios(con, agora=agora_dt, pedidos=[dict(p) for p in lista])
+        except Exception:                                   # noqa: BLE001 — a lista não cai
+            app.logger.warning("O relógio de prazo das certidões do ONR falhou.", exc_info=True)
+            return {}
+
     @app.route("/ri/onr/certidoes")
     @roles_required(*QUEM)
     def onr_certidoes():
         todos = request.args.get("todos") == "1"
         with db.connect() as con:
             lista = OC.fila(con, todos=todos)
-        return render_template("onr_certidoes.html", lista=lista, todos=todos,
+            relogios = _relogios(con, lista)
+        return render_template("onr_certidoes.html", lista=lista, todos=todos, relogios=relogios,
                                ambiente=ambiente(), credencial=WS.situacao(ambiente()),
                                rotulo_do_tipo=OC.rotulo_do_tipo,
                                rotulo_do_status=OC.rotulo_do_status)

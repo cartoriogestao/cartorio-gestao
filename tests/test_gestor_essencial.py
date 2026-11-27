@@ -129,10 +129,11 @@ def test_so_vira_tarefa_o_que_pode_gerar_responsabilidade_civil(cg_casa):
     achados = [dict(_a("SIRC:1", "SIRC", "VENCIDO"), setor="RCPN"),
                dict(_a("DOC:1", "DOCUMENTO_INVALIDO", "CRITICO"), setor="RCPN"),
                dict(_a("FUNAI:1", "FUNAI", "VENCIDO"), setor="RCPN"),
-               dict(_a("CAIXA_HOJE:1", "CAIXA_DO_DIA_ABERTO", "CRITICO"), setor="PESSOA:1")]
+               dict(_a("CAIXA_HOJE:1", "CAIXA_DO_DIA_ABERTO", "CRITICO"), setor="RCPN")]
     GR.sincronizar_tarefas(con, achados, {}, _date(2026, 10, 6))
     refs = {r[0] for r in con.execute("SELECT source_ref FROM tasks WHERE source_type='GESTOR'")}
-    assert refs == {"GESTOR:DOCUMENTO_INVALIDO:RCPN"}
+    # G007 (25/11/2026): o caixa do balcão voltou a ser tarefa de escrevente.
+    assert refs == {"GESTOR:DOCUMENTO_INVALIDO:RCPN", "GESTOR:CAIXA_DO_DIA_ABERTO:RCPN"}
 
 
 def test_as_centrais_e_as_cargas_nao_viram_tarefa_e_a_aberta_fecha(cg_casa):
@@ -163,10 +164,11 @@ def test_a_tarefa_que_ja_existia_fecha_dizendo_o_motivo_verdadeiro(cg_casa):
     from gestor_schema import init_gestor_schema
     init_gestor_schema(con)
     tid = con.execute("""INSERT INTO tasks (source_type, source_ref, title, status, created_at,
-                             updated_at) VALUES ('GESTOR', 'GESTOR:DIGITALIZACAO_DA_FICHA:RI', 'Digitalizacao', 'ABERTA', ?, ?)""",
+                             updated_at) VALUES ('GESTOR', 'GESTOR:FECHAMENTO_DO_MES:GESTAO', 'Fechamento', 'ABERTA', ?, ?)""",
                       (AGORA, AGORA)).lastrowid
     # 13/10/2026: era o IBGE, que passou a ser Central (nota própria, no teste acima).
-    GR.sincronizar_tarefas(con, [dict(_a("DIGI:1", "DIGITALIZACAO_DA_FICHA", "PRAZO"), setor="RI")], {},
+    # 25/11/2026: era a digitalização, que voltou a ser tarefa (G007).
+    GR.sincronizar_tarefas(con, [dict(_a("FEC:1", "FECHAMENTO_DO_MES", "PRAZO"), setor="GESTAO")], {},
                            _date(2026, 10, 6))
     assert con.execute("SELECT status FROM tasks WHERE id=?", (tid,)).fetchone()[0] == "CONCLUIDA"
     nota = con.execute("SELECT note FROM task_history WHERE task_id=? ORDER BY id DESC",
@@ -235,7 +237,7 @@ def test_base_de_agosto_com_dezenas_de_vazias_fica_com_achado_aberto(cg_casa):
         _leitura(con, dia, "VAZIA")
     achado = GC.regra_cnib_parado(con, _date(2026, 11, 23))[0]
     assert (achado["chave"], achado["gravidade"]) == ("CNIB:copia_parada", "CRITICO")
-    assert "12/08/2026" in achado["titulo"]
+    assert achado["titulo"] == "Base local do CNIB atrasada: a ordem mais nova é de 12/08/2026"
     assert "103 dia(s) atrás" in achado["detalhe"]
     assert "60 leituras vazias seguidas, desde 25/09/2026" in achado["detalhe"]
     assert "direto na Central" in achado["detalhe"]
@@ -314,3 +316,67 @@ def test_base_sem_ordem_nenhuma_diz_que_nunca_foi_atualizada(cg_casa):
     _leitura(con, "2026-11-23", "VAZIA")
     achado = GC.regra_cnib_parado(con, _date(2026, 11, 23))[0]
     assert achado["titulo"] == "Base local do CNIB nunca foi atualizada"
+
+
+# ---- 26/11/2026: «se a base não está parada o alerta está errado. mude o alerta para
+# "base atrasada" e a data da ordem mais nova. e se a base estiver ligada indique no alerta»
+
+def _fila_ligada(con):
+    con.execute("INSERT INTO settings(key, value) VALUES ('cnib_leitura_da_fila', '1') "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+
+
+def _rodada_da_fila(con, dia, *, lidas, novas, restantes):
+    con.execute("""INSERT INTO ri_cnib_leituras (de, ate, pedida_em, terminada_em, situacao,
+                       lidas, novas, paginas, parou_no_teto, mensagem, automatica)
+                   VALUES (?, ?, ?, ?, 'OK', ?, ?, 200, 1, ?, 1)""",
+                (dia, dia, f"{dia}T00:00:25", f"{dia}T01:47:09", lidas, novas,
+                 "Fila da serventia. Parou no teto de páginas da rodada; a próxima "
+                 f"continua. A Central disse que restavam {restantes} ordens."))
+
+
+def test_fila_ligada_e_andando_diz_atrasada_e_ligada(cg_casa):
+    """O caso de 26/11: a fila trouxe 40 mil ordens antigas, e a mais nova segue em 12/08."""
+    con = _con(cg_casa)
+    _fila_ligada(con)
+    _ordem_do_dia(con, "ANTIGA-FILA", "2014-05-02")
+    _ordem_do_dia(con, "VELHA-FILA", "2026-08-12")
+    _leitura(con, "2026-11-25", "VAZIA", de="2026-11-17", ate="2026-11-25")
+    _rodada_da_fila(con, "2026-11-26", lidas=40000, novas=39415, restantes=376438)
+    achado = GC.regra_cnib_parado(con, _date(2026, 11, 26))[0]
+    assert (achado["chave"], achado["gravidade"]) == ("CNIB:copia_parada", "CRITICO")
+    assert achado["titulo"] == ("Base local do CNIB atrasada: a ordem mais nova é de "
+                                "12/08/2026 (leitura da fila ligada)")
+    assert "parada" not in achado["titulo"]
+    detalhe = achado["detalhe"]
+    assert "A leitura da fila está ligada" in detalhe
+    assert "26/11/2026, leu 40000 ordens (39415 novas)" in detalhe
+    assert "restavam 376438 ordens" in detalhe
+    assert "confira se a rotina" not in detalhe
+    assert "direto na Central" in detalhe
+
+
+def test_fila_desligada_nao_fala_em_fila(cg_casa):
+    con = _con(cg_casa)
+    _ordem_do_dia(con, "VELHA-SEM-FILA", "2026-08-12")
+    _leitura(con, "2026-11-23", "OK")
+    achado = GC.regra_cnib_parado(con, _date(2026, 11, 23))[0]
+    assert achado["titulo"] == "Base local do CNIB atrasada: a ordem mais nova é de 12/08/2026"
+    assert "fila" not in achado["detalhe"]
+
+
+def test_fila_ligada_sem_rodada_terminada_avisa(cg_casa):
+    con = _con(cg_casa)
+    _fila_ligada(con)
+    _ordem_do_dia(con, "VELHA-FILA-2", "2026-08-12")
+    achado = GC.regra_cnib_parado(con, _date(2026, 11, 26))[0]
+    assert achado["titulo"].endswith("(leitura da fila ligada)")
+    assert "nenhuma rodada dela terminou ainda" in achado["detalhe"]
+
+
+def test_fila_ligada_com_base_em_dia_nao_tem_achado(cg_casa):
+    con = _con(cg_casa)
+    _fila_ligada(con)
+    _ordem_do_dia(con, "NOVA-FILA", "2026-11-25")
+    _rodada_da_fila(con, "2026-11-26", lidas=200, novas=200, restantes=0)
+    assert GC.regra_cnib_parado(con, _date(2026, 11, 26)) == []

@@ -68,6 +68,8 @@
      `[data-busca-ato]`, que hoje é a tela do protocolo do caixa; nas outras
      não faz nada. #}
   <script defer src="{{ url_for('static', filename='busca_ato.js') }}"></script>
+  {# O sinal verde/vermelho do selo na tela do ato (P008): só age onde há `[data-selo-sinal]`. #}
+  <script defer src="{{ url_for('static', filename='selo_sinal.js') }}?v={{ VERSION }}"></script>
   {# Navegacao progressiva: busca, acordeao e menu compacto no celular. O
      <details> continua sendo a base, portanto nenhum link depende do script. #}
   <script defer src="{{ url_for('static', filename='navegacao.js') }}?v={{ VERSION }}"></script>
@@ -297,6 +299,7 @@
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Processos que levam meses</div>
         <a href="{{ url_for('usucapiao_processos') }}">Usucapião extrajudicial</a>
         <a href="{{ url_for('ri_retificacoes') }}">Retificação de área</a>
+        <a href="{{ url_for('ri_intimacoes') }}">Intimação fiduciária</a>
         {% set nsec.n = nsec.n + 1 %}<div class="nav-secao" style="--cor-da-secao:{{ cor_da_secao(cor_do_grupo, nsec.n - 1) }}">Livro 3 — Registro Auxiliar</div>
         <a href="{{ url_for('livro3_registros') }}">Registros do Livro 3</a>
         {# MINUTA ESQUECIDA NUM REGISTRO QUE NINGUEM ABRE nao aparece em lugar
@@ -315,6 +318,7 @@
         <a href="{{ url_for('ri_indicador_real') }}">Indicador Real</a>
         <a href="{{ url_for('ri_indicador_pessoal') }}">Indicador Pessoal</a>
         <a href="{{ url_for('ri_georref_pendentes') }}">Georreferenciamento — a conferir</a>
+        <a href="{{ url_for('ri_geo') }}">Mapa do ONR — polígonos</a>
         <a href="{{ url_for('ri_cnib') }}">CNIB — indisponibilidade</a>
         {# O ONR E A CENTRAL DO REGISTRO DE IMOVEIS, e ele faz duas coisas
            diferentes: recebe o **indicador real** (o indice que o pais consulta
@@ -342,6 +346,7 @@
           de fora: esta tela GRAVA na ficha, e ele nao pratica ato.
         #}
         {% if user.role in ['ADMIN','MANAGER','USER'] %}<a href="{{ url_for('ri_onr_enderecos') }}">ONR — endereços a conferir</a>{% endif %}
+        <a href="{{ url_for('ri_fila_fichas') }}">Fichas — fila de conferência (Livros 4 e 5)</a>
         <a href="{{ url_for('ri_cnib_pendentes') }}">CNIB — o que espera seu okay</a>
         {# A COPIA LOCAL DA CNIB TEM DE TER UM LUGAR ONDE SE OLHA DE QUANDO ELA
            E. Sem esta porta, o atualizador seria mais uma peca pronta que
@@ -375,6 +380,7 @@
         <a href="{{ url_for('ri_selos') }}">Selos e emolumentos</a>{% endif %}
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('ri_onr') }}">Exportação ONR</a>
         <a href="{{ url_for('onr_ir') }}">Indicador Real — o arquivo inteiro</a>
+        {% if user.role == 'ADMIN' %}<a href="{{ url_for('onr_ir_lotes') }}">Indicador Real: lotes para o portal</a>{% endif %}
         {#
           A CARGA DO NEXT CLOUD SAS FICA AO LADO DA EXPORTACAO, e nao numa
           secao nova: as duas mandam a mesma coisa ao mesmo destino — o que
@@ -875,6 +881,8 @@
         <a href="{{ url_for('caixa') }}">Entrada de caixa</a>
         <a href="{{ url_for('caixa_protocolos') }}">Protocolo geral</a>
         <a href="{{ url_for('at_meu_trabalho') }}">Meu trabalho</a>
+        {# MINHA ROTINA (26/11/2026): a rotina da serventia de quem está logado. #}
+        <a href="{{ url_for('rotina_minha') }}">Minha rotina</a>
         <a href="{{ url_for('at_lista') }}" title="Atendimentos - protocolo geral">Atendimentos</a>
         <a href="{{ url_for('tr_inicio') }}">Treinamento</a>
         <a href="{{ url_for('tr_trilha',trilha='primeiro-dia') }}">Primeiro dia</a>
@@ -941,6 +949,8 @@
         {# A CHECKLIST DE GESTÃO DO DIA (19/11/2026): os achados abertos por
            área do semáforo e as conferências de hoje. #}
         {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('gestor_checklist') }}">Checklist de gestão do dia</a>{% endif %}
+        {# A ROTINA DA SERVENTIA (26/11/2026): o cadastro que a checklist mostra. #}
+        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('rotina_cadastro') }}">Rotina da serventia</a>{% endif %}
         <a href="{{ url_for('gestor_envios') }}">Envios às Centrais</a>
         <a href="{{ url_for('gestor_leituras') }}">Leitura dos textos (IA)</a>
         {% if user.role in ['ADMIN','MANAGER'] %}<a href="{{ url_for('gestor_caixas') }}">Caixas para o visto</a>{% endif %}
@@ -1080,6 +1090,7 @@
     {% include '_selo_trava_aviso.html' %}
     {% include '_gratuidade_aviso.html' %}
     {% include '_selo_cancelamento_aviso.html' %}
+    {% include '_cadeias_aviso.html' %}
     <div class="main-compact-banners" data-main-compact-banners{% if nu_avisos_modal %} hidden{% endif %}>
       {% include '_faixas_compactas.html' %}
     </div>

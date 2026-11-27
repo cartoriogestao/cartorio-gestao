@@ -100,6 +100,13 @@ def o_que_falta(con, assento_id: int, *,
     if especie in CRCM.MOVIMENTO_DA_ESPECIE:
         for frase in CRCM.o_que_falta(con, assento, pessoas):
             faltas.append({"central": CRC, "falta": frase})
+        # O QUE SÓ A CARGA RETÉM (RC006, 26/11/2026): o tipo da morte e o
+        # estado civil do falecido em branco. A lavratura não os exige (o bebê,
+        # a pessoa não identificada), mas a tela de editar avisa — a carga
+        # os segura, e a CRC os recusaria.
+        if not para_lavratura:
+            for frase in CRCM.faltas_so_da_carga(assento, pessoas):
+                faltas.append({"central": CRC, "falta": frase})
 
     # O SIRC — o registro com a forma de `sirc_remessa.pendentes_de_remessa`
     # (`tipo` é a espécie, `assento_id` o id). A linha inteira vai junto:

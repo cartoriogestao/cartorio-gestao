@@ -188,8 +188,13 @@ def test_os_campos_obrigatorios_estao_em_passos_que_existem():
 
 
 def test_o_botao_de_lavrar_e_o_ultimo_passo():
-    """Ordem de 07/10: tudo o que o clique leva se preenche antes dele."""
-    trecho = FICHA[FICHA.index('<button class="primary">Lavrar ato</button>') - 80:]
+    """Ordem de 07/10: tudo o que o clique leva se preenche antes dele.
+
+    O botão leva atributos (o `data-selo-lavra` do sinal do selo, P008): procura-se pela classe e
+    pelo rótulo, não pela tag inteira."""
+    botao = re.search(r'<button class="primary"[^>]*>Lavrar ato</button>', FICHA)
+    assert botao, "o botão de lavrar sumiu da ficha"
+    trecho = FICHA[botao.start() - 80:]
     assert 'data-passo="lavrar"' in trecho[:120]
 
 

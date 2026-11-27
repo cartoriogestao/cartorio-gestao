@@ -304,7 +304,7 @@
             {% endif %}
             {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
             {% set s_selo = seletor_do_selo('rc_atos') %}
-            {{ protocolo_do_selo(s_selo.candidatos, s_selo.pedidos, atendendo=s_selo.atendendo) }}
+            {{ protocolo_do_selo(s_selo.candidatos, s_selo.pedidos, atendendo=s_selo.atendendo, tabela='rc_atos', rotulo='Lavrar', se_nao_sair='o ato não é lavrado e a tela mostra o que falta') }}
             <button class="button" style="padding:4px 8px;font-size:12px">Selar novamente</button>
           </form>
           {% endif %}
@@ -649,7 +649,7 @@
     <div style="grid-column:1/-1">
       {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
       {% set s_selo = seletor_do_selo('rc_certidoes') %}
-      {{ protocolo_do_selo(s_selo.candidatos, s_selo.pedidos, atendendo=s_selo.atendendo) }}
+      {{ protocolo_do_selo(s_selo.candidatos, s_selo.pedidos, atendendo=s_selo.atendendo, tabela='rc_certidoes', rotulo='Emitir', se_nao_sair='a certidão não é emitida e a tela mostra o que falta') }}
     </div>
     <div class="actions" style="grid-column:1/-1">
       <button class="button" type="submit"

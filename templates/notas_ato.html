@@ -692,7 +692,10 @@
   </div>
 
   <div class="grid2" style="padding:14px">
-    <form method="post">
+    {# A CAIXA NÃO VAI AO PAPEL (G002, 24/11/2026): ela guarda a marca interna das
+       assinaturas, e a impressão da ficha a levava junto. Impressa, a ficha
+       mostra só a prévia (`[data-teor-edicao]` em app.css). #}
+    <form method="post" data-teor-edicao>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label class="small muted" style="display:block;margin-bottom:4px">O texto</label>
       <textarea name="teor" rows="20" data-teor
@@ -708,8 +711,11 @@
       {# A PRÉVIA MOSTRA O TEOR COMO ELE ESTÁ GRAVADO, e não uma segunda
          montagem: uma versão «parecida» divergiria no primeiro conserto, e a
          tela passaria a mostrar uma coisa e o papel a levar outra. #}
-      <div class="teor-previa" data-teor-previa>
-        {% if a.teor %}{{ a.teor | sem_script }}
+      {# A MARCA INTERNA NÃO APARECE NA PRÉVIA (G002, 23/11/2026): ela separa o
+         teor do bloco de assinaturas e fica só na caixa, que é o dado gravado.
+         O script da prévia corta a mesma marca, lida de `data-teor-oculta`. #}
+      <div class="teor-previa" data-teor-previa data-teor-oculta="{{ marca_assinaturas }}">
+        {% if a.teor %}{{ teor_da_previa | sem_script }}
         {% else %}<p class="muted">Sem teor ainda. Monte com as partes, escreva
           ao lado, ou traga de um arquivo.</p>{% endif %}
       </div>
@@ -1089,7 +1095,7 @@
          clique leva (revisão, item do selo, arquivamento) se preenche antes.
          #}
       {# O PROTOCOLO PAGO — 22/10/2026: o escrevente escolhe aqui, e o selo procura o item nele. #}
-      {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('nt_atos') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo) }}</div>
+      {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s = seletor_do_selo('nt_atos') %}<div class="span2">{{ protocolo_do_selo(_s.candidatos, _s.pedidos, atendendo=_s.atendendo, tabela='nt_atos') }}</div>
       <div class="span2"><button class="primary" name="acao" value="lancar"
              {% if not a.teor %}disabled title="Escreva o teor antes de lançar"
              {% elif arquivamento and arquivamento.obrigatorio and not arquivamento.confirmado %}disabled title="Confirme as folhas do arquivamento antes de lançar"{% endif %}>Lançar no livro</button></div>
@@ -1466,7 +1472,7 @@
                placeholder="ex.: compra e venda"></label>
       <label class="span2"><input type="checkbox" name="confirmo_mesmo_valor" value="1">
         É outro imóvel, com o mesmo valor de um selo já pedido</label>
-      {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s2 = seletor_do_selo('nt_atos') %}<div class="span2">{{ protocolo_do_selo(_s2.candidatos, _s2.pedidos, atendendo=_s2.atendendo) }}</div>
+      {% from '_protocolo_do_selo.html' import protocolo_do_selo %}{% set _s2 = seletor_do_selo('nt_atos') %}<div class="span2">{{ protocolo_do_selo(_s2.candidatos, _s2.pedidos, atendendo=_s2.atendendo, tabela='nt_atos') }}</div>
       <div class="span2"><button class="primary" name="acao" value="selar_extra">Pedir o selo adicional ao aparelho</button></div>
     </form>
   </details>

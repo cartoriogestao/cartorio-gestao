@@ -30,6 +30,7 @@ import protesto_boleto as BOL
 import protesto_devedor as DEV
 import protesto_integracoes as INTEG
 from ri_web import data_por_extenso
+from caixa_schema import reais as _reais
 from serventia import dados as dados_serventia
 
 QUEM_OPERA = ("ADMIN", "MANAGER", "USER")
@@ -162,7 +163,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             emitiveis = BOL.emitiveis(con, hoje=hoje(), ambiente=ambiente)
             lista = BOL.boletos(con, ambiente=ambiente)
             pendencias = BOL.pendencias(con)
-            a_cancelar = BOL.vivos_de_titulo_encerrado(con)
+            # PR007: também o SUSTADO, e no ambiente ligado (o link da
+            # homologação também se cancela, no sandbox).
+            a_cancelar = BOL.a_cancelar(con, ambiente=ambiente)
         return render_template(
             "protesto_boletos.html", cfg=cfg, ambiente=ambiente,
             emitiveis=emitiveis, boletos=lista, pendencias=pendencias,
@@ -204,6 +207,24 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         flash("Boleto cancelado no banco.", "success")
         return redirect(url_for("protesto_boletos"))
 
+    @app.route("/protesto/boletos/cancelar-encerrados", methods=["POST"])
+    @roles_required(*QUEM_ENVIA)
+    def protesto_boletos_cancelar_encerrados():
+        """Cancela no provedor as cobranças de título resolvido ou sustado
+        (PR007). **ESCREVE NO BANCO.** Uma de cada vez; a recusada fica."""
+        try:
+            r = BOL.cancelar_os_encerrados(db, quem=usuario_nome())
+        except RECUSAS_DO_BALCAO as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("protesto_boletos"))
+        audit("PROTESTO_BOLETOS_ENCERRADOS_CANCELADOS", "pt_boletos", None,
+              {"cancelados": [x["boleto_id"] for x in r["cancelados"]],
+               "recusados": [x["boleto_id"] for x in r["recusados"]]})
+        flash(f"{len(r['cancelados'])} cobrança(s) cancelada(s) no banco."
+              + "".join(f" Nº {x['boleto_id']}: {x['motivo']}" for x in r["recusados"]),
+              "warning" if r["recusados"] else "success")
+        return redirect(url_for("protesto_boletos"))
+
     @app.route("/protesto/boletos/<int:boleto_id>/conferir", methods=["POST"])
     @roles_required(*QUEM_OPERA)
     def protesto_boleto_conferir(boleto_id: int):
@@ -234,6 +255,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
               {"ambiente": r["ambiente"], "vistas": r["vistas"],
                "baixadas": len(r["baixadas"]), "conferir": len(r["conferir"]),
                "atos": [x.get("ato_id") for x in r["baixadas"] if x.get("ato_id")]})
+        for aviso in r.get("avisos") or []:
+            flash(f"Para conferir no portal: {aviso}", "warning")
         if not r["perguntou"]:
             flash("Não há boleto em aberto — não havia o que perguntar ao banco.",
                   "info")
@@ -329,8 +352,28 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
         """O modo e o provedor do AR e do boleto. SÓ LÊ — e não mostra segredo."""
         with db.connect() as con:
             quadro = INTEG.quadro(con)
+            cobranca_no_aviso = BOL.ligada_no_aviso(con)
         return render_template("gestor_protesto_integracoes.html", quadro=quadro,
-                               modos=INTEG.MODOS, rotulos=INTEG.ROTULO_DO_MODO)
+                               modos=INTEG.MODOS, rotulos=INTEG.ROTULO_DO_MODO,
+                               cobranca_no_aviso=cobranca_no_aviso)
+
+    @app.route("/administrativo/gestor/protesto-integracoes/aviso",
+               methods=["POST"])
+    @roles_required("ADMIN")
+    def gestor_protesto_cobranca_no_aviso():
+        """Liga ou desliga a cobrança que sai com a intimação (PR007). ESCREVE
+        em `settings` — só a chave; a integração do boleto é outra."""
+        valor = BOL.LIGADA_NO_AVISO if _campo("ligar") == "1" else "NAO"
+        with db.transaction() as con:
+            from bd_nativo import banco
+            banco(con).escrever(
+                """INSERT INTO settings(key, value) VALUES (%s, %s)
+                   ON CONFLICT (key) DO UPDATE SET value = excluded.value""",
+                (BOL.CHAVE_DO_AVISO, valor))
+        audit("PROTESTO_COBRANCA_NO_AVISO", "settings", None, {"valor": valor})
+        flash("A intimação " + ("sai com a cobrança." if valor == BOL.LIGADA_NO_AVISO
+                                else "sai sem a cobrança."), "success")
+        return redirect(url_for("gestor_protesto_integracoes"))
 
     @app.route("/administrativo/gestor/protesto-integracoes/salvar",
                methods=["POST"])
@@ -351,6 +394,62 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
                "provedor": cfg["provedor"],
                "tarifa_centavos": cfg.get("tarifa_centavos")})
         flash(f"{cfg['nome']}: {cfg['rotulo_do_modo']}.", "success")
+        return redirect(url_for("gestor_protesto_integracoes"))
+
+    @app.route("/administrativo/gestor/protesto-integracoes/cobranca-de-teste",
+               methods=["POST"])
+    @roles_required("ADMIN")
+    def gestor_protesto_cobranca_de_teste():
+        """Emite, lê e baixa um boleto no SANDBOX do provedor ligado (PR007).
+
+        O pagador é a própria serventia: nenhum devedor vai ao sandbox, nenhum
+        número de aviso se gasta, e nada se grava em `pt_boletos`.
+        """
+        d = sv()
+        pagador = {"nome": d.get("unit_name"), "documento": d.get("serventia_cnpj"),
+                   "endereco": d.get("serventia_endereco"), "cep": d.get("serventia_cep"),
+                   "cidade": d.get("ri_cidade"), "uf": d.get("ri_uf"), "bairro": ""}
+        try:
+            BAPI.conferir_pedido({"valor_centavos": BOL.VALOR_DO_TESTE,
+                                  "vencimento": hoje(), "pagador": pagador})
+        except BAPI.BoletoError as erro:
+            flash("A cobrança de teste usa a própria serventia como pagadora, e o "
+                  "cadastro dela está incompleto (Administrativo → Configurações → "
+                  f"Serventia): {erro}", "danger")
+            return redirect(url_for("gestor_protesto_integracoes"))
+        try:
+            with db.connect() as con:
+                cfg, transporte = INTEG.transporte_em_uso(con, INTEG.BOLETO)
+            r = BOL.cobranca_de_teste(cfg=cfg, transporte=transporte, pagador=pagador,
+                                      hoje=hoje(), pagar=_campo("pagar") == "1")
+        except RECUSAS_DO_BALCAO as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("gestor_protesto_integracoes"))
+        audit("PROTESTO_BOLETO_TESTE", "pt_boletos", None,
+              {"provedor": r["provedor"], "registrado": r["registrado"],
+               "tem_pix": r["tem_pix"], "pago": r["pago"], "baixado": r["baixado"],
+               "taxa_do_devedor_centavos": r["taxa_do_devedor_centavos"]})
+        partes = [f"Cobrança de teste ({r['provedor']}, R$ 10,00):",
+                  "boleto registrado, com linha digitável" if r["registrado"]
+                  else "SEM linha digitável ainda (o registro não voltou)",
+                  "com Pix" if r["tem_pix"] else "SEM Pix",
+                  ]
+        taxa = r["taxa_do_devedor_centavos"]
+        if taxa is not None:
+            partes.append(f"a linha cobra R$ {_reais(r['valor_da_linha_centavos'])}"
+                          + (f" — taxa de R$ {_reais(taxa)} paga pelo devedor" if taxa > 0
+                             else " — o mesmo valor pedido: a taxa, se houver, sai do "
+                                  "cartório (use a tarifa repassada)"))
+        if r["pago"]:
+            for liq in r.get("liquidacoes") or []:
+                partes.append(f"pago no sandbox: entrou R$ "
+                              f"{_reais(liq['valor_pago_centavos'])} por "
+                              f"{(liq.get('forma') or 'boleto').lower()}")
+        partes.append("baixado no sandbox" if r["baixado"] else
+                      ("pago no sandbox" if r["pago"] else "NÃO baixado"))
+        flash("; ".join(partes) + ".", "success" if r["registrado"] else "warning")
+        for aviso in r["avisos"]:
+            flash(aviso, "warning")
         return redirect(url_for("gestor_protesto_integracoes"))
 
     @app.route("/administrativo/gestor/protesto-integracoes/testar",

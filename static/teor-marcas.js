@@ -188,11 +188,19 @@
   function ligarPrevia(campo, formato) {
     var previa = document.querySelector("[data-teor-previa]");
     if (!previa) return;
+    // A MARCA INTERNA QUE A TELA PEDE PARA ESCONDER (`data-teor-oculta`, só a
+    // ficha das Notas) sai da prévia em HTML e fica na caixa. Corta antes de
+    // limpar o script: tirada depois, a marca no meio de «java…script:»
+    // reabriria o link.
+    var oculta = previa.getAttribute("data-teor-oculta") || "";
+    var semOculta = function (texto) {
+      return oculta ? texto.split(oculta).join("") : texto;
+    };
     var atualizar = (formato === "texto")
       ? function () { previa.textContent = campo.value; }
       : function () {
           previa.textContent = "";
-          previa.appendChild(semScript(campo.value));
+          previa.appendChild(semScript(semOculta(campo.value)));
         };
     campo.addEventListener("input", atualizar);
   }

@@ -2508,10 +2508,39 @@ def carregar_rcpj_rtd(con: sqlite3.Connection, acervo: sqlite3.Connection,
     `strTipoRegistro` diz de qual atribuicao e cada linha: `TD` ou `PJ`. A
     serie sai dele com o livro; onde o livro nao casa com nenhuma serie
     conhecida, a linha e rejeitada em vez de entrar num livro arbitrado.
+
+    A MESMA LINHA DUAS VEZES (T021, 26/11/2026). O E-Oficio gravou um registro
+    do RTD duas vezes, com `intChave` diferente e a folha escrita com e sem o
+    zero na frente, e esta carga trouxe as duas como ATIVO: o livro e o indice
+    ficaram com o numero duas vezes. Agora, quando serie, volume, numero, folha
+    e data do ato repetem uma linha ja gravada (ou lida antes nesta rodada), a
+    segunda entra CANCELADO, com `duplicata_de` apontando a primeira, e a carga
+    avisa. Ela fica guardada, fora dos livros e dos indices; se o oficial, a
+    vista do livro, disser que a certa e a outra, a fila de correcoes de oficio
+    troca (`RG_REGISTRO_REPETIDO` e o inverso).
     """
     carga = Carga("rcpj_rtd")
     if not _tem_tabela(acervo, "tbRegistroTD"):
         raise CargaError("O acervo não tem `tbRegistroTD`.")
+    bd = banco(con)
+    # (serie, volume, numero, folha, data) -> (id, origem_chave) da primeira.
+    # So a linha do acervo, ATIVA e que nao e copia.
+    primeiras: dict[tuple, tuple[int, str]] = {}
+    for g in bd.ler(
+            """SELECT r.id, r.serie, r.volume, r.numero, r.origem_chave,
+                      a.folha, a.data_ato
+                 FROM rg_registros r
+                 JOIN rg_atos a ON a.registro_id = r.id AND a.tipo = 'REGISTRO'
+                WHERE r.origem = 'EOFICIO' AND r.situacao = 'ATIVO'
+                  AND r.duplicata_de IS NULL
+                ORDER BY r.id, a.id"""):
+        linha = _linha_do_livro(g["serie"], g["volume"], g["numero"], g["folha"],
+                                g["data_ato"])
+        if linha:
+            primeiras.setdefault(linha, (int(g["id"]), str(g["origem_chave"] or "")))
+    # o que `mapear` viu e `depois` confirma (so se a linha entrou de fato)
+    copias: dict[str, tuple[int, str]] = {}
+    novas: dict[str, tuple] = {}
 
     def mapear(r: dict) -> dict | None:
         tipo = (_txt(r["strTipoRegistro"]) or "").upper()
@@ -2541,6 +2570,40 @@ def carregar_rcpj_rtd(con: sqlite3.Connection, acervo: sqlite3.Connection,
             "criado_em": agora,
         }
 
+    def mapear_sem_copia(r: dict) -> dict | None:
+        """`mapear`, e a segunda linha igual a outra entra CANCELADO."""
+        dados = mapear(r)
+        if dados is None:
+            return None
+        linha = _linha_do_livro(dados["serie"], dados["volume"], dados["numero"],
+                                _inteiro(r["strFolha_DE"]), _data(r["dtmData"]))
+        primeira = primeiras.get(linha) if linha else None
+        if primeira and primeira[1] != dados["origem_chave"]:
+            dados.update({
+                "situacao": "CANCELADO", "duplicata_de": primeira[0],
+                "duplicata_motivo": (
+                    "CANCELADO POR DUPLICIDADE DO ACERVO na carga: a mesma linha do "
+                    f"livro que {primeira[1]} (ficha {primeira[0]}), com outra chave "
+                    "no E-Oficio.")})
+            copias[dados["origem_chave"]] = primeira
+        elif linha:
+            novas[dados["origem_chave"]] = linha
+        return dados
+
+    def depois(c, registro_id: int, r: dict) -> None:
+        """O ato de registro; e a linha que entrou passa a contar como a primeira."""
+        ato_de_registro(c, registro_id, r)
+        chave = f"tbRegistroTD:{r['intChave']}"
+        primeira = copias.pop(chave, None)
+        if primeira:
+            carga.avisar(r["intChave"],
+                         "mesma série, volume, número, folha e data de outra linha do "
+                         "acervo: entrou CANCELADO por duplicidade, fora dos livros e "
+                         "dos índices", dict(r))
+            carga.contar("registros repetidos no acervo (entraram CANCELADO)")
+        elif chave in novas:
+            primeiras.setdefault(novas.pop(chave), (registro_id, chave))
+
     def ato_de_registro(c, registro_id: int, r: dict) -> None:
         """O ato de REGISTRO, com a folha e a data que o acervo tem.
 
@@ -2566,8 +2629,25 @@ def carregar_rcpj_rtd(con: sqlite3.Connection, acervo: sqlite3.Connection,
              "EOFICIO", f"tbRegistroTD:{r['intChave']}:REGISTRO", agora))
 
     linhas = _ler_acervo(acervo, "SELECT * FROM tbRegistroTD ORDER BY intChave")
-    return _executar(con, carga, "rg_registros", linhas, mapear,
-                     lambda r: r["intChave"], depois=ato_de_registro)
+    return _executar(con, carga, "rg_registros", linhas, mapear_sem_copia,
+                     lambda r: r["intChave"], depois=depois)
+
+
+def _linha_do_livro(serie: Any, volume: Any, numero: Any, folha: Any,
+                    data: Any) -> tuple | None:
+    """O lugar de um registro no livro: serie, volume, numero, folha e dia. Sem
+    um deles, None: nao se diz que duas linhas sao a mesma pelo que falta.
+
+    «05» e «5» sao o mesmo volume, e «012» e «12» a mesma folha (`_inteiro`).
+    So calcula.
+    """
+    digitos = "".join(c for c in str(volume or "") if c.isdigit())
+    vol = str(int(digitos)) if digitos else (_txt(volume) or "")
+    num, fl = _inteiro(numero), _inteiro(folha)
+    dia = str(data or "")[:10]
+    if not serie or num is None or fl is None or len(dia) != 10:
+        return None
+    return (str(serie), vol, int(num), int(fl), dia)
 
 
 # ------------------------------------------------- o Registro Auxiliar
@@ -3568,8 +3648,12 @@ def carregar_rcpj_rtd_livros(con: sqlite3.Connection, acervo: sqlite3.Connection
     if not _tem_tabela(acervo, "tbRegistroTD"):
         raise CargaError("O acervo não tem `tbRegistroTD`.")
     bd = banco(con)
-    por_chave = {r["origem_chave"]: int(r["id"]) for r in bd.ler(
-        "SELECT id, origem_chave FROM rg_registros WHERE origem='EOFICIO'")}
+    gravados = bd.ler("SELECT id, origem_chave, duplicata_de FROM rg_registros "
+                      "WHERE origem='EOFICIO'")
+    por_chave = {r["origem_chave"]: int(r["id"]) for r in gravados}
+    # A COPIA REPETIDA DO ACERVO (T021) nao ganha protocolo nem partes: e a
+    # mesma linha da primeira, que recebe tudo.
+    copias = {r["origem_chave"] for r in gravados if r["duplicata_de"]}
     titulos_ja = {r["origem_chave"] for r in bd.ler(
         "SELECT origem_chave FROM rg_titulos WHERE origem='EOFICIO'")}
     partes_ja = {r["origem_chave"] for r in bd.ler(
@@ -3586,6 +3670,10 @@ def carregar_rcpj_rtd_livros(con: sqlite3.Connection, acervo: sqlite3.Connection
         if registro_id is None:
             carga.rejeitar(r["intChave"], "registro que não está no sistema: rode antes a carga "
                                           "«RCPJ e RTD — registros e atos»", dict(r))
+            continue
+        if chave in copias:
+            carga.contar("registro repetido no acervo, cancelado: o protocolo e as partes "
+                         "ficam na primeira ficha")
             continue
         do_numero.setdefault((tipo, _inteiro(r["intNumeroRegistro"])), []).append(registro_id)
         protocolo = _inteiro(r.get("intProtocolo"))

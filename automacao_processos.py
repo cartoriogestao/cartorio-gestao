@@ -437,22 +437,221 @@ def verificar_wsoficio(ctx: Contexto) -> dict:
                      f"{dias} dias, nenhum novo desde a última verificação.", achados, estado=estado)
 
 
+#: CNN 320-AB (Provimento CN 224/2026): verificar o Constrijud na abertura, no
+#: encerramento e «em intervalos não superiores a 2 (duas) horas».
+CONSTRIJUD_MINUTOS_SEM_LEITURA = 120
+
+
+def _e_constricao(p: dict) -> bool:
+    """O título do e-Protocolo traz `DadosConstricao` (tipo ou número do processo)."""
+    return bool(str(p.get("constricao_tipo") or "").strip()
+                or str(p.get("constricao_processo") or "").strip())
+
+
+def verificar_constrijud(ctx: Contexto) -> dict:
+    """«Conferir o Constrijud» (ROT-RI-04) sem ninguém entrar no ONR (A008, 26/11/2026).
+
+    POR ONDE O CONSTRIJUD CHEGA
+        Não há API do Constrijud para o cartório. O ONR, no lançamento
+        (25/05/2026): para o registrador a rotina não muda, «os pedidos
+        continuam sendo recebidos via e-Protocolo», com a integração por API
+        no XML versão 5. O e-Protocolo do RI esta casa já lê
+        (`onr_eprotocolo`, processo `RI_ONR_EPROTOCOLO`, a cada 15 minutos), e
+        a ficha da ordem traz `DadosConstricao`. **Este processo não sai à
+        rede**: lê o que aquela leitura gravou.
+
+    O QUE ELE CONFERE
+        1. Que a leitura do e-Protocolo está ligada e que houve leitura BOA nas
+           últimas 2 horas (CNN 320-AB). Se não houve, é ERRO: a rotina parou,
+           e a faixa das cadeias automáticas acende para a TI, o gestor e o
+           administrador.
+        2. As ordens de constrição que chegaram e ninguém prenotou. Enquanto
+           houver uma, a rodada é AVISO e a tarefa do setor RI fica aberta —
+           ela se fecha sozinha quando a última for prenotada (o ONR passa o
+           título para «em andamento»). Prenotar é na ordem da remessa, com o
+           prazo, e depois atualizar o Constrijud (CNN 320-AC).
+
+    O relato vai em números; o número do protocolo do ONR e o tipo da
+    constrição ficam nos achados. Nome de parte não sai daqui.
+    """
+    import onr_eprotocolo as EP
+    amb = EP.ambiente(ctx.setting)
+    try:
+        limite = int(ctx.parametros.get("minutos_sem_leitura") or CONSTRIJUD_MINUTOS_SEM_LEITURA)
+    except (TypeError, ValueError):
+        limite = CONSTRIJUD_MINUTOS_SEM_LEITURA
+    with ctx.db.connect() as con:
+        ligado = EP.processo_ligado(con)
+        ultima = EP.ultima_leitura(con, amb)
+        abertos = EP.fila(con, amb=amb)
+    if not ligado:
+        return resultado(SCH.ERRO,
+                         "Constrijud: a leitura do e-Protocolo do ONR («ONR — e-Protocolo do RI») "
+                         "está desligada na central de automação. É por ela que as ordens do "
+                         "Constrijud chegam; desligada, ninguém confere as ordens de constrição "
+                         "(CNN 320-AB). Quem liga é o oficial.",
+                         erro="a leitura do e-Protocolo do ONR está desligada")
+    quando = None
+    if ultima:
+        try:
+            quando = datetime.fromisoformat(str(ultima.get("terminada_em") or "")[:19])
+        except ValueError:
+            quando = None
+    if quando is None or ctx.agora - quando > timedelta(minutes=limite):
+        desde = (f"a última leitura boa foi em {quando:%d/%m às %H:%M}" if quando
+                 else "nenhuma leitura boa até hoje")
+        return resultado(SCH.ERRO,
+                         f"Constrijud: o e-Protocolo do ONR não foi lido nas últimas {limite // 60} "
+                         f"hora(s) — {desde}. O CNN 320-AB pede a verificação na abertura, no "
+                         "encerramento e a cada 2 horas, no máximo. Veja a rodada de «ONR — "
+                         "e-Protocolo do RI» na central de automação.",
+                         erro="sem leitura boa do e-Protocolo no prazo")
+
+    constricoes = [p for p in abertos if _e_constricao(p)]
+    a_prenotar = [p for p in constricoes if p.get("situacao") == "A_PRENOTAR"]
+    em_andamento = len(constricoes) - len(a_prenotar)
+    sem_ficha = sum(1 for p in abertos
+                    if p.get("situacao") == "A_PRENOTAR" and not int(p.get("ficha_lida") or 0))
+    vistas = {int(x) for x in (ctx.estado.get("vistas") or []) if str(x).isdigit()}
+    novas = [p for p in a_prenotar if int(p["id_contrato"]) not in vistas]
+    estado = {"vistas": sorted(int(p["id_contrato"]) for p in a_prenotar),
+              "a_prenotar": len(a_prenotar), "em_andamento": em_andamento,
+              "leitura_em": quando.isoformat(), "medido_em": ctx.agora.isoformat(timespec="seconds")}
+    rodape = f" Leitura do e-Protocolo de {quando:%d/%m às %H:%M}."
+    if em_andamento:
+        rodape += f" {em_andamento} já prenotada(s), em andamento."
+    if sem_ficha:
+        rodape += (f" {sem_ficha} título(s) do e-Protocolo ainda sem a ficha lida: se algum for "
+                   "ordem de constrição, entra na próxima conferência.")
+    achados = [{"protocolo": p.get("protocolo"), "id_contrato": int(p["id_contrato"]),
+                "remessa": p.get("data_remessa") or p.get("data_solicitacao"),
+                "tipo": p.get("constricao_tipo") or "",
+                "nova": int(p["id_contrato"]) not in vistas} for p in a_prenotar]
+    if a_prenotar:
+        primeira = a_prenotar[0]
+        remessa = str(primeira.get("data_remessa") or primeira.get("data_solicitacao") or "")[:10]
+        return resultado(SCH.AVISO,
+                         f"Constrijud: {len(a_prenotar)} ordem(ns) de constrição esperando "
+                         f"prenotação ({len(novas)} nova(s) desde a última conferência)"
+                         + (f", a primeira remetida em {remessa[8:10]}/{remessa[5:7]}/{remessa[:4]}"
+                            if len(remessa) == 10 else "")
+                         + ". Passe ao escrevente do RI: prenotar na ordem da remessa, com o prazo, "
+                         "e atualizar o Constrijud (CNN 320-AC). Registro de Imóveis → ONR: "
+                         "e-Protocolo." + rodape,
+                         achados, estado=estado)
+    return resultado(SCH.OK, "Constrijud: nenhuma ordem de constrição esperando prenotação." + rodape,
+                     estado=estado)
+
+
+def _caso_cnib(p: dict) -> str:
+    """A identidade de um caso: matrícula, ordem e pessoa (a mesma chave de `pendentes`).
+
+    Vai para o `estado` do processo só o resumo (SHA-256), e não o nome e o
+    CPF/CNPJ: a base serve para dizer «já vi», não para guardar outra cópia
+    de quem é atingido.
+    """
+    import hashlib
+    o = p["ordem"]
+    chave = (f"{int(p['matricula_id'])}:{o.get('protocolo_cnib') or ''}:"
+             f"{o.get('documento') or ''}:{o.get('nome') or ''}")
+    return hashlib.sha256(chave.encode("utf-8")).hexdigest()[:20]
+
+
 def verificar_cnib(ctx: Contexto) -> dict:
-    """Matrículas com parte que bate com ordem ativa da CNIB e ainda sem decisão."""
+    """Caso NOVO da CNIB abre tarefa; os já conhecidos, não.
+
+    ORDENS DO OFICIAL:
+    - 24/11/2026 (tarefa 486): minuta só no caso devido (o CPF/CNPJ da ordem é
+      o de quem é dono hoje); o resto fica como aviso na ficha da matrícula,
+      para o escrevente conferir ao abri-la.
+    - 25/11/2026 (tarefa 704, que repetia a 486): «é só se continuar esses
+      1669 docs. se tiver qualquer outro doc novo, é para abrir tarefa de
+      rotina». Os casos que já estavam na lista ficam como BASE (`estado`), e
+      só caso fora dela põe a rodada em AVISO, e por isso abre tarefa. Os
+      conhecidos seguem nas tarefas do plano e na ficha.
+
+    A BASE É GRAVADA NA PRIMEIRA RODADA desta versão, com o que estiver
+    pendente naquele dia, e não cresce sozinha: caso novo continua novo até ser
+    decidido ou lavrado, quando sai da lista. Sem isso, a tarefa aberta num dia
+    fecharia sozinha no seguinte («normalizou») sem ninguém ter olhado.
+
+    Com `pode_agir`, prepara a minuta do caso devido que ainda não tem nenhuma
+    (não lavra, não sela). Desligado, só conta.
+    """
     import ri_cnib
+    import ri_minuta as MIN
+    acoes = []
     with ctx.db.connect() as con:
         if not banco(con).tem_tabela("ri_cnib_decisoes"):
             return _nao_mediu("as pendências da CNIB", "a tabela ri_cnib_decisoes não existe")
-        pendentes = ri_cnib.pendentes(con)
-    achados = [{"matricula": p.get("matricula_numero"), "criterio": p.get("criterio")}
-               for p in pendentes[:200]]
-    if pendentes:
-        por_doc = sum(1 for p in pendentes if p.get("criterio") == "documento")
-        return resultado(SCH.AVISO,
-                         f"CNIB: {len(pendentes)} caso(s) sem decisão ({por_doc} pelo documento, "
-                         f"{len(pendentes) - por_doc} pelo nome — homônimo é comum). Decida em "
-                         "Registro de Imóveis → CNIB.", achados)
-    return resultado(SCH.OK, "CNIB: nenhuma ordem ativa sem decisão nas matrículas.")
+    if ctx.pode_agir:
+        with ctx.db.transaction() as con:
+            feito = ri_cnib.preparar_minutas_devidas(con, agora=ctx.agora.isoformat(timespec="seconds"),
+                                                      usuario="AUTOMACAO")
+        if feito["preparadas"]:
+            acoes.append({"acao": "preparou minutas de averbação devida",
+                          "minutas": feito["preparadas"]})
+    with ctx.db.connect() as con:
+        pendentes = ri_cnib.pendentes(con, com_teor=False)
+    situacao = lambda p: (p["ordem"].get("minuta") or {}).get("situacao")
+
+    def quadro(casos: list[dict]) -> str:
+        devidas = [p for p in casos if p["devida"]]
+        texto = f"{len(devidas)} averbação(ões) devida(s)"
+        if devidas:
+            prontas = sum(1 for p in devidas if situacao(p) == MIN.A_REVISAR)
+            descartadas = sum(1 for p in devidas if situacao(p) == MIN.DESCARTADA)
+            partes = [f"{prontas} com minuta pronta"]
+            if len(devidas) - prontas - descartadas:
+                partes.append(f"{len(devidas) - prontas - descartadas} sem minuta")
+            if descartadas:
+                partes.append(f"{descartadas} com a minuta descartada")
+            texto += f" ({', '.join(partes)})"
+        return texto + f" e {len(casos) - len(devidas)} aviso(s) para conferir na ficha"
+
+    base = ctx.estado.get("conhecidos")
+    primeira = not isinstance(base, list)
+    if primeira:
+        base = sorted({_caso_cnib(p) for p in pendentes})
+        estado = {"conhecidos": base, "base_em": ctx.agora.isoformat(timespec="seconds"),
+                  "base_tamanho": len(base)}
+    else:
+        estado = dict(ctx.estado)
+    # A AVERBAÇÃO DEVIDA SEM MINUTA (A006): a faixa das cadeias automáticas
+    # (`cadeias_automaticas`) a lê daqui, com o dia em que apareceu — contá-la
+    # na tela custaria esta busca inteira a cada tela.
+    sem_minuta = sum(1 for p in pendentes if p["devida"] and not p["ordem"].get("minuta"))
+    estado["devidas_sem_minuta"] = sem_minuta
+    estado["sem_minuta_desde"] = ((ctx.estado.get("sem_minuta_desde") if ctx.estado.get(
+        "devidas_sem_minuta") else None) or ctx.hoje.isoformat()) if sem_minuta else None
+    estado["sem_minuta_medido_em"] = ctx.agora.isoformat(timespec="seconds")
+    conhecidos = set(base)
+    novos = [p for p in pendentes if _caso_cnib(p) not in conhecidos]
+    velhos = [p for p in pendentes if _caso_cnib(p) in conhecidos]
+    base_em = str(estado.get("base_em") or "")[:10]
+    sobre_os_velhos = (f"Dos {len(conhecidos)} já conhecidos em {base_em}, {len(velhos)} seguem "
+                       f"pendentes — {quadro(velhos)}; esses não abrem tarefa (Registro de "
+                       "Imóveis → CNIB e ficha da matrícula).")
+    if primeira:
+        r = resultado(SCH.OK, f"CNIB: base gravada com os {len(base)} caso(s) pendentes hoje, por "
+                      "ordem do oficial de 25/11/2026; daqui em diante, só caso novo abre tarefa. "
+                      f"{sobre_os_velhos}", estado=estado)
+    elif novos:
+        achados = [{"matricula": p.get("matricula_numero"), "protocolo": p["ordem"].get("protocolo_cnib"),
+                    "criterio": p.get("criterio"), "devida": p["devida"],
+                    "minuta": (p["ordem"].get("minuta") or {}).get("id"),
+                    "situacao_da_minuta": situacao(p)} for p in novos[:200]]
+        r = resultado(SCH.AVISO,
+                      f"CNIB: {len(novos)} caso(s) novo(s) desde {base_em}: {quadro(novos)}. Devida "
+                      "é quando o documento da ordem é o do dono de hoje: lavre ou decida; nos "
+                      "avisos, confira na ficha se corresponde e grave a decisão em Registro de "
+                      f"Imóveis → CNIB. {sobre_os_velhos}", achados, estado=estado)
+    else:
+        r = resultado(SCH.OK, f"CNIB: nenhum caso novo desde {base_em}. {sobre_os_velhos}",
+                      estado=estado)
+    if acoes:
+        r["acoes"] = acoes
+    return r
 
 
 # ------------------------------------------------------------------ RCPN
@@ -465,10 +664,17 @@ def verificar_sirc(ctx: Contexto) -> dict:
     Central não tem por onde perguntar «o que falta». O acervo não entra
     (`pendentes_de_remessa` já o deixa de fora).
     """
+    import gestor_conferencia as GCF
     import sirc_remessa as SR
     from ri_schema import dias_uteis_entre
     with ctx.db.connect() as con:
-        pendentes = SR.sem_os_ja_enviados(con, SR.pendentes_de_remessa(con))
+        # A MESMA RÉGUA DO GESTOR (26/11/2026, RC006): o acervo (pela origem) e
+        # o termo sem número não têm o prazo de 1 dia útil. Sem isto, os dois
+        # nascimentos de 1982 e 1984 lançados do livro em 16/11 contavam como
+        # «vencidos há onze mil dias úteis» em toda rodada.
+        fora = GCF.assentos_fora_da_cobranca(con)
+        pendentes = [r for r in SR.sem_os_ja_enviados(con, SR.pendentes_de_remessa(con))
+                     if int(r.get("assento_id") or 0) not in fora]
     feriados = ctx.feriados()
     vencidos, hoje_vence = 0, 0
     achados = []
@@ -476,7 +682,7 @@ def verificar_sirc(ctx: Contexto) -> dict:
         datas = [str(a.get("data_ato") or "")[:10] for a in (r.get("atos") or [])] or \
                 [str(r.get("data_ato") or "")[:10]]
         datas = [d for d in datas if re.fullmatch(r"\d{4}-\d{2}-\d{2}", d)]
-        if not datas:
+        if not datas or GCF.antes_do_corte(max(datas)):
             continue
         uteis = dias_uteis_entre(date.fromisoformat(max(datas)), ctx.hoje, feriados)
         if uteis > 1:
@@ -505,11 +711,16 @@ def verificar_crc(ctx: Contexto) -> dict:
     é a dos assentos lavrados nos últimos `dias` (parâmetro, padrão 10).
     """
     import crc_carga as CRC
+    import gestor_conferencia as GCF
     dias = int(ctx.parametros.get("dias", 10))
     with ctx.db.connect() as con:
         pendentes = CRC.pendentes_de_carga(con)
+        # O acervo lançado do livro grava a data da digitação (RC006): pela
+        # data ele parecia «recente». A régua é a do gestor.
+        fora = GCF.assentos_fora_da_cobranca(con)
     limite = (ctx.hoje - timedelta(days=dias)).isoformat()
-    recentes = [p for p in pendentes if str(p.get("data_ato") or "")[:10] >= limite]
+    recentes = [p for p in pendentes if str(p.get("data_ato") or "")[:10] >= limite
+                and int(p["id"]) not in fora]
     achados = [{"total_pendente": len(pendentes), "recentes": len(recentes), "dias": dias}]
     if recentes:
         return resultado(SCH.AVISO,
@@ -862,6 +1073,7 @@ CATALOGO: dict[str, Any] = {
     "automacao_processos:verificar_conferencia_cenprot": verificar_conferencia_cenprot,
     "automacao_processos:verificar_onr_fila": verificar_onr_fila,
     "automacao_processos:verificar_wsoficio": verificar_wsoficio,
+    "automacao_processos:verificar_constrijud": verificar_constrijud,
     "automacao_processos:verificar_cnib": verificar_cnib,
     "automacao_processos:verificar_sirc": verificar_sirc,
     "automacao_processos:verificar_crc": verificar_crc,
@@ -918,11 +1130,26 @@ SEMENTES: tuple[dict, ...] = (
      "parametros": {"dias": 7}, "agenda": {"dias": _UTEIS, "horarios": ["08:30", "13:30"]},
      "descricao": "Entra no Ofício Eletrônico e conta os ofícios e penhoras dos últimos dias; avisa "
                   "quando chegou coisa nova. Usa o certificado configurado no WSOfício."},
+    # «Conferir o Constrijud» (ROT-RI-04) — A008, 26/11/2026. O CNN 320-AB pede
+    # a abertura, o encerramento e no máximo 2 horas entre uma e outra; a
+    # leitura do e-Protocolo (15 min, das 8h às 18h) é a que fala com o ONR, e
+    # cada horário daqui confere que ela leu nas 2 horas anteriores — às 08:30
+    # isso só fecha com a leitura da abertura, e às 18:15 com a do fim.
+    {"codigo": "RI_CONSTRIJUD", "nome": "Constrijud — ordem de constrição a prenotar", "setor": "RI",
+     "alvo": "automacao_processos:verificar_constrijud", "robo_oficial": "RI", "timeout_s": 60,
+     "parametros": {"minutos_sem_leitura": CONSTRIJUD_MINUTOS_SEM_LEITURA},
+     "agenda": {"dias": _UTEIS, "horarios": ["08:30", "10:30", "12:30", "14:30", "16:30", "18:15"]},
+     "descricao": "Na abertura, a cada 2 horas e no encerramento (CNN 320-AB): confere que a leitura "
+                  "do e-Protocolo do ONR — por onde chegam as ordens do Constrijud — rodou nas 2 "
+                  "horas anteriores (senão, ERRO e faixa para a TI, o gestor e o administrador), e "
+                  "abre tarefa do RI enquanto houver ordem de constrição esperando prenotação. Não "
+                  "sai à rede: lê o que a leitura do e-Protocolo gravou. Não prenota nada."},
     {"codigo": "RI_CNIB", "nome": "CNIB — ordens sem decisão", "setor": "RI",
      "alvo": "automacao_processos:verificar_cnib", "robo_oficial": "RI", "timeout_s": 900,
      "agenda": {"dias": _UTEIS, "horarios": ["07:45"]},
-     "descricao": "Matrículas com parte que bate com ordem ativa de indisponibilidade e ainda sem "
-                  "decisão do cartório."},
+     "descricao": "Caso novo da CNIB (fora dos já conhecidos na 1ª rodada) abre tarefa; com "
+                  "«pode agir», prepara a minuta da averbação devida (documento da ordem = dono de "
+                  "hoje). O resto fica como aviso na ficha da matrícula."},
     {"codigo": "RI_CNIB_MINUTAS", "nome": "CNIB — minutas diárias (rotina de fora)", "setor": "RI",
      "alvo": "automacao_processos:verificar_log", "robo_oficial": "RI", "timeout_s": 60,
      "parametros": {"chave_config": SCH.CHAVE_CNIB_LOG, "nome": "as minutas do CNIB", "horas": 26,
@@ -1062,6 +1289,11 @@ def sementes_de_outros_modulos() -> list[dict]:
                 # limite de idade do teste de restauração). Sem eles a semente
                 # nascia com `{}` e o processo dependia só do padrão do código.
                 "parametros": dict(item.get("parametros") or {}),
+                # As agendas e descrições de fábrica que a de hoje substituiu
+                # (RI013, 24/11/2026): `automacao.semear` troca só onde o
+                # cadastro ainda está com uma delas — o que o oficial mexeu fica.
+                "agendas_antigas": tuple(item.get("agendas_antigas") or ()),
+                "descricoes_antigas": tuple(item.get("descricoes_antigas") or ()),
             })
     return saida
 

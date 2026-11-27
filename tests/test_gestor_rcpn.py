@@ -165,11 +165,12 @@ def test_dado_obrigatorio_e_matricula_proposta(con):
     assert "00000001552026100024192001957843" in dado[0]["detalhe"]
 
 
-def test_complementar_nao_vira_tarefa(con):
+def test_complementar_vira_tarefa_desde_o_g007(con):
     _nascimento_completo(con, numero=1, cpf_registrado="000.000.018-30")
     compl = [x for x in G.conferir_assentos(con, HOJE)]
     assert _regras(compl) == ["RCPN_DADO_COMPLEMENTAR"]
-    assert "RCPN_DADO_COMPLEMENTAR" in G.REGRAS_SEM_TAREFA
+    # «pode» do titular, 25/11/2026: trabalho do escrevente vira tarefa.
+    assert "RCPN_DADO_COMPLEMENTAR" not in G.REGRAS_SEM_TAREFA
 
 
 # ------------------------------------------------------------- as anotações

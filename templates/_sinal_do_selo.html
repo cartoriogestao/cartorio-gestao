@@ -1,0 +1,34 @@
+{#
+  O SINAL DO SELO NA TELA DO ATO — verde, vermelho ou amarelo, ANTES de lavrar.
+
+  Pedido do oficial em 24/11/2026 (P008): «vamos fazer esse sinal verde e
+  vermelho». Em quatro semanas, 67 selos não saíram porque o protocolo não
+  tinha o item do código com unidade sobrando, ou o item não estava pago — e a
+  pessoa só via isso depois de lavrar.
+
+  Vai DENTRO do <form> do ato. O `static/selo_sinal.js` manda o formulário,
+  como está, para `/selo/sinal` (só lê) e põe aqui o resultado; refaz a
+  conta quando um campo muda e quando a pessoa volta do caixa. Com vermelho,
+  o botão de lavrar avisa antes e oferece «assim mesmo» — não bloqueia: o
+  selo continua saindo DEPOIS do ato, pelo protocolo que o escrevente
+  confirmou. Sem JavaScript nada muda na tela.
+
+    {% from '_sinal_do_selo.html' import sinal_do_selo %}
+    {{ sinal_do_selo('nt_cartoes', pedidos, rotulo='Abrir o cartão',
+                     se_nao_sair='o cartão não é aberto e a tela mostra o que falta') }}
+
+  `pedidos` são os da lista de protocolos ([(código, quantidade)]); a tela que
+  sabe o código exato pelo formulário tem a regra em `selo_sinal.PEDIDOS_DA_TELA`.
+#}
+{% macro sinal_do_selo(tabela, pedidos=None, rotulo='Lavrar',
+                       se_nao_sair='o selo não sai e a tela mostra o que falta') %}
+<div class="selo-sinal" data-selo-sinal hidden
+     data-url="{{ url_for('selo_sinal') }}"
+     data-tabela="{{ tabela }}"
+     data-pedidos="{% for codigo, quantidade in (pedidos or []) %}{{ codigo }}:{{ quantidade }}{% if not loop.last %} {% endif %}{% endfor %}"
+     data-rotulo="{{ rotulo }}"
+     data-se-nao-sair="{{ se_nao_sair }}"
+     role="status" aria-live="polite">
+  <div class="selo-sinal-corpo"><p class="small muted">Conferindo se o protocolo paga o selo…</p></div>
+</div>
+{% endmacro %}

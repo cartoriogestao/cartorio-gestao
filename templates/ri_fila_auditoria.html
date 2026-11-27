@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block title %}Rastro da fila das fichas{% endblock %}
+{% block heading %}<h1>Rastro da fila das fichas</h1>{% endblock %}
+{% block content %}
+<section class="card">
+  <p><a class="button" href="{{ url_for('ri_fila_fichas') }}">Voltar à fila</a></p>
+  <p><small>As 300 alterações mais recentes. Desfazer não apaga a linha original: grava outra.</small></p>
+  {% include '_ri_fila_rastro.html' with context %}
+</section>
+{% endblock %}

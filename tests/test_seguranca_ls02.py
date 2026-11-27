@@ -564,7 +564,7 @@ def test_o_termo_do_rcpn_nao_roda_script_na_folha(casa):
 def test_nenhuma_tela_de_teor_voltou_ao_safe():
     """O `|safe` nestas variáveis era a porta; o filtro é `sem_script`."""
     telas = RAIZ / "templates"
-    for nome, variavel in (("notas_ato.html", "a.teor"),
+    for nome, variavel in (("notas_ato.html", "teor_da_previa"),
                            ("notas_certidao.html", "certidao.teor"),
                            ("ri_como_ficara.html", "a.teor or ''"),
                            ("ri_como_ficara.html", "rascunho.teor or ''"),
@@ -989,6 +989,8 @@ INSERTS_DE_ANEXO = {
     "rc_leitura_documentos.py": "rc_assento", "malote_agente.py": "EXPEDIENTE",
     "gratuidade_comprovante.py": "SELO_GRATUIDADE",
     "onr_conformidade.py": "ONR_PENDENCIA",
+    # o comprovante de uma fase dos Projetos (S006), na ficha `dev_projetos_detalhe`
+    "dev_projetos.py": "DEV_PROJETO_COMPROVANTE",
     "selo_portal.py": "SELO_GRATUIDADE_CERTIDAO",
     "protesto_imagens.py": "PT_TITULO", "onr_certidoes.py": "ONR_CERTIDAO",
     "database.py": None,

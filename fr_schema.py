@@ -122,12 +122,45 @@ CREATE INDEX IF NOT EXISTS ix_fr_conferencias_dia
 """
 
 # Colunas acrescentadas depois. Aditivo, no padrão do sistema.
-MIGRACOES: tuple[tuple[str, str, str], ...] = ()
+#
+# O ATO DE ORIGEM — 24/11/2026. Chegou pelo malote uma circular de outro estado
+# que suspendeu procurações identificadas SÓ por serventia, livro, folha e
+# ordem, sem o nome de ninguém. A lista só sabia procurar pessoa: nada entrou,
+# e o traslado podia aparecer no balcão sem aviso nenhum.
+#
+# O ato entra NA MESMA TABELA, com o papel `ATO`, e não numa tabela irmã: a
+# procedência obrigatória, o inativar com motivo, o rastro da conferência
+# (`fr_conferencias.alerta_id`) e os PDFs do malote ligados ao alerta já moram
+# aqui. Uma tabela irmã teria de copiar os quatro — e cópia diverge no
+# primeiro conserto. Num alerta de ato, `nome` e `documento` ficam vazios.
+#
+# Cada campo tem a forma ESCRITA (o que a comunicação diz, para o balcão ler) e
+# a forma NORMALIZADA (o que a busca compara). «Livro 0120-A», «L. 120A» e
+# «livro 120A» são o mesmo livro só para quem normaliza.
+MIGRACOES: tuple[tuple[str, str, str], ...] = (
+    ("fr_alertas", "ato_natureza", "TEXT"),        # procuração, substabelecimento…
+    ("fr_alertas", "ato_serventia", "TEXT"),       # como a comunicação escreve
+    ("fr_alertas", "ato_serventia_norm", "TEXT"),
+    ("fr_alertas", "ato_cns", "TEXT"),             # só dígitos
+    ("fr_alertas", "ato_cidade", "TEXT"),
+    ("fr_alertas", "ato_cidade_norm", "TEXT"),
+    ("fr_alertas", "ato_uf", "TEXT"),
+    ("fr_alertas", "ato_livro", "TEXT"),
+    ("fr_alertas", "ato_livro_norm", "TEXT"),      # «120A»
+    ("fr_alertas", "ato_folha", "TEXT"),
+    ("fr_alertas", "ato_folhas_norm", "TEXT"),     # «|45|46|»: a faixa, aberta
+    ("fr_alertas", "ato_ordem", "TEXT"),           # número de ordem, termo, protocolo
+    ("fr_alertas", "ato_ordem_norm", "TEXT"),
+    ("fr_alertas", "ato_data", "TEXT"),
+)
 
 # ÍNDICE SOBRE COLUNA DE MIGRAÇÃO VAI AQUI, e não no `SCHEMA` — num banco que
 # já existe a coluna só aparece no `ALTER TABLE`, e o `CREATE INDEX` estoura ao
 # abrir. Eu errei isso duas vezes em 25/08/2026.
-INDICES_DEPOIS_DA_MIGRACAO: tuple[str, ...] = ()
+INDICES_DEPOIS_DA_MIGRACAO: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS ix_fr_alertas_ato_livro "
+    "ON fr_alertas(ato_livro_norm)",
+)
 
 
 def so_digitos(valor: Any) -> str | None:

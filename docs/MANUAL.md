@@ -223,7 +223,9 @@ tela:
 - **Chave da CENPROT**, em quadro próprio, com o botão **Salvar a chave da
   CENPROT**: códigos do IBGE e código CRA do tabelionato. Ao apontar um título
   vindo da CRA, o sistema calcula a chave pela regra do layout da CENPROT, que
-  é igual para toda serventia. Chave já gravada nunca muda. Formato errado não
+  é igual para toda serventia. Chave já gravada nunca muda (a exceção é a
+  troca pela chave que a Central já usa, feita pelo oficial na linha de
+  comando). Formato errado não
   se grava. Sem esses códigos, o título é apontado sem chave, e a tela do XML da
   CENPROT diz onde preencher;
 - listas do balcão (classificações, vias de entrada, setores) e backup (seção 19).
@@ -304,7 +306,7 @@ causa do seu perfil ou porque a administração fechou o módulo.
 | Tela | Para quê |
 |---|---|
 | Visão geral | a primeira tela do dia: avisos, tarefas vencidas, protocolos parados, atos sem conclusão e comunicações pendentes |
-| Projetos | os projetos de desenvolvimento da casa, para o administrador e o gerente. No layout novo, fica em **Trabalho › Projetos** |
+| Projetos | os projetos de desenvolvimento da casa que ainda não têm o resultado pleno, para o administrador e o gerente. No layout novo, fica em **Trabalho › Projetos**. **Novo projeto** cadastra título, código, área, responsável, prazo, origem e o **resultado pleno** (o que precisa ser verdade para estar pronto). A lista mostra o progresso («n de m fases»), a próxima fase, o responsável, o prazo e a área, e filtra por área e situação. A ficha abre com **O que falta para o resultado pleno** (as fases abertas, com critério, prazo e responsável; as atrasadas em vermelho); cada **fase** tem a situação (a fazer, em andamento, aguardando, concluída, dispensada) e os **comprovantes** (arquivo, link, PR, relatório, tarefa ou texto). A fase só se conclui com um comprovante dela ou com a observação que explica; aguardar pede o quê, e dispensar pede o porquê. A **Linha do tempo** junta o cadastro, os andamentos, cada mudança de fase, os comprovantes e a retirada. A **carga em lote** (JSON) cadastra ou atualiza vários projetos de uma vez, sem duplicar. O projeto que não cabe à gestão sai da lista por **Retirar dos projetos da gestão**, na ficha, com o motivo; **Ver os retirados** mostra quem, quando e por quê, e **Devolver à lista** o traz de volta. Nada se apaga, e toda gravação vai para a auditoria |
 
 ### Tabelionato de Notas
 
@@ -742,6 +744,10 @@ liberação, que é decisão do oficial, a qualificação é manual.
 - **Matrícula aberta a partir de outra**: a abertura e a ficha avisam os ônus
   da origem que faltam transportar, e há o modelo de averbação de **transporte
   de ônus**.
+- **Abertura com vários proprietários**: no passo **Proprietário** da Nova
+  matrícula, **+ Acrescentar proprietário** abre um bloco por dono, cada um com
+  a sua fração (50%, 1/4); até o selo da abertura, a ficha também acrescenta
+  outro proprietário, e depois do selo só **Corrigir**, com motivo escrito.
 - **Retificação e usucapião**: a notificação se sela, e a prenotação e o
   protocolo ficam gravados nela.
 
@@ -1831,8 +1837,57 @@ volta com o quadro aberto.
   **Relatório anual de IA**: a página pronta para imprimir. **O que a ajuda sabe do
   projeto** mostra o que a ajuda lê sobre o sistema, sem gastar consulta.
 
+**Rotina da serventia**
+
+A rotina de **manutenção** da casa — o que a TI e a administração fazem todo dia,
+semana, mês ou ano: cópias de segurança, centrais, robôs, financeiro, malote,
+Corregedoria, prazos. Serve para o oficial **delegar** a quem não conhece o cartório.
+A prática de atos e o trabalho do balcão não entram: vão para as tarefas.
+
+- **Gestão → Rotina da serventia** (oficial e gerente gravam; o auditor lê): cada item
+  diz a área (ou «TI e sistema»), para que serve, o **passo a passo** (um passo por
+  linha), onde se faz (uma tela do sistema ou um site), como saber que ficou pronto, o
+  que fazer se der errado, a prova a guardar e a base legal; quando vence (diária;
+  semanal, nos dias da semana; quinzenal, em dois dias do mês; mensal, num dia do mês
+  ou no Nº dia útil, e -1 é o último; trimestral, semestral e anual, um mês em cada
+  trimestre ou semestre, ou um só, e o dia); e o responsável e o suplente (o auditor
+  confere e não responde por rotina). O dia que cai em sábado, domingo ou feriado passa
+  para o dia útil seguinte, com os feriados de Configurações. A lista mostra o **próximo
+  vencimento** de cada item.
+- **A rotina vale do cadastro em diante**: o que venceu antes não é cobrado, e o item
+  aparece a partir do primeiro vencimento. Desativar pede o motivo e não apaga nada;
+  **Reativar** traz de volta valendo do dia, sem cobrar o tempo desativado.
+- **Checklist de gestão do dia**: no alto de cada área vem o bloco **Rotina do dia**,
+  antes dos achados, com o que vence hoje e o atrasado («atrasado desde dd/mm»). Com o
+  horário escrito exatamente «até HH:MM», o item atrasa depois dessa hora; outro texto
+  só se mostra. O que faltou não some: o item diz «N sem registro desde dd/mm» (os
+  últimos 30 dias), e o cabeçalho da área soma. Abra **Como fazer** para o passo a
+  passo, e clique **Feito** ao terminar: escolha o vencimento (o atual, ou um dos sem
+  registro), diga como foi (tudo certo, com pendência, não se aplica — fora do «tudo
+  certo», a observação é obrigatória) e, se quiser, anexe a prova. O registro depois do
+  prazo fica «registrado com atraso». O primeiro registro de cada vencimento fica; na
+  rotina de um vencimento por mês, trimestre, semestre ou ano, vale um por período,
+  mesmo que o dia mude. O «feito com pendência» continua à vista até o vencimento
+  seguinte. **Feito não resolve achado nem muda a cor da área.**
+- **Trabalho → Minha rotina** (todos, também o escrevente): o que a pessoa tem para hoje
+  e o atrasado, como responsável ou suplente, com o mesmo **Como fazer** e o mesmo
+  **Feito**, e embaixo toda a rotina dela com o próximo vencimento.
+- Toda escrita vai à **Auditoria**: ROTINA_CRIADA, ROTINA_ALTERADA, ROTINA_DESATIVADA,
+  ROTINA_REATIVADA e ROTINA_FEITA, com o código do item; a prova anexada vai como
+  ROTINA_PROVA_ANEXADA, e o arquivo que não se guardou, como ROTINA_PROVA_FALHOU (o
+  feito fica registrado, e a tela avisa).
+
 **Controles do oficial**
 
+- **Checklist de gestão do dia**: os achados abertos do gestor por área do semáforo
+  (cada cartão de **Conformidade por área**, na Visão geral, leva a ela) e as
+  conferências do dia. O oficial e o gerente podem **Retirar** da lista o achado que
+  não cabe à gestão nem à administração, com o motivo (um motivo pronto é opcional):
+  ele sai da lista e da contagem da tela, e **Ver os retirados** mostra quem retirou,
+  quando e por quê, com **Devolver à lista**. Retirar **não resolve nem apaga**: o
+  achado continua aberto no gestor e na **cor oficial** da área, que é a do painel e
+  do painel no celular; ao lado dela aparece a cor «sem os retirados». O auditor vê os
+  retirados e não retira.
 - **PLD / COAF**: a fila do COAF, só do administrador, porque as comunicações são
   sigilosas inclusive dentro da casa. O sistema seleciona, prepara e registra; **quem
   envia é a pessoa**, e o que se decide fica com ela.

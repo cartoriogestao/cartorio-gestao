@@ -205,8 +205,21 @@
 
         function atualizar() {
           campo.style.display = ehOnus() ? '' : 'none';
+          // O QUE SOME DA TELA NÃO VAI NO FORMULÁRIO — 26/11/2026. Com «Negativa»
+          // a lista some, mas as caixas que vêm marcadas (o ato lavrado no
+          // sistema, o trecho da IA) iam junto, escondidas, e a rota recusava:
+          // «Marcou ônus para transcrever e escolheu NEGATIVA». Uma ficha teve
+          // cinco recusas seguidas assim, com os dois ônus já cancelados.
+          // Campo desligado não é enviado; a marca fica, para quem voltar a
+          // «Positiva». O que o modelo já desliga (trecho que não está na
+          // ficha) continua desligado.
           Array.prototype.forEach.call(campo.querySelectorAll('[data-so-positiva]'), function (b) {
-            b.style.display = valor(b.dataset.soPositiva) === 'positiva' ? '' : 'none';
+            var mostra = valor(b.dataset.soPositiva) === 'positiva';
+            b.style.display = mostra ? '' : 'none';
+            Array.prototype.forEach.call(b.querySelectorAll('input, textarea'), function (e) {
+              if (e.dataset.travado === undefined) e.dataset.travado = e.disabled ? '1' : '0';
+              e.disabled = !mostra || e.dataset.travado === '1';
+            });
           });
           var j = document.getElementById('onus-justificativa');
           var contra = (campo.dataset.iaSugeriuOnus === 'POSITIVA' && valor('resultado_onus') === 'negativa')

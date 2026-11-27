@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import boleto_api as BAPI
@@ -161,6 +161,12 @@ def init_pt_boleto_schema(con: Any) -> None:
     for comando in re.sub(r"--[^\n]*", "", SCHEMA).split(";"):
         if comando.strip():
             bd.escrever(comando)
+    # PR007 (24/11/2026): o aviso que levou a cobrança, e o LINK de pagamento
+    # (a Parcela Express cobra por link; a linha e o Pix podem não vir).
+    for coluna, tipo in (("aviso_id", "bigint REFERENCES pt_avisos(id)"),
+                         ("link_pagamento", "TEXT")):
+        if not bd.tem_coluna("pt_boletos", coluna):
+            bd.escrever(f"ALTER TABLE pt_boletos ADD COLUMN {coluna} {tipo}")
 
 
 def _texto_em_reais(c: int) -> str:
@@ -205,7 +211,8 @@ def composicao(titulo: Any, *, emolumentos_centavos: int,
             "tarifa_centavos": tarifa, "valor_centavos": do_titulo + emol + tarifa}
 
 
-def _porque_nao(bd: Any, titulo: dict | None, *, hoje: str) -> str:
+def _porque_nao(bd: Any, titulo: dict | None, *, hoje: str,
+                vencimento: str | None = None) -> str:
     """Por que este título não pode ter boleto agora, ou vazio. SÓ LÊ."""
     if not titulo:
         return "o título não existe"
@@ -215,7 +222,7 @@ def _porque_nao(bd: Any, titulo: dict | None, *, hoje: str) -> str:
         # Art. 17, § 1º: o sustado só se paga com autorização judicial —
         # boleto seria convite a pagar o que o juiz mandou parar.
         return "o título está sustado por ordem judicial"
-    limite = AV.prazo_limite(bd, titulo)
+    limite = vencimento or AV.prazo_limite(bd, titulo)
     if not limite:
         return ("o protocolo não diz a data da protocolização, e sem ela não há "
                 "prazo-limite — que é o vencimento do boleto")
@@ -261,13 +268,19 @@ def emitiveis(con: Any, *, hoje: str, ambiente: str | None,
 
 def emitir(db: Any, titulo_id: int, *, emolumentos: Any, hoje: str,
            quem: str = "", pasta: Any = None, transporte: Any = None,
-           cfg: dict | None = None) -> dict:
+           cfg: dict | None = None, vencimento: str | None = None,
+           aviso_id: int | None = None) -> dict:
     """Registra o boleto do título no banco. **ESCREVE NO BANCO.**
 
     OS EMOLUMENTOS SÃO DE QUEM EMITE, e não deste módulo: é dinheiro que o
     devedor paga, e o valor derivado sem ninguém conferir é o engano que só
     aparece no balcão (a mesma regra de `resolve_intimacao.montar`). Zero se
     digita — não se presume.
+
+    `vencimento` e `aviso_id` são da cobrança que vai COM O AVISO
+    (`emitir_com_o_aviso`): o vencimento é o prazo que o aviso imprime, que
+    nunca é antes do prazo-limite, e o pagador é o do endereço que congelou
+    no aviso.
     """
     if emolumentos is None or not str(emolumentos).strip():
         raise BoletoDominioError(
@@ -286,15 +299,23 @@ def emitir(db: Any, titulo_id: int, *, emolumentos: Any, hoje: str,
     with db.transaction() as con:
         bd = banco(con)
         tit = PT.titulo_para_gravar(bd, titulo_id)
-        porque = _porque_nao(bd, tit, hoje=hoje)
+        if vencimento and tit:
+            legal = AV.prazo_limite(bd, tit)
+            if legal and str(vencimento)[:10] < legal:
+                raise BoletoDominioError(
+                    f"O vencimento {_br(vencimento)} é antes do prazo-limite "
+                    f"{_br(legal)} — a cobrança não pode vencer antes do dia "
+                    f"previsto para a lavratura (CN-MA art. 925, § 4º).")
+        porque = _porque_nao(bd, tit, hoje=hoje, vencimento=vencimento)
         if porque:
             raise BoletoDominioError(
                 f"O título {(tit or {}).get('numero_titulo') or titulo_id} não "
                 f"pode ter boleto agora: {porque}.")
-        pagador = _pagador(bd, int(titulo_id)) or {}
+        pagador = (_pagador_do_aviso(bd, aviso_id) if aviso_id else None) \
+            or _pagador(bd, int(titulo_id)) or {}
         partes = composicao(tit, emolumentos_centavos=emol,
                             tarifa_centavos=int(cfg.get("tarifa_centavos") or 0))
-        vencimento = AV.prazo_limite(bd, tit)
+        vencimento = str(vencimento)[:10] if vencimento else AV.prazo_limite(bd, tit)
         pedido = {"valor_centavos": partes["valor_centavos"],
                   "vencimento": vencimento, "pagador": pagador}
         try:
@@ -309,8 +330,8 @@ def emitir(db: Any, titulo_id: int, *, emolumentos: Any, hoje: str,
                    titulo_id, ambiente, provedor, identificador, situacao,
                    valor_titulo_centavos, emolumentos_centavos, tarifa_centavos,
                    valor_centavos, vencimento, pagador_json, emitido_em,
-                   emitido_por)
-               VALUES (%s,%s,%s,%s,'PENDENTE',%s,%s,%s,%s,%s,%s,%s,%s)
+                   emitido_por, aviso_id)
+               VALUES (%s,%s,%s,%s,'PENDENTE',%s,%s,%s,%s,%s,%s,%s,%s,%s)
                ON CONFLICT (titulo_id, ambiente)
                    WHERE situacao IN ('PENDENTE', 'EMITIDO', 'SEM_RESPOSTA')
                    DO NOTHING
@@ -318,7 +339,8 @@ def emitir(db: Any, titulo_id: int, *, emolumentos: Any, hoje: str,
             (int(titulo_id), ambiente, provedor, identificador,
              partes["valor_titulo_centavos"], partes["emolumentos_centavos"],
              partes["tarifa_centavos"], partes["valor_centavos"], vencimento,
-             json.dumps(pagador, ensure_ascii=False), agora, quem or None))
+             json.dumps(pagador, ensure_ascii=False), agora, quem or None,
+             int(aviso_id) if aviso_id else None))
         if not nova:
             raise BoletoDominioError(
                 f"O título {tit['numero_titulo']} já tem boleto em aberto. "
@@ -348,7 +370,8 @@ def emitir(db: Any, titulo_id: int, *, emolumentos: Any, hoje: str,
     _gravar_registro(db, boleto_id, r)
     return {"boleto_id": boleto_id, "ambiente": ambiente,
             "identificador": identificador, **partes, "vencimento": vencimento,
-            "nosso_numero": (r or {}).get("nosso_numero")}
+            "nosso_numero": (r or {}).get("nosso_numero"),
+            "link_pagamento": (r or {}).get("link_pagamento") or ""}
 
 
 def _marcar(db: Any, boleto_id: int, situacao: str, porque: str) -> None:
@@ -366,11 +389,12 @@ def _gravar_registro(db: Any, boleto_id: int, r: dict) -> None:
             """UPDATE pt_boletos
                   SET situacao='EMITIDO', nosso_numero=%s, id_no_provedor=%s,
                       linha_digitavel=%s, codigo_barras=%s,
-                      pix_copia_e_cola=%s, resposta=%s
+                      pix_copia_e_cola=%s, link_pagamento=%s, resposta=%s
                 WHERE id=%s AND situacao IN ('PENDENTE', 'SEM_RESPOSTA')""",
             (str(r.get("nosso_numero") or "").strip() or None,
              r.get("id_no_provedor") or None, r.get("linha_digitavel") or None,
              r.get("codigo_barras") or None, r.get("pix_copia_e_cola") or None,
+             str(r.get("link_pagamento") or "")[:1000] or None,
              json.dumps(r.get("resposta") or {}, ensure_ascii=False)[:4000],
              int(boleto_id)))
 
@@ -433,7 +457,11 @@ def cancelar(db: Any, boleto_id: int, *, motivo: str, quem: str = "",
             "Este boleto foi registrado em outro ambiente ou noutro provedor do "
             "que está ligado agora.")
     try:
-        transporte.cancelar(b["nosso_numero"])
+        if getattr(transporte, "CANCELA_COM_MOTIVO", False) or \
+                getattr(transporte, "PAGA_POR_LINK", False):
+            transporte.cancelar(b["nosso_numero"], porque)
+        else:
+            transporte.cancelar(b["nosso_numero"])
     except BAPI.BoletoError as erro:
         raise BoletoDominioError(f"O banco não deu baixa: {erro}") from erro
     agora = db.now()
@@ -479,7 +507,21 @@ def buscar_pagamentos(db: Any, *, sv: dict, data_extenso: str, hoje: str,
     piso = (date.fromisoformat(str(hoje)[:10]) - timedelta(days=60)).isoformat()
     desde = max(str(mais_antigo)[:10], piso)
     try:
-        lista = transporte.liquidacoes(desde, str(hoje)[:10])
+        if getattr(transporte, "PEDE_OS_NOSSOS", False):
+            # A PARCELA NÃO TEM «LIQUIDAÇÕES DO PERÍODO»: a busca lê os links
+            # da conta, e só os desta casa contam — os do caixa moram lá
+            # também. O cancelado entra: pago depois de cancelado é CONFERIR.
+            with db.connect() as con:
+                nossos = [x["nosso_numero"] for x in banco(con).ler(
+                    """SELECT nosso_numero FROM pt_boletos
+                        WHERE ambiente = %s AND provedor = %s
+                          AND nosso_numero IS NOT NULL
+                          AND situacao IN ('EMITIDO', 'SEM_RESPOSTA', 'CANCELADO')
+                          AND emitido_em >= %s""",
+                    (cfg["ambiente"], cfg["provedor"], piso))]
+            lista = transporte.liquidacoes(desde, str(hoje)[:10], nossos=nossos)
+        else:
+            lista = transporte.liquidacoes(desde, str(hoje)[:10])
     except BAPI.BoletoError as erro:
         raise BoletoDominioError(f"O banco não respondeu: {erro}") from erro
 
@@ -495,7 +537,8 @@ def buscar_pagamentos(db: Any, *, sv: dict, data_extenso: str, hoje: str,
             conferir.append(r)
     return {"ambiente": cfg["ambiente"], "perguntou": True,
             "vistas": len(lista or []), "baixadas": baixadas,
-            "conferir": conferir, "ja_vistas": ja_vistas, "desde": desde}
+            "conferir": conferir, "ja_vistas": ja_vistas, "desde": desde,
+            "avisos": list(getattr(transporte, "avisos", None) or [])}
 
 
 def conciliar(db: Any, liquidacao: dict, *, cfg: dict, sv: dict,
@@ -512,12 +555,16 @@ def conciliar(db: Any, liquidacao: dict, *, cfg: dict, sv: dict,
            "valor": int(liquidacao.get("valor_pago_centavos") or 0),
            "pago_em": str(liquidacao.get("pago_em") or "")[:10] or None,
            "creditado_em": str(liquidacao.get("creditado_em") or "")[:10] or None}
+    # A FORMA EM QUE O DEVEDOR PAGOU, quando o provedor a diz (a Parcela: Pix,
+    # boleto ou cartão no mesmo link). Fica fora de `liq` para não mudar a
+    # `resposta` gravada dos provedores que não a dizem.
+    forma = str(liquidacao.get("forma") or "").strip().upper()
     if not liq["evento_id"]:
         raise BoletoDominioError("O banco devolveu liquidação sem identificação.")
     try:
         with db.transaction() as con:
             return _assentar(con, liq, cfg=cfg, sv=sv, data_extenso=data_extenso,
-                             quem=quem, agora=agora)
+                             quem=quem, agora=agora, forma=forma)
     except (PT.ProtestoError, LivroError, BoletoDominioError) as erro:
         with db.transaction() as con:
             bd = banco(con)
@@ -560,7 +607,7 @@ def _inserir_liquidacao(bd: Any, liq: dict, *, cfg: dict, situacao: str,
 
 
 def _assentar(con: Any, liq: dict, *, cfg: dict, sv: dict, data_extenso: str,
-              quem: str, agora: str) -> dict:
+              quem: str, agora: str, forma: str = "") -> dict:
     """A liquidação, dentro da transação. AS TRAVAS NA ORDEM DA CASA: o título
     primeiro (como em `emitir` e em todo `lancar_*`), o boleto depois."""
     bd = banco(con)
@@ -613,12 +660,28 @@ def _assentar(con: Any, liq: dict, *, cfg: dict, sv: dict, data_extenso: str,
     # A BAIXA É O PAGAMENTO DO BALCÃO, com a forma BOLETO. Quem recusa título
     # sustado, pago ou desistido é `lancar_pagamento` — e a recusa dele vira a
     # frase da pendência (o `except` de `conciliar`).
+    #
+    # NA PARCELA, O LINK PAGO POR PIX ENTRA COMO «POR BOLETO» (a cobrança
+    # registrada, CN-MA art. 925, § 2º), e a identificação diz o Pix: a forma
+    # PIX do Livro exige o PIX de `protesto_pix`, com comprovante, e aqui quem
+    # conferiu o crédito foi a Parcela. Cartão é «por cartão».
+    nome_do_provedor = PROVEDORES_COM_FORMA.get(b["provedor"])
+    if nome_do_provedor:
+        como = {"PIX": "por Pix", "CARTAO": "por cartão",
+                "BOLETO": "por boleto"}.get(forma, "")
+        forma_do_livro = "CARTAO" if forma == "CARTAO" else "BOLETO"
+        identificacao = (f"boleto {nome_do_provedor} {b['nosso_numero']}"
+                         + (f", pago {como}" if como else "")
+                         + f" em {quando} (baixa pela consulta do provedor)")
+    else:
+        forma_do_livro = "BOLETO"
+        identificacao = (f"boleto nosso número {b['nosso_numero']}, pago em "
+                         f"{quando} (baixa pela liquidação do banco)")
     lavrado = PT.lancar_pagamento(
         con, int(b["titulo_id"]), sv=sv, agora=agora, data_extenso=data_extenso,
         valor_pago=_texto_em_reais(b["valor_titulo_centavos"]),
-        usuario=quem or None, origem="BOLETO", forma_pagamento="BOLETO",
-        forma_identificacao=(f"boleto nosso número {b['nosso_numero']}, pago em "
-                             f"{quando} (baixa pela liquidação do banco)"),
+        usuario=quem or None, origem="BOLETO", forma_pagamento=forma_do_livro,
+        forma_identificacao=identificacao,
         emolumentos=_texto_em_reais(b["emolumentos_centavos"]))
     ato_id = int(lavrado["ato_id"])
     _inserir_liquidacao(bd, liq, cfg=cfg, situacao=BAIXADO, boleto_id=b["id"],
@@ -718,13 +781,377 @@ def boletos_do_titulo(con: Any, titulo_id: int) -> list[dict]:
             ORDER BY id""", (int(titulo_id), INTEG.PRODUCAO))]
 
 
-def vivos_de_titulo_encerrado(con: Any) -> list[dict]:
-    """Boleto EMITIDO de título que já se resolveu por outro caminho — pago no
-    balcão, desistido, cancelado. SÓ LÊ. É o boleto que tem de ser cancelado no
-    banco antes que o devedor pague duas vezes."""
-    return [dict(x) for x in banco(con).ler(
-        """SELECT b.*, t.numero_titulo, t.protocolo, t.situacao AS situacao_do_titulo
-             FROM pt_boletos b JOIN pt_titulos t ON t.id = b.titulo_id
-            WHERE b.ambiente = %s AND b.situacao = 'EMITIDO'
-              AND t.situacao NOT IN ('APONTADO', 'INTIMADO')
-            ORDER BY b.id""", (INTEG.PRODUCAO,))]
+# ------------------------------------- a cobrança que vai com a intimação
+#
+# PR007 (24/11/2026). Pedido do oficial: «Preciso que as intimações já saiam
+# com boleto e Pix junto para pagamento». O aviso é o papel que vai ao
+# devedor; a cobrança vai impressa nele (`bloco_de_pagamento`).
+#
+#   - NASCE COM O AVISO, depois de ele gravado e FORA da transação dele
+#     (`emitir_com_o_aviso`): a cobrança que falha não desfaz o aviso — o
+#     aviso sai sem ela, e a tela diz por quê.
+#   - VENCE NO PRAZO QUE O AVISO IMPRIME (`protesto_aviso.prazo_de_pagamento`):
+#     o 3º dia útil da protocolização, ou o 1º dia útil depois da emissão do
+#     aviso, o que vier depois. É o fim do tríduo contado como o papel conta.
+#   - UMA VIVA POR TÍTULO. Aviso reemitido com o mesmo prazo e o mesmo valor
+#     REAPROVEITA a cobrança viva (o devedor que recebeu os dois papéis vê o
+#     mesmo link); com prazo ou valor diferente, a viva se cancela antes de a
+#     nova nascer. A que ficou sem resposta trava tudo até alguém conferir.
+#   - DESLIGADA ATÉ O OFICIAL LIGAR: precisa da integração do boleto ligada
+#     (`protesto_integracoes`) E da chave `CHAVE_DO_AVISO` em «SIM».
+
+# OS PROVEDORES QUE DIZEM A FORMA EM QUE O DEVEDOR PAGOU (boleto ou Pix, no
+# mesmo boleto híbrido). O Pix pago pelo boleto entra como «por boleto» no
+# Livro (a cobrança registrada, CN-MA art. 925, § 2º), e a identificação diz o
+# Pix: a forma PIX do Livro exige o PIX de `protesto_pix`, com comprovante, e
+# aqui quem conferiu o crédito foi o provedor.
+PROVEDORES_COM_FORMA = {"PARCELA": "Parcela Express", "INTER": "Banco Inter",
+                        "UNICRED": "Unicred"}
+CHAVE_DO_AVISO = "protesto_aviso_com_cobranca"
+LIGADA_NO_AVISO = "SIM"
+
+
+def ligada_no_aviso(con: Any) -> bool:
+    """A intimação sai com a cobrança? SÓ LÊ. Palavra desconhecida é «não»."""
+    linha = banco(con).um("SELECT value FROM settings WHERE key=%s", (CHAVE_DO_AVISO,))
+    return str((linha or {}).get("value") or "").strip().upper() == LIGADA_NO_AVISO
+
+
+def _pagador_do_aviso(bd: Any, aviso_id: Any) -> dict | None:
+    """O pagador com o endereço que CONGELOU no aviso — é para lá que o papel
+    foi, e é esse o endereço da cobrança."""
+    a = bd.um("""SELECT devedor_nome, devedor_documento, endereco, bairro, cep,
+                        cidade, uf FROM pt_avisos WHERE id=%s""", (int(aviso_id),))
+    if not a:
+        return None
+    return {"nome": a["devedor_nome"], "documento": a["devedor_documento"],
+            "endereco": a["endereco"], "bairro": a["bairro"], "cep": a["cep"],
+            "cidade": a["cidade"], "uf": a["uf"]}
+
+
+def _vivo_do_titulo(bd: Any, titulo_id: int, ambiente: str) -> dict | None:
+    linha = bd.um(
+        """SELECT * FROM pt_boletos WHERE titulo_id=%s AND ambiente=%s
+              AND situacao IN ('PENDENTE', 'EMITIDO', 'SEM_RESPOSTA')
+            ORDER BY id DESC LIMIT 1""", (int(titulo_id), str(ambiente)))
+    return dict(linha) if linha else None
+
+
+def emitir_com_o_aviso(db: Any, aviso_id: int, *, emolumentos: Any, hoje: str,
+                       quem: str = "", pasta: Any = None, transporte: Any = None,
+                       cfg: dict | None = None) -> dict:
+    """A cobrança do aviso: reaproveita, substitui ou cria. **ESCREVE NO BANCO.**
+
+    Devolve o que `emitir` devolve, mais `acao`: CRIADA, REAPROVEITADA ou
+    SUBSTITUIDA (com `cancelado_id`).
+    """
+    if emolumentos is None or not str(emolumentos).strip():
+        raise BoletoDominioError(
+            "Informe os emolumentos e despesas que vão na cobrança do aviso (zero, "
+            "se for o caso, digitado) — o valor que o devedor paga não se presume.")
+    emol = centavos(str(emolumentos))
+    if transporte is None or cfg is None:
+        with db.connect() as con:
+            cfg, transporte = INTEG.transporte_em_uso(con, INTEG.BOLETO, pasta=pasta)
+    with db.connect() as con:
+        bd = banco(con)
+        aviso = AV.ler(bd, aviso_id)
+        if not aviso:
+            raise BoletoDominioError(f"Aviso {aviso_id} não encontrado.")
+        if aviso["situacao"] == "CANCELADO":
+            raise BoletoDominioError("O aviso foi cancelado: não leva cobrança.")
+        tit = PT.titulo(bd, int(aviso["titulo_id"]))
+        if not tit:
+            raise BoletoDominioError("O título do aviso não foi encontrado.")
+        vencimento = AV.prazo_de_pagamento(bd, tit, aviso["emitido_em"])
+        partes = composicao(tit, emolumentos_centavos=emol,
+                            tarifa_centavos=int(cfg.get("tarifa_centavos") or 0))
+        vivo = _vivo_do_titulo(bd, int(aviso["titulo_id"]), cfg["ambiente"])
+    titulo_id = int(aviso["titulo_id"])
+    rotulo = f"{aviso['numero']}/{aviso['ano']}"
+    cancelado_id = None
+    if vivo:
+        if vivo["situacao"] != EMITIDO:
+            raise BoletoDominioError(
+                f"O título já tem cobrança {vivo['situacao'].replace('_', ' ')} "
+                f"(nº {vivo['id']}). Use «Conferir no banco» antes: outra cobrança "
+                f"agora poderia deixar duas vivas.")
+        mesma = (vivo["provedor"] == cfg["provedor"]
+                 and str(vivo["vencimento"])[:10] == str(vencimento)[:10]
+                 and int(vivo["valor_centavos"]) == int(partes["valor_centavos"]))
+        if mesma:
+            with db.transaction() as con:
+                banco(con).escrever(
+                    "UPDATE pt_boletos SET aviso_id=%s WHERE id=%s AND situacao='EMITIDO'",
+                    (int(aviso_id), int(vivo["id"])))
+            return {"acao": "REAPROVEITADA", "boleto_id": int(vivo["id"]),
+                    "ambiente": vivo["ambiente"], "identificador": vivo["identificador"],
+                    "vencimento": vivo["vencimento"], "nosso_numero": vivo["nosso_numero"],
+                    "valor_centavos": int(vivo["valor_centavos"]),
+                    "link_pagamento": vivo.get("link_pagamento") or ""}
+        cancelar(db, int(vivo["id"]), quem=quem, pasta=pasta, transporte=transporte,
+                 cfg=cfg, motivo=(f"substituída pela cobrança do aviso {rotulo}: o "
+                                  f"prazo ou o valor mudou"))
+        cancelado_id = int(vivo["id"])
+    r = emitir(db, titulo_id, emolumentos=str(emolumentos), hoje=hoje, quem=quem,
+               pasta=pasta, transporte=transporte, cfg=cfg, vencimento=vencimento,
+               aviso_id=int(aviso_id))
+    r["acao"] = "SUBSTITUIDA" if cancelado_id else "CRIADA"
+    r["cancelado_id"] = cancelado_id
+    return r
+
+
+def a_cancelar(con: Any, *, ambiente: str) -> list[dict]:
+    """As cobranças EMITIDAS que não podem mais ser pagas. SÓ LÊ.
+
+    O título que se resolveu por outro caminho — pago no balcão, desistido,
+    protestado, retirado, cancelado — e o SUSTADO (art. 17, § 1º: o juiz mandou
+    parar; deixar o link vivo é convite a pagar o que não se pode receber).
+    """
+    bd = banco(con)
+    fora = []
+    for linha in bd.ler(
+            """SELECT b.*, t.numero_titulo, t.protocolo,
+                      t.situacao AS situacao_do_titulo
+                 FROM pt_boletos b JOIN pt_titulos t ON t.id = b.titulo_id
+                WHERE b.ambiente = %s AND b.situacao = 'EMITIDO'
+                ORDER BY b.id""", (str(ambiente),)):
+        d = dict(linha)
+        if d["situacao_do_titulo"] not in SITUACOES_QUE_ACEITAM_BOLETO:
+            d["porque"] = f"título {str(d['situacao_do_titulo']).lower()}"
+        elif PT.sustacao_em_vigor(bd, int(d["titulo_id"])):
+            d["porque"] = "título sustado por ordem judicial"
+        else:
+            continue
+        fora.append(d)
+    return fora
+
+
+def cancelar_os_encerrados(db: Any, *, quem: str = "", pasta: Any = None,
+                           transporte: Any = None, cfg: dict | None = None) -> dict:
+    """Cancela no provedor cada cobrança de `a_cancelar`. **ESCREVE NO BANCO.**
+
+    Uma de cada vez: a que o provedor recusa (já paga, por exemplo) fica na
+    lista com a frase, e as outras seguem. Link pago depois de o título se
+    resolver chega pela busca de pagamentos e vira CONFERIR.
+    """
+    if transporte is None or cfg is None:
+        with db.connect() as con:
+            cfg, transporte = INTEG.transporte_em_uso(con, INTEG.BOLETO, pasta=pasta)
+    with db.connect() as con:
+        lista = a_cancelar(con, ambiente=cfg["ambiente"])
+    feitos, recusados = [], []
+    for b in lista:
+        if b["provedor"] != cfg["provedor"]:
+            recusados.append({"boleto_id": int(b["id"]), "motivo":
+                              "emitido noutro provedor do que está ligado agora"})
+            continue
+        try:
+            cancelar(db, int(b["id"]), motivo=f"{b['porque']} — a cobrança não vale mais",
+                     quem=quem, pasta=pasta, transporte=transporte, cfg=cfg)
+        except BoletoDominioError as erro:
+            recusados.append({"boleto_id": int(b["id"]), "motivo": str(erro)})
+            continue
+        feitos.append({"boleto_id": int(b["id"]), "titulo_id": int(b["titulo_id"]),
+                       "porque": b["porque"]})
+    return {"cancelados": feitos, "recusados": recusados}
+
+
+def _resposta(b: dict) -> dict:
+    try:
+        lido = json.loads(b.get("resposta") or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return lido if isinstance(lido, dict) else {}
+
+
+def bloco_de_pagamento(con: Any, aviso: Any) -> dict | None:
+    """O que o aviso imprime para o devedor pagar, ou None. SÓ LÊ.
+
+    Só com a intimação ligada à cobrança (`ligada_no_aviso`) e com a cobrança
+    EMITIDA do título, no ambiente ligado agora. O boleto registrado vai com a
+    LINHA DIGITÁVEL e o QR do PIX (copia-e-cola) — é o mesmo boleto, pago de
+    um jeito ou de outro. O endereço de uma página só se imprime quando não
+    há linha (o link da primeira versão). Na homologação o bloco diz, em
+    letra grande, que não se paga.
+
+    O VALOR IMPRESSO É O DA LINHA DIGITÁVEL quando o provedor soma a taxa do
+    boleto por cima (a Parcela: `taxa_do_devedor_centavos`): o devedor paga o
+    que o banco vai cobrar, e o papel diz que a diferença é a taxa.
+    """
+    av = dict(aviso)
+    bd = banco(con)
+    if not ligada_no_aviso(bd):
+        return None
+    cfg = INTEG.configuracao(bd, INTEG.BOLETO)
+    if not cfg["ambiente"]:
+        return None
+    b = bd.um(
+        """SELECT * FROM pt_boletos WHERE titulo_id=%s AND ambiente=%s
+              AND situacao='EMITIDO' ORDER BY id DESC LIMIT 1""",
+        (int(av["titulo_id"]), cfg["ambiente"]))
+    if not b:
+        return None
+    b = dict(b)
+    taxa = 0
+    try:
+        taxa = max(0, int(_resposta(b).get("taxa_do_devedor_centavos") or 0))
+    except (TypeError, ValueError):
+        taxa = 0
+    linhas = []
+    if cfg["ambiente"] != INTEG.PRODUCAO:
+        linhas.append("HOMOLOGAÇÃO — COBRANÇA DE TESTE, NÃO PAGUE")
+    linhas.append(f"PARA PAGAR: R$ {AV._reais(int(b['valor_centavos']) + taxa)} até "
+                  f"{_br(b['vencimento'])}")
+    linhas.append(f"Título R$ {AV._reais(b['valor_titulo_centavos'])} + emolumentos "
+                  f"e despesas R$ {AV._reais(b['emolumentos_centavos'])}"
+                  + (f" + tarifa R$ {AV._reais(b['tarifa_centavos'])}"
+                     if int(b["tarifa_centavos"] or 0) else "")
+                  + (f" + taxa do boleto R$ {AV._reais(taxa)}" if taxa else ""))
+    if b.get("linha_digitavel"):
+        linhas.append(f"Linha digitável: {b['linha_digitavel']}")
+    if b.get("pix_copia_e_cola"):
+        linhas.append(f"Pix copia e cola: {b['pix_copia_e_cola']}")
+    if b.get("link_pagamento") and not b.get("linha_digitavel"):
+        linhas.append(f"Pague por Pix, boleto ou cartão em: {b['link_pagamento']}")
+    qr = b.get("pix_copia_e_cola") or ("" if b.get("linha_digitavel")
+                                       else b.get("link_pagamento") or "")
+    if not (b.get("linha_digitavel") or qr):
+        return None
+    legenda = ("Aponte a câmera do aplicativo do banco para pagar por Pix"
+               if b.get("pix_copia_e_cola") else
+               "Aponte a câmera do celular para abrir a página de pagamento")
+    return {"boleto_id": int(b["id"]), "linhas": linhas, "qr": qr,
+            "legenda_do_qr": legenda, "homologacao": cfg["ambiente"] != INTEG.PRODUCAO}
+
+
+def boleto_sem_linha_do_titulo(con: Any, titulo_id: int) -> int | None:
+    """A cobrança EMITIDA do título no ambiente ligado, ainda sem a linha
+    digitável — a que `completar_linha` pergunta ao banco. SÓ LÊ."""
+    bd = banco(con)
+    cfg = INTEG.configuracao(bd, INTEG.BOLETO)
+    if not cfg["ambiente"]:
+        return None
+    return bd.valor(
+        """SELECT id AS v FROM pt_boletos WHERE titulo_id=%s AND ambiente=%s
+              AND provedor=%s AND situacao='EMITIDO' AND linha_digitavel IS NULL
+            ORDER BY id DESC LIMIT 1""",
+        (int(titulo_id), cfg["ambiente"], cfg["provedor"]))
+
+
+def completar_linha(db: Any, boleto_id: int, *, pasta: Any = None,
+                    transporte: Any = None, cfg: dict | None = None) -> bool:
+    """A linha digitável e o Pix que o banco gerou DEPOIS da emissão. LÊ LÁ,
+    e grava aqui só esses campos. Devolve se completou.
+
+    O Inter e a Unicred registram de forma assíncrona: o número vem na hora e
+    a linha quando a CIP termina. Quem imprime o aviso chama isto antes, fora
+    de transação; o que falha fica como estava (o aviso sai sem a cobrança,
+    e a tela diz por quê).
+    """
+    with db.connect() as con:
+        b = banco(con).um("SELECT * FROM pt_boletos WHERE id=%s", (int(boleto_id),))
+    if not b or b["situacao"] != EMITIDO or b.get("linha_digitavel"):
+        return False
+    if transporte is None or cfg is None:
+        with db.connect() as con:
+            cfg, transporte = INTEG.transporte_em_uso(con, INTEG.BOLETO, pasta=pasta)
+    if b["ambiente"] != cfg["ambiente"] or b["provedor"] != cfg["provedor"]:
+        return False
+    ler = getattr(transporte, "ler_registro", None)
+    if ler is None or not b.get("nosso_numero"):
+        return False
+    try:
+        lido = ler(b["nosso_numero"])
+    except BAPI.BoletoError:
+        return False
+    if not lido or not lido.get("linha_digitavel"):
+        return False
+    resposta = {**_resposta(dict(b)), **(lido.get("resposta") or {})}
+    with db.transaction() as con:
+        banco(con).escrever(
+            """UPDATE pt_boletos SET linha_digitavel=%s, codigo_barras=%s,
+                      pix_copia_e_cola=COALESCE(%s, pix_copia_e_cola), resposta=%s
+                WHERE id=%s AND situacao='EMITIDO' AND linha_digitavel IS NULL""",
+            (lido["linha_digitavel"], lido.get("codigo_barras") or None,
+             lido.get("pix_copia_e_cola") or None,
+             json.dumps(resposta, ensure_ascii=False)[:4000], int(boleto_id)))
+    return True
+
+
+# ------------------------------------------------- a cobrança de teste
+
+#: O valor da cobrança de teste: R$ 10,00 — acima do mínimo do Inter (R$ 2,50).
+VALOR_DO_TESTE = 1000
+
+
+def cobranca_de_teste(*, cfg: dict, transporte: Any, pagador: dict, hoje: str,
+                      pagar: bool = False, dormir: Any = None) -> dict:
+    """Emite, lê e baixa UM boleto no SANDBOX do provedor ligado. ESCREVE LÁ
+    (no sandbox), e nada aqui: não há título, aviso nem `pt_boletos`.
+
+    É o teste do caminho inteiro sem gastar número de aviso e sem mandar
+    devedor de verdade ao sandbox: o pagador é a própria serventia. Responde
+    às perguntas do oficial (25/11/2026): o boleto já sai registrado (linha
+    digitável e Pix), o valor da linha é o pedido, e a taxa — se o provedor a
+    soma — fica com quem paga. Com `pagar`, o sandbox paga (só onde o
+    provedor tem isso) e a venda mostra o que o devedor pagou.
+    """
+    if cfg.get("ambiente") != INTEG.HOMOLOGACAO:
+        raise BoletoDominioError("A cobrança de teste só roda com o boleto em "
+                                 "homologação (o sandbox do provedor).")
+    INTEG.recusar_simulador_em_producao(cfg["ambiente"], transporte)
+    vencimento = (date.fromisoformat(str(hoje)[:10]) + timedelta(days=5)).isoformat()
+    ident = "PTT" + datetime.now().strftime("%y%m%d%H%M")
+    pedido = {"valor_centavos": VALOR_DO_TESTE, "vencimento": vencimento,
+              "pagador": dict(pagador), "identificador": ident,
+              "mensagem": "Cobrança de teste do protesto — não pagar."}
+    try:
+        BAPI.conferir_pedido(pedido)
+        r = transporte.registrar(pedido)
+    except BAPI.BoletoError as erro:
+        raise BoletoDominioError(f"O provedor não emitiu o boleto de teste: {erro}") from erro
+    nosso = str(r.get("nosso_numero") or "")
+    ler = getattr(transporte, "ler_registro", None)
+    if not r.get("linha_digitavel") and ler and nosso:
+        for _ in range(3):
+            (dormir or __import__("time").sleep)(2.0)
+            try:
+                lido = ler(nosso)
+            except BAPI.BoletoError:
+                lido = None
+            if lido and lido.get("linha_digitavel"):
+                r = {**r, **{k: v for k, v in lido.items() if v}}
+                break
+    resposta = dict(r.get("resposta") or {})
+    linha = str(r.get("linha_digitavel") or "")
+    digitos = "".join(ch for ch in linha if ch.isdigit())
+    valor_da_linha = int(digitos[-10:]) if len(digitos) == 47 else None
+    fora = {"provedor": cfg["provedor"], "nosso_numero": nosso,
+            "identificador": ident, "vencimento": vencimento,
+            "valor_pedido_centavos": VALOR_DO_TESTE,
+            "registrado": bool(linha), "tem_pix": bool(r.get("pix_copia_e_cola")),
+            "valor_da_linha_centavos": valor_da_linha,
+            "taxa_do_devedor_centavos": (valor_da_linha - VALOR_DO_TESTE
+                                         if valor_da_linha is not None else None),
+            "pago": False, "baixado": False, "avisos": []}
+    if pagar and getattr(transporte, "PAGA_NO_SANDBOX", False) and nosso:
+        try:
+            transporte.pagar_no_sandbox(nosso)
+            fora["pago"] = True
+            lista = transporte.liquidacoes(str(hoje)[:10], vencimento, nossos=[nosso])
+            fora["liquidacoes"] = lista
+            fora["avisos"].extend(getattr(transporte, "avisos", None) or [])
+        except BAPI.BoletoError as erro:
+            fora["avisos"].append(f"O sandbox não pagou: {erro}")
+    if not fora["pago"] and nosso:
+        try:
+            transporte.cancelar(nosso, "cobrança de teste do protesto")
+            fora["baixado"] = True
+        except BAPI.BoletoError as erro:
+            fora["avisos"].append(f"A baixa do boleto de teste falhou: {erro}. Baixe "
+                                  f"{nosso} no portal do sandbox.")
+    fora["resposta"] = {k: v for k, v in resposta.items()
+                        if k in ("banco_status", "status", "banco", "expira_em",
+                                 "valor_da_linha_centavos", "taxa_do_devedor_centavos")}
+    return fora

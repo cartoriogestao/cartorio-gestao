@@ -286,6 +286,10 @@ def registrar_rotas_do_selo_e_caixa(app, db, login_required, roles_required, aud
         # rascunho não é ato: quem passa a atender aquele protocolo é o envio do ato.
         if request.endpoint in ("rascunho_salvar", "rascunho_salvar_e_abrir_processo"):
             return None
+        # O SINAL DO SELO (P008, 24/11/2026) manda o formulário do ato inteiro,
+        # com o protocolo marcado, só para CONFERIR: perguntar não é atender.
+        if request.endpoint == "selo_sinal":
+            return None
         try:
             with db.transaction() as con:
                 feito = AS.escolher_protocolo_do_selo(
@@ -422,6 +426,37 @@ def registrar_rotas_do_selo_e_caixa(app, db, login_required, roles_required, aud
         if tabela and ato_id is not None:
             return redirect(url_for("selo_cobertura", tabela=tabela, ato_id=ato_id))
         return redirect(url_for("selo_cobertura"))
+
+    @app.route("/selo/sinal", methods=["POST"])
+    @login_required
+    def selo_sinal():
+        """O sinal do selo na tela do ato, ANTES de lavrar (P008). Só LÊ.
+
+        A tela manda o próprio formulário, como está, mais `_sinal_tabela` e
+        os pedidos que a lista de protocolos já mostrava (`_sinal_pedido`,
+        «código:quantidade»). Volta o pedaço de HTML do sinal — verde,
+        vermelho ou amarelo — que `static/selo_sinal.js` põe no lugar.
+        """
+        import selo_sinal as SINAL
+        tabela = (request.form.get("_sinal_tabela") or "").strip().lower()
+        if tabela not in AS.ATRIBUICOES_DO_ATO and tabela not in AS.TABELAS_DE_ATO:
+            abort(404)
+        pedidos = []
+        for bruto in request.form.getlist("_sinal_pedido"):
+            codigo, _, qtd = str(bruto).partition(":")
+            if codigo.strip():
+                pedidos.append((codigo.strip(), qtd.strip() or 1))
+        try:
+            with db.connect() as con:
+                sinal = SINAL.sinal_do_formulario(
+                    con, tabela=tabela, usuario=usuario_nome(), form=request.form,
+                    pedidos_da_macro=CXP.pedidos_do_selo(pedidos))
+        except Exception:                                      # noqa: BLE001
+            # O sinal é aviso: a tela do ato não cai por causa dele, e o
+            # quadro «Para selar este ato falta» continua depois do clique.
+            logging.getLogger(__name__).exception("sinal do selo")
+            sinal = None
+        return render_template("_sinal_do_selo_corpo.html", sinal=sinal)
 
     @app.route("/selo/cobertura")
     @login_required

@@ -117,7 +117,7 @@
     <div style="grid-column:1/-1">
       {% from '_protocolo_do_selo.html' import protocolo_do_selo %}
       {% set s_selo = seletor_do_selo('rc_materializacoes', pedidos=[(codigo_ato, 1)]) %}
-      {{ protocolo_do_selo(s_selo.candidatos, s_selo.pedidos, atendendo=s_selo.atendendo) }}
+      {{ protocolo_do_selo(s_selo.candidatos, s_selo.pedidos, atendendo=s_selo.atendendo, tabela='rc_materializacoes') }}
     </div>
     <button class="button primary" style="grid-column:1/-1"
             onclick="return confirm('Emitir o selo da materialização ({{ codigo_ato }})?');">

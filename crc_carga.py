@@ -1265,12 +1265,47 @@ def o_que_falta(con: sqlite3.Connection, assento: dict,
                 "se o falecido possuía bens — a CRC exige S ou N nesse "
                 "campo, sem opção de ignorado, e a ficha não tem essa "
                 "resposta. Sem ela a Central recusa o registro inteiro")
+        # O TIPO DA MORTE E O ESTADO CIVIL EM BRANCO NÃO ENTRAM AQUI, e sim em
+        # `faltas_so_da_carga` (RC006, 26/11/2026): esta lista também recusa a
+        # LAVRATURA (`rc_centrais_na_lavratura`), e o óbito do bebê, da pessoa
+        # não identificada (LRP art. 81) ou o tardio se lavram sem eles — o
+        # ensaio de atos guarda isso. Quem segura é a carga da CRC.
         # **A RETENÇÃO DO ÓBITO VIOLENTO SAIU — 10/09/2026.** Aqui os 4 óbitos
         # violentos desta casa eram retidos, porque estava escrito que «a CRC
         # só enumera Natural ou Acidental». **O XSD enumera `VIOLENTA`**, com
         # essa palavra; a frase do «Natural ou Acidental» é de uma página de
         # recomendações do manual, e prosa de recomendação não é schema.
 
+    return faltas
+
+
+def faltas_so_da_carga(assento: dict, pessoas: dict) -> list[str]:
+    """O que retém o assento NA CARGA, sem recusar a lavratura. Só calcula.
+
+    **O TIPO DA MORTE E O ESTADO CIVIL DO FALECIDO EM BRANCO — recusas da
+    CRC em 24/11/2026 («TIPO_MORTE inexistente», «ESTADO_CIVIL
+    inexistente»).** A montagem manda «ignorado» para a palavra que não está
+    na lista, mas deixa VAZIO o que ninguém escreveu — não se declara ignorado por quem não respondeu (11/11/2026). E
+    o vazio a Central não tem. A lavratura do bebê e da pessoa não
+    identificada continua livre; o que se cobra é escrever, na ficha, o que a
+    lei já diz (solteiro, para a criança) ou «ignorado».
+    """
+    faltas: list[str] = []
+    if _texto(assento.get("especie")).upper() == "OBITO":
+        # **E O TIPO DA MORTE EM BRANCO — «TIPO_MORTE inexistente», dois óbitos
+        # de novembro.** O mesmo caso: «ignorada» para o código fora da lista, e o
+        # vazio para quem não respondeu — que a Central também não tem.
+        if not _texto(assento.get("ibge_natureza_obito")):
+            faltas.append(
+                "o tipo da morte (natural, violenta ou ignorada) — o campo "
+                "está em branco, e a CRC recusa o óbito sem ele («TIPO_MORTE "
+                "inexistente»). Informe na ficha; «ignorada» também é resposta")
+        if not _texto((pessoas.get("FALECIDO") or {}).get("estado_civil")):
+            faltas.append(
+                "o estado civil do falecido — o campo está em branco, e a CRC "
+                "recusa o óbito sem ele («ESTADO_CIVIL inexistente»). Informe "
+                "na ficha: solteiro, para a criança; «ignorado», se ninguém "
+                "sabe")
     return faltas
 
 
@@ -1688,6 +1723,13 @@ def registro_de_obito(con: sqlite3.Connection, assento: dict, pessoas: dict,
     ]
     for papel, tag, sexo in (("PAI", "NOMEPAI", "M"), ("MAE", "NOMEMAE", "F")):
         p = pessoas.get(papel, {})
+        # **«IGNORADO» NÃO É NOME — recusa da CRC em 24/11/2026: «NOMEPAI está
+        # inválido».** O óbito mandava a palavra da ficha como se fosse o
+        # nome do pai. A filiação declarada ausente não sobe, como já é no
+        # nascimento (`e_declarado_ausente`, a régua da lavratura).
+        from rc_assento import e_declarado_ausente
+        if e_declarado_ausente(p.get("nome")):
+            p = {}
         partes.append(_tag(tag, _nome_crc(p.get("nome"))))
         partes.append(_tag(f"CPF{papel}", _cpf(p)))
         if p.get("nome"):
@@ -1864,7 +1906,7 @@ def montar(con: sqlite3.Connection, assentos: list[int], *, cns: str) -> dict:
         # 0/244 nas colunas e preenchido no `dados_json`. Não grava: quem
         # grava é `rc_campos_do_acervo.gravar`, na abertura do banco.
         a, pessoas = _com_o_acervo(a, pessoas)
-        faltas = o_que_falta(con, a, pessoas, cns=cns)
+        faltas = o_que_falta(con, a, pessoas, cns=cns) + faltas_so_da_carga(a, pessoas)
         if faltas:
             retidos.append({"assento_id": aid, "nome": a.get("nome"),
                             "especie": especie, "faltas": faltas})

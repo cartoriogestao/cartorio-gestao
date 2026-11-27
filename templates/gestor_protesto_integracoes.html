@@ -6,8 +6,15 @@
   O AR digital dos Correios e o boleto do devedor <strong>nascem
   desligados</strong>. Ligue primeiro em <strong>homologação</strong>: ela fala
   com o serviço falso desta casa, sem rede, e nada do que voltar vale no livro.
-  A <strong>produção</strong> só se liga com o transporte do contrato escrito —
-  e hoje ele não existe para nenhum dos dois (falta o contrato).
+  A <strong>produção</strong> só se liga com o transporte do contrato escrito.
+  Para o boleto do devedor há <strong>três provedores</strong>: a
+  <strong>Parcela Express</strong> (boleto híbrido), o <strong>Banco Inter</strong>
+  (Boleto com Pix) e a <strong>Unicred</strong>. Os três emitem um boleto
+  <strong>registrado</strong> no CPF/CNPJ do devedor, que aparece no DDA do
+  banco dele, com o Pix no mesmo documento: é uma cobrança só, paga por um
+  ou por outro. Em homologação, cada um fala com o próprio
+  <strong>sandbox</strong>. A conta e a credencial são as da Cobrança do
+  caixa (Cobrança → Configuração; a do Inter é a das despesas).
 </p>
 <p class="small muted">
   A credencial (o par do contrato) <strong>não se digita aqui</strong>: ela vai
@@ -61,4 +68,58 @@
   {% endfor %}
 </section>
 {% endfor %}
+
+<section class="cartao">
+  <h2>Qual provedor sai mais em conta</h2>
+  <table class="tabela">
+    <thead><tr><th>Provedor</th><th>Quem paga a taxa</th><th>Pix</th><th>Sandbox</th></tr></thead>
+    <tbody>
+      <tr><td>Parcela Express</td>
+          <td>No link do caixa, o boleto custou R$ 1,10 <strong>por cima</strong>, pagos
+              pelo devedor, e o Pix saiu sem taxa (vendas de nov/2026). No boleto
+              híbrido, confira com a cobrança de teste.</td>
+          <td>QR no boleto</td><td>Sim, e paga o boleto pela API</td></tr>
+      <tr><td>Banco Inter</td>
+          <td>A tarifa é do cartório (a API não a repassa). O Inter anunciou em
+              maio/2026 isenção da liquidação para PJ que aderir ao termo de gestão de
+              cobranças; confira na conta. Use a tarifa repassada, se houver custo.</td>
+          <td>Precisa de chave Pix na conta</td><td>Sim</td></tr>
+      <tr><td>Unicred</td>
+          <td>A tarifa depende do plano com a cooperativa e é do cartório. Use a
+              tarifa repassada.</td>
+          <td>A cooperativa precisa habilitar o Pix no cadastro</td><td>Homologação pedida à cooperativa</td></tr>
+    </tbody>
+  </table>
+  <p class="small muted">A tarifa repassada ao devedor (CN-MA art. 925, § 5º) entra no
+    valor do boleto. Não a use com a Parcela se a cobrança de teste mostrar que ela
+    já soma a taxa por cima: o devedor pagaria duas vezes.</p>
+  {% for q in quadro if q.integracao == 'BOLETO' and q.modo == 'HOMOLOGACAO' %}
+  <form method="post" action="{{ url_for('gestor_protesto_cobranca_de_teste') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <p class="small">A <strong>cobrança de teste</strong> emite, lê e baixa um boleto de
+      R$ 10,00 no sandbox de {{ q.provedor_nome }}, com a própria serventia como
+      pagadora: nenhum título, aviso ou devedor entra. Diz se o boleto saiu
+      registrado, se veio o Pix e quanto a linha digitável cobra.</p>
+    <label><input type="checkbox" name="pagar" value="1"> pagar no sandbox (só a
+      Parcela) e ver o que entra</label>
+    <button class="button secondary" type="submit">Cobrança de teste</button>
+  </form>
+  {% endfor %}
+</section>
+
+<section class="cartao">
+  <h2>A intimação com a cobrança</h2>
+  <p>Agora: <strong>{{ 'o aviso sai com a cobrança' if cobranca_no_aviso else 'o aviso sai sem cobrança' }}</strong></p>
+  <p class="small muted">Ligada, a emissão do aviso na ficha do título cria a
+    cobrança do devedor no provedor do boleto acima — um boleto registrado com
+    Pix —, vencendo no prazo que o aviso imprime, e o papel sai com o valor, a
+    linha digitável e o QR do Pix. Precisa também do boleto ligado. Em
+    homologação o papel sai com a marca «não pague»: não ligue esta chave com o
+    boleto em homologação enquanto a equipe emite avisos de verdade.</p>
+  <form method="post" action="{{ url_for('gestor_protesto_cobranca_no_aviso') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="ligar" value="{{ '0' if cobranca_no_aviso else '1' }}">
+    <button class="button" type="submit">{{ 'Desligar' if cobranca_no_aviso else 'Ligar' }}</button>
+  </form>
+</section>
 {% endblock %}

@@ -172,7 +172,7 @@ JA_SABIDAS: frozenset[str] = frozenset({
     # passou a chama-la para montar a matricula do Livro D que vai ao
     # e-Proclamas. **Nome que deixou de ser orfao sai da lista**, senao ela so
     # cresce e o varredor vira enfeite.
-    "conferir_ato", "conferir_declaracao",
+    "conferir_declaracao",
     # `conferir_remessa` FICA (30/10/2026): `protesto_remessa._conferir_lote`
     # confere título a título pela mesma `CRA.conferir_titulo`, e a tela de conferir
     # a remessa mostra a falta de cada um. Uma segunda conta diria a mesma coisa.
@@ -518,6 +518,9 @@ ACHADAS_EM_12_10_2026: dict[str, str] = {
     # linha de comando, para o oficial conferir antes de gravar.
     "chaves_que_faltam": "protesto_cenprot — " + _TOOLS + " (chaves_cenprot_que_faltam.py)",
     "gravar_chaves_que_faltam": "protesto_cenprot — " + _TOOLS + " (chaves_cenprot_que_faltam.py --gravar)",
+    # 25/11/2026 (PR006): trocar a chave pela que a Central já usa é decisão do
+    # oficial sobre uma lista conferida — de propósito sem tela.
+    "trocar_pela_chave_da_central": "protesto_cenprot — " + _TOOLS + " (trocar_chave_pela_da_central.py)",
     "definir_chave": "modelos_editor — " + _TESTE,
     "fonte_mapa": "modelos_editor_serventia — " + _TESTE,
     "folha_da_certidao": "papel_seguranca — " + _TESTE + " (1ª via, 09/10)",
@@ -761,6 +764,16 @@ ACHADAS_EM_23_11_2026: dict[str, str] = {
 }
 
 
+# 26/11/2026: a carga em lote da rotina da serventia. A porta é o script do
+# agente 11 (o superusuário), fora do repositório, que a chama para cadastrar a
+# rotina com a auditoria de cada item; a tela é o cadastro item a item.
+# test_rotina_da_casa guarda a carga e a trilha.
+ACHADAS_EM_26_11_2026: dict[str, str] = {
+    "importar_e_auditar": "rotina_da_casa — a porta é a carga do agente 11; "
+                          "test_rotina_da_casa guarda a trilha",
+}
+
+
 def _conhecidas() -> set[str]:
     """As medições datadas que formam o piso do varredor."""
     return (set(JA_SABIDAS) | set(NASCIDAS_DEPOIS_DA_3_6_51)
@@ -780,7 +793,8 @@ def _conhecidas() -> set[str]:
             | set(ACHADAS_EM_29_10_2026_REPASSE)
             | set(ACHADAS_EM_30_10_2026)
             | set(ACHADAS_EM_11_11_2026)
-            | set(ACHADAS_EM_16_11_2026) | set(ACHADAS_EM_23_11_2026))
+            | set(ACHADAS_EM_16_11_2026) | set(ACHADAS_EM_23_11_2026)
+            | set(ACHADAS_EM_26_11_2026))
 
 
 def test_nenhuma_funcao_nova_fica_sem_tela():

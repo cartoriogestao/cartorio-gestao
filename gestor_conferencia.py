@@ -67,7 +67,33 @@ BACKUP_COMPLETO_DIAS_TOLERADOS = 7
 
 GRAVIDADES = ("CRITICO", "VENCIDO", "NAO_MEDIU", "PRAZO", "ATENCAO")
 
-ORIGENS_DO_ACERVO = ("EOFICIO", "ARQUIVO", "IMPORTACAO")
+#: As origens que são ACERVO trazido, e não ato lavrado nesta casa.
+#:
+#: **`ACERVO` ENTROU EM 26/11/2026 (RC006).** É a origem do lançamento direto do
+#: livro de papel (16/11/2026), e ele grava a data da DIGITAÇÃO em `data_ato`:
+#: um casamento celebrado em 1958 entrou com a data de 16/11/2026 e
+#: virou «ato novo» no SIRC, na CRC e no dado obrigatório do RCPN — sete
+#: achados falsos na checklist do Registro Civil. A data sozinha não separa o
+#: acervo do ato novo; a origem separa. `rc_funai` já tinha a mesma lista
+#: (RC004), e `compliance.ORIGENS_DO_ACERVO` é cópia desta, com teste.
+ORIGENS_DO_ACERVO = ("EOFICIO", "ARQUIVO", "IMPORTACAO", "ACERVO")
+
+
+def assentos_fora_da_cobranca(con) -> set[int]:
+    """Os assentos que as regras do ato novo (SIRC, CRC) não cobram. Só lê.
+
+    São dois: o do ACERVO (`ORIGENS_DO_ACERVO`), que sobe por lote do acervo,
+    e não com o prazo do ato novo; e o assento ATIVO SEM NÚMERO DE TERMO, que
+    não chegou a ser lavrado — mandá-lo ao SIRC seria informação inexata
+    (§ 4º do art. 225), e quem cobra a decisão sobre ele é o `RCPN_INACABADO`
+    do agente do RCPN, CRÍTICO. As listas de `sirc_remessa` e `crc_carga` não
+    mudam: elas são as da carga, e o acervo continua nelas.
+    """
+    marcas = ",".join(["%s"] * len(ORIGENS_DO_ACERVO))
+    return {int(r["id"]) for r in banco(con).ler(
+        f"""SELECT id FROM rc_assentos
+             WHERE COALESCE(origem,'') IN ({marcas}) OR numero IS NULL""",
+        ORIGENS_DO_ACERVO)}
 
 DESTINOS_DO_OBITO = (
     ("OBITO_TRE", "ao juiz eleitoral"),
@@ -197,8 +223,11 @@ def _competencias_enviadas(con, central) -> set[str]:
 def regra_sirc(con, hoje: date) -> list[dict]:
     import sirc_remessa
     enviados = _referencias_enviadas(con, "SIRC")
+    fora = assentos_fora_da_cobranca(con)
     saida = []
     for p in sirc_remessa.pendentes_de_remessa(con):
+        if int(p.get("assento_id") or 0) in fora:
+            continue
         datas = [_dia(a.get("data_ato")) for a in p.get("atos") or []]
         ultima = max([d for d in datas if d] or [_dia(p.get("data_ato"))]
                      or [None], default=None)
@@ -314,8 +343,15 @@ def regra_crc(con, hoje: date) -> list[dict]:
     # O ACERVO NÃO VIRA TAREFA: até 06/10 ele entrava como um achado só («N
     # assentos do acervo fora da carga»), e o corte do oficial o tirou — sobe
     # por lote, quando ele mandar, e não por cobrança.
+    #
+    # O ACERVO SE SEPARA PELA ORIGEM, E NÃO SÓ PELA DATA (26/11/2026): o
+    # lançamento direto do livro grava a data da digitação. Ver
+    # `assentos_fora_da_cobranca`, a mesma régua do SIRC.
+    fora = assentos_fora_da_cobranca(con)
     saida = []
     for p in crc_carga.pendentes_de_carga(con):
+        if int(p["id"]) in fora:
+            continue
         lavrado = _dia(p.get("data_ato"))
         if lavrado is None or antes_do_corte(lavrado):
             continue
@@ -813,6 +849,20 @@ def _leituras_vazias_em_seguida(bd) -> tuple[int, int, str | None]:
     return vazias, len(dias), desde
 
 
+def _ultima_rodada_da_fila(bd) -> dict | None:
+    """A última rodada da fila que terminou, ou None.
+
+    A linha da fila se reconhece pela frase que `cnib_atualizador` grava nela
+    (`_frase_da_fila`, «Fila da serventia.»): a tabela não tem coluna própria.
+    """
+    for leitura in bd.ler(
+            """SELECT pedida_em, lidas, novas, mensagem FROM ri_cnib_leituras
+                WHERE terminada_em IS NOT NULL AND mensagem LIKE %s
+                ORDER BY id DESC LIMIT 1""", ("Fila da serventia%",)):
+        return dict(leitura)
+    return None
+
+
 def regra_cnib_parado(con, hoje: date) -> list[dict]:
     """A base local do CNIB parou de receber ordens, ou a leitura volta vazia.
 
@@ -824,6 +874,13 @@ def regra_cnib_parado(con, hoje: date) -> list[dict]:
     A ressalva de `cnib_atualizador` (item 7) continua certa e não atrapalha aqui:
     uma ordem antiga que volta por causa do cancelamento não levanta o máximo. Ele
     só sobe quando chega ordem nova de verdade, que é o que esta regra pergunta.
+
+    **«ATRASADA», E NÃO «PARADA» (26/11/2026).** Ordem do oficial: «se a base não
+    está parada o alerta está errado. mude o alerta para "base atrasada" e a data
+    da ordem mais nova. e se a base estiver ligada indique no alerta». Com a
+    leitura da fila ligada, a base anda toda noite, mas a fila entrega primeiro
+    as ordens antigas, e o máximo só sobe quando chegar às novas. O que a regra
+    mede — a ordem mais nova — continua o mesmo; muda o nome do que ela vê.
     """
     bd = banco(con)
     if not (bd.tem_tabela("ri_cnib_leituras") and bd.tem_tabela("ri_cnib_ordens")):
@@ -837,25 +894,43 @@ def regra_cnib_parado(con, hoje: date) -> list[dict]:
     if not base_velha and dias_vazios < CNIB_DIAS_DE_LEITURA_VAZIA:
         return []
 
+    import cnib_atualizador as ATZ
+    fila_ligada = ATZ.fila_autorizada(con)
+    ligada = " (leitura da fila ligada)" if fila_ligada else ""
+
     # O título não leva a contagem: ele nomeia a tarefa, e um número que muda
-    # todo dia reescreveria a tarefa todo dia.
+    # todo dia reescreveria a tarefa todo dia. A data da ordem mais nova e a
+    # fila ligada mudam pouco, e por isso vão nele.
     if base is None:
-        titulo = "Base local do CNIB nunca foi atualizada"
+        titulo = "Base local do CNIB nunca foi atualizada" + ligada
         frases = ["A base local não tem nenhuma ordem."]
     else:
         atraso = (hoje - base).days
-        titulo = (f"Base local do CNIB parada: a ordem mais nova é de {base:%d/%m/%Y}"
-                  if base_velha else
-                  f"Leitura do CNIB voltando vazia desde {_dia(desde):%d/%m/%Y}")
+        titulo = ((f"Base local do CNIB atrasada: a ordem mais nova é de {base:%d/%m/%Y}"
+                   if base_velha else
+                   f"Leitura do CNIB voltando vazia desde {_dia(desde):%d/%m/%Y}")
+                  + ligada)
         frases = [f"A ordem mais nova da base é de {base:%d/%m/%Y}"
                   + (f", {atraso} dia(s) atrás." if atraso else ", de hoje.")]
+    rodada = _ultima_rodada_da_fila(bd) if fila_ligada else None
+    if fila_ligada:
+        if rodada:
+            frases.append(
+                f"A leitura da fila está ligada. A última rodada, em "
+                f"{_dia(rodada['pedida_em']):%d/%m/%Y}, leu {int(rodada['lidas'] or 0)} "
+                f"ordens ({int(rodada['novas'] or 0)} novas) e respondeu: "
+                f"«{rodada['mensagem']}» A fila entrega primeiro as ordens antigas: "
+                "a data acima só sobe quando ela chegar às novas.")
+        else:
+            frases.append("A leitura da fila está ligada, mas nenhuma rodada dela "
+                          "terminou ainda.")
     if vazias:
         frases.append(
             f"Depois da última leitura que trouxe ordens, vieram {vazias} "
             + ("leitura vazia" if vazias == 1 else "leituras vazias seguidas")
             + f", desde {_dia(desde):%d/%m/%Y}. Resposta vazia da Central não prova "
               "que não há ordem.")
-    elif base_velha:
+    elif base_velha and not rodada:
         frases.append("Nenhuma leitura recente voltou vazia: confira se a rotina "
                       "diária do CNIB está rodando.")
     frases.append("Enquanto isso, o «nada consta» da cópia local não vale: consulte "
@@ -865,6 +940,52 @@ def regra_cnib_parado(con, hoje: date) -> list[dict]:
 
 
 # ------------------------------------------------------------- a casa
+
+#: O RECIBO DO BACKUP QUE SAI FORA DO SERVIDOR (26/11/2026). Desde 15/11/2026 o
+#: backup do banco e o completo saem no Mac da casa, e não no servidor; a pasta
+#: do Mac só se alcança pela rede, que a régua de segurança de 22/10/2026 (M3)
+#: não deixa o servidor ler. Ordem do oficial: «B» — o Mac, ao terminar cada
+#: backup, deixa NESTA pasta do servidor um recibo pequeno (arquivo, quando
+#: terminou, tamanho e SHA-256 do último pacote do banco e do último completo),
+#: e a regra lê o recibo como lê os pacotes locais.
+PASTA_DO_RECIBO = "mac"
+NOME_DO_RECIBO = "RECIBO_DO_BACKUP.json"
+
+
+def _dias_do_recibo(pastas, hoje: date) -> tuple[dict, list[str]]:
+    """Os dias do último `banco` e do último `completo` nos recibos, e o que falhou.
+
+    Recibo ilegível não derruba a regra nem conta como backup: vira frase no
+    detalhe. Dia adiante de hoje é relógio errado, e não backup em dia.
+    """
+    import json
+    dias: dict[str, date] = {}
+    problemas: list[str] = []
+    for pasta in pastas:
+        arquivo = Path(pasta) / PASTA_DO_RECIBO / NOME_DO_RECIBO
+        if not arquivo.is_file():
+            continue
+        try:
+            recibo = json.loads(arquivo.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as erro:
+            problemas.append(f"o recibo {arquivo} não se leu ({type(erro).__name__})")
+            continue
+        for tipo in ("banco", "completo"):
+            item = recibo.get(tipo) if isinstance(recibo, dict) else None
+            if not isinstance(item, dict):
+                continue
+            try:
+                dia = date.fromisoformat(str(item.get("terminou") or "")[:10])
+            except ValueError:
+                problemas.append(f"o recibo {arquivo} não diz quando o {tipo} terminou")
+                continue
+            if dia > hoje:
+                problemas.append(f"o recibo {arquivo} traz o {tipo} com data adiante de hoje")
+                continue
+            if tipo not in dias or dia > dias[tipo]:
+                dias[tipo] = dia
+    return dias, problemas
+
 
 def regra_backup(con, hoje: date, pasta_dados: Path | None = None) -> list[dict]:
     if pasta_dados is None:
@@ -881,12 +1002,14 @@ def regra_backup(con, hoje: date, pasta_dados: Path | None = None) -> list[dict]
         configurada = ""
     pastas = {pasta_das_copias.pasta_de_backups(Path(pasta_dados), configurada),
               Path(pasta_dados) / "backups"}
+    do_recibo, problemas = _dias_do_recibo(sorted(pastas), hoje)
 
-    def dia_do_mais_novo(*padroes: str):
+    def dia_do_mais_novo(*padroes: str, recibo: tuple[str, ...] = ()):
         achados = [p for pasta in pastas if pasta.is_dir()
                    for padrao in padroes for p in pasta.glob(padrao)]
-        return (datetime.fromtimestamp(max(p.stat().st_mtime for p in achados)).date()
-                if achados else None)
+        dias = [datetime.fromtimestamp(p.stat().st_mtime).date() for p in achados]
+        dias += [do_recibo[t] for t in recibo if t in do_recibo]
+        return max(dias) if dias else None
 
     # O FUNDAMENTO MUDOU DE NORMA, NÃO DE REGRA: o 213/2026 revogou o 74/2018
     # (art. 26). A cópia completa em periodicidade da classe é o art. 12,
@@ -898,11 +1021,19 @@ def regra_backup(con, hoje: date, pasta_dados: Path | None = None) -> list[dict]
     # cobrava só o completo, com a folga de um dia — e o sistema gera o
     # completo uma vez por semana, então acusava seis dias em sete. O pacote do
     # dia é o diário do banco ou um completo (que também leva o banco).
-    completo = dia_do_mais_novo("backup_completo_*.zip")
-    do_dia = dia_do_mais_novo("backup_banco_*.zip", "backup_completo_*.zip")
+    # Só acusa o que passou do prazo da frequência (ordem do oficial em
+    # 26/11/2026): o do dia com mais de um dia, o completo com mais de sete.
+    completo = dia_do_mais_novo("backup_completo_*.zip", recibo=("completo",))
+    do_dia = dia_do_mais_novo("backup_banco_*.zip", "backup_completo_*.zip",
+                              recibo=("banco", "completo"))
+    onde = ("Procurei os pacotes em " + " e em ".join(str(p) for p in sorted(pastas))
+            + f", e o recibo do Mac ({PASTA_DO_RECIBO}/{NOME_DO_RECIBO}) dentro delas.")
+    if problemas:
+        frase = "; ".join(problemas)
+        onde += " " + frase[0].upper() + frase[1:] + "."
     if do_dia is None:
         return [_achado("BACKUP:completo", "BACKUP", "CRITICO", "TI",
-                        "Nenhum backup encontrado", remedio, None, fundamento)]
+                        "Nenhum backup encontrado", onde + " " + remedio, None, fundamento)]
     saida = []
     if completo is None or (hoje - completo).days > BACKUP_COMPLETO_DIAS_TOLERADOS:
         saida.append(_achado(
@@ -910,12 +1041,13 @@ def regra_backup(con, hoje: date, pasta_dados: Path | None = None) -> list[dict]
             f"Último backup completo é de {completo:%d/%m/%Y}" if completo
             else "Nenhum backup completo encontrado",
             f"O completo (banco, digitalizações e acervo) sai uma vez por semana; o "
-            f"limite é {BACKUP_COMPLETO_DIAS_TOLERADOS} dias. " + remedio, None, fundamento))
+            f"limite é {BACKUP_COMPLETO_DIAS_TOLERADOS} dias. " + onde + " " + remedio,
+            None, fundamento))
     if (hoje - do_dia).days > BACKUP_DIAS_TOLERADOS:
         saida.append(_achado(
             "BACKUP:diario", "BACKUP", "CRITICO", "TI",
             f"Último backup do banco é de {do_dia:%d/%m/%Y}",
-            "O pacote do banco sai todo dia (o processo BACKUP_DIARIO, às 18h). " + remedio,
+            "O pacote do banco sai todo dia, às 18h. " + onde + " " + remedio,
             None, fundamento))
     return saida
 
@@ -1352,6 +1484,12 @@ def regra_modelo_nao_preenchido(con, hoje: date) -> list[dict]:
     depender da sorte da leitura: vira regra, que acha sempre.
     """
     import re
+    from notas_teor import MARCA_ASSINATURAS
+    # A MARCA INTERNA DAS ASSINATURAS NÃO É CAMPO DE MODELO (G002, 24/11/2026).
+    # `@@FIM_DO_TEOR_ANTES_DAS_ASSINATURAS@@` separa o teor do bloco de
+    # assinaturas, e o `@campo` abaixo a lia como campo. Ela não chega ao papel:
+    # traslado, termo, rascunho e certidão a cortam, e a ficha a tira da prévia
+    # e não imprime a caixa. Só ela sai da leitura, e exatamente ela.
     # «[INSERIR …]» ENTROU EM 06/10/2026, achado pela revisão em lote: a
     # matrícula 4019 foi aberta com «[INSERIR APÓS APRESENTAÇÃO DO DOCUMENTO]»
     # no CCIR, no CIB e no CAR, e esta regra só conhecia {{ }}, {% %} e @campo.
@@ -1386,7 +1524,7 @@ def regra_modelo_nao_preenchido(con, hoje: date) -> list[dict]:
     saida = []
     for tabela, setor, sql, args in fontes:
         for r in banco(con).ler(sql, args):
-            achados = marcador.findall(str(r["teor"] or ""))
+            achados = marcador.findall(str(r["teor"] or "").replace(MARCA_ASSINATURAS, " "))
             if achados:
                 saida.append(_achado(
                     f"MARCADOR:{tabela}:{r['id']}", "MODELO_NAO_PREENCHIDO", "CRITICO", setor,

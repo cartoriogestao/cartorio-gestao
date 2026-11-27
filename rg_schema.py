@@ -474,6 +474,16 @@ MIGRACOES: tuple[tuple[str, str, str], ...] = (
     ("rg_atos", "verso_final", "INTEGER NOT NULL DEFAULT 0"),
     ("rg_atos", "selos_antigos", "TEXT"),
     ("rg_registros", "protocolo_original", "TEXT"),
+    # A CÓPIA REPETIDA DO ACERVO (T021, 26/11/2026). O E-Ofício gravou a mesma
+    # linha duas vezes, e a carga trouxe as duas. A cópia fica CANCELADO, sem
+    # ato, selo nem custas, e estas colunas dizem por quê: `duplicata_de` é a
+    # ficha que fica e `duplicata_motivo` o texto da correção de ofício (ou da
+    # carga). Com `duplicata_de` preenchida a ficha sai dos livros, dos índices
+    # e das buscas da certidão. Ela continua guardada e se abre pelo número.
+    # O cancelamento por ato (`rg_registro.lancar_cancelamento`) não usa estas
+    # colunas: o registro cancelado por ato continua no livro.
+    ("rg_registros", "duplicata_de", "INTEGER"),
+    ("rg_registros", "duplicata_motivo", "TEXT"),
 )
 
 

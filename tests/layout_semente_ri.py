@@ -5,7 +5,9 @@ O QUE ELA PÕE NO BANCO
     pendência; acervo aberta e com ato sem selo), a prenotação em cada situação (aberta sem
     selo, aberta, com documento, com ato, em exigência, cancelada), o usucapião do início ao fim
     do rito, o registro do Livro 3 em quatro estados, e o que as rotas de arquivo precisam: a
-    certidão, a nota devolutiva, a ata do expurgo, a digitalização, a CTP e a DOI.
+    certidão, a nota devolutiva, a ata do expurgo, a digitalização, a CTP e a DOI. Por último, as
+    telas da 3.7.22: o polígono do mapa, a intimação fiduciária, a fila das fichas e o lote do
+    Indicador Real, para que a fila e o lote leiam todas as matrículas da semente.
 
     Tudo pela própria tela, com a pessoa do ensaio. Só caem para a função de domínio ou para
     `casa.inserir` as linhas que nenhuma tela escreve sem rede ou sem a chave da IA: o selo da
@@ -493,6 +495,75 @@ def _eprotocolo(casa) -> None:
     casa.pagina("onr_eprotocolo_ficha", pedido_id=int(pid))
 
 
+# ------------------------------------------------------------------ a fila, os lotes, o mapa e a intimação
+
+def _fila_das_fichas(casa) -> None:
+    """A fila de conferência das fichas (RI009), montada pelo botão da tela com as matrículas da semente."""
+    _, recado = _mandar(casa, "/ri/fila-fichas/gerar")
+    item = casa.um("SELECT id FROM ri_ff_itens ORDER BY id LIMIT 1")
+    assert item, f"a fila das fichas não montou nenhum item: {recado}"
+    casa.pagina("ri_fila_ficha", item_id=int(item["id"]))
+
+
+def _lotes_do_indicador_real(casa) -> None:
+    """O lote do Indicador Real (RI008), gerado pela tela: o arquivo e a lista das recusadas.
+
+    O arquivo pede o código IBGE do município; só se preenche o que está em branco, com os mesmos
+    valores da semente do protesto (outra área pode ter posto o seu)."""
+    padrao = {"ibge_uf": "21", "ibge_municipio": "00001"}
+    faltando = {k: v for k, v in padrao.items() if not str(casa.db.get_setting(k, "") or "").strip()}
+    if faltando:
+        casa.db.set_settings(faltando)
+    _, recado = _mandar(casa, "/registro-imoveis/onr/indicador-real/lotes/gerar", classes=["PRONTA", "TEOR", "REGRA"],
+                        aceitar_regra="1", incluir_acervo="1", limite="200")
+    lote = casa.um("SELECT id FROM onr_ir_lotes ORDER BY id DESC LIMIT 1")
+    assert lote, f"a tela não gerou o lote do Indicador Real: {recado}"
+    casa.pagina("onr_ir_lote_arquivo", lote_id=int(lote["id"]))
+    casa.pagina("onr_ir_lote_recusadas", lote_id=int(lote["id"]))
+
+
+def _mapa(casa) -> None:
+    """Um polígono (RI011) importado pela tela, num GeoJSON fictício que sugere a matrícula da semente."""
+    import json
+    numero = _linha(casa, "SELECT numero FROM ri_matriculas WHERE id=%s", (_id(casa, "ri_mat_estruturada_aberta"),))["numero"]
+    lon, lat, lado = -45.5, -7.2, 0.001
+    anel = [(lon, lat), (lon + lado, lat), (lon + lado, lat + lado), (lon, lat + lado), (lon, lat)]
+    corpo = json.dumps({"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"matricula": str(numero)},
+         "geometry": {"type": "Polygon", "coordinates": [anel]}}]}).encode()
+    antes = casa.um("SELECT COALESCE(MAX(id), 0) AS n FROM ri_geometrias")["n"]
+    _, recado = _mandar(casa, "/registro-imoveis/mapa/importar", arquivo=_arquivo(corpo, "poligono-exemplo.geojson"))
+    geometria = casa.um("SELECT id FROM ri_geometrias WHERE id > %s ORDER BY id LIMIT 1", (antes,))
+    assert geometria, f"a tela não guardou o polígono: {recado}"
+    casa.pagina("ri_geo_ver", geometria_id=int(geometria["id"]))
+
+
+def _intimacao_fiduciaria(casa) -> None:
+    """O procedimento de intimação fiduciária (RI013-I1), autuado pela tela sobre uma prenotação própria,
+    com o devedor na lista e a qualificação positiva: assim a ficha mostra as fases e a peça abre."""
+    import ri_intimacao_fiduciaria as INT
+    m = _abrir(casa, logradouro="Rua da Garantia", numero_predial="600", folha="6", **DONO)
+    p = _prenotar(casa, int(m["id"]), natureza_titulo="Requerimento de intimação fiduciária",
+                  objeto="Intimação do devedor fiduciante (ensaio)", documento_descricao="Requerimento do credor (ensaio)")
+    _, recado = _mandar(casa, "/registro-imoveis/intimacoes/nova", protocolo_id=str(p["id"]), origem="BALCAO",
+                        credor_nome="BANCO DE EXEMPLO S.A.", contrato="CT-ENS-1", demonstrativo_valor="3.000,00",
+                        projecao=f"31/12/{casa.hoje[:4]}; 3.500,00")
+    achada = casa.um("SELECT id FROM ri_intimacoes WHERE protocolo_id=%s", (int(p["id"]),))
+    assert achada, f"a tela não autuou a intimação: {recado}"
+    iid = int(achada["id"])
+    acao = f"/registro-imoveis/intimacoes/{iid}/acao"
+    _mandar(casa, acao, acao="intimando", nome="Mario Exemplo", papel="DEVEDOR", documento=CPF,
+            enderecos="Rua Exemplo, 10, Cidade Exemplo/MA")
+    _, recado = _mandar(casa, acao, acao="qualificar", resultado="POSITIVA", dia=casa.hoje,
+                        itens=[r["chave"] for r in INT.REQUISITOS if r["chave"] != "pj"])
+    with casa.con() as con:
+        situacao = INT.um(con, iid)["situacao"]
+        intimandos = INT.intimandos_de(con, iid)
+    assert situacao == INT.INTIMANDO and intimandos, f"a intimação não chegou às intimações ({situacao}): {recado}"
+    casa.pagina("ri_intimacao", intimacao_id=iid)
+    casa.pagina("ri_intimacao_peca", {"intimando": int(intimandos[0]["id"])}, intimacao_id=iid, qual="INTIMACAO")
+
+
 # ------------------------------------------------------------------ o usucapião
 
 def _autuar_usucapiao(casa, numero: str, **campos) -> int:
@@ -635,7 +706,7 @@ def _livro3(casa) -> None:
 
 PASSOS = (_acervo, _numeracao, _estruturadas, _prenotacoes, _atos, _pendencias_da_ficha, _certidao, _digitalizacoes,
           _paginas_da_matricula, _ctp_e_doi, _conferencia, _qualificacao_ia, _retificacao, _onr, _eprotocolo, _usucapiao,
-          _livro3)
+          _livro3, _mapa, _intimacao_fiduciaria, _fila_das_fichas, _lotes_do_indicador_real)
 
 
 def semear(casa) -> None:

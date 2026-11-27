@@ -4,7 +4,7 @@
 Flask>=3.1,<4
 waitress>=3.0,<4
 # Converte as fichas digitalizadas (TIFF Grupo 4) para PNG, que o navegador exibe.
-Pillow>=10,<12
+Pillow>=13,<14
 # Converte a ficha de firma digitalizada em PDF para imagem, na hora do envio.
 # PDF dentro de um <img> nao amplia nem gira; convertido, comporta-se como as
 # outras e a lupa funciona igual. Faltando, o PDF e guardado como veio e a tela
@@ -59,6 +59,13 @@ psycopg[binary]>=3.1,<4
 # sem essas duas funcoes sem saber por que.
 numpy>=1.26,<3
 opencv-python-headless>=4.8,<6
+# A area de poligono no elipsoide (arestas geodesicas, a conta do QGIS) da tela
+# «Mapa do ONR — poligonos» (`geo_geodesia`, RI011). Pura em Python (roda
+# `py3-none-any`, 390 KB), MIT. Importada so na hora do uso: faltando, a tela
+# diz o que instalar e o resto do sistema segue. GDAL, Fiona, PyProj e Shapely
+# NAO entram — sao rodas nativas de dezenas de MB; o GeoPackage e o Shapefile
+# sao lidos e escritos pelo proprio sistema (`geo_formatos`).
+geographiclib>=2,<3
 # Fala com o Malote Digital do TJMA como o navegador fala (a sessao com os
 # cookies e o JSF) no robo da ciencia diaria (`malote_robo`, PR #123).
 # Importada so na hora do uso: faltando, o processo da automacao registra o

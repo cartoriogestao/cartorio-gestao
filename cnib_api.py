@@ -55,7 +55,9 @@ contrato **não** é o que a Central responde.
    ficaram 341.497 numa página de 200. Com `True` ela **NÃO consome**: 341.496
    antes e 341.496 depois. O padrão deste módulo é `True` — e o padrão é a
    decisão que protege a casa, porque conferir, testar a conexão e clicar duas
-   vezes não podem tirar ordem da fila de ninguém.
+   vezes não podem tirar ordem da fila de ninguém. A leitura que consome tem
+   função própria, `uma_pagina_da_fila`, e só o atualizador a chama, com a
+   autorização do oficial gravada (23/11/2026).
 
 5. **A JANELA FILTRA PELA DATA DA ATIVIDADE, e não pela data do pedido.** Uma
    janela de junho/2026 devolveu ordem com `datapedido` de 2012 — porque o
@@ -610,10 +612,17 @@ def uma_pagina(de: str, ate: str, *, cpf_usuario: str,
     corpo = _corpo_da_janela(de, ate, cpf_usuario=cpf_usuario,
                              visualizadas=visualizadas, pagina=pagina,
                              tamanho=tamanho)
+    return _pedir_pagina(
+        corpo, f"consultar as ordens de {de} a {ate}"
+               + (" (sem consumir a fila)" if visualizadas else " (CONSUMINDO a fila)"),
+        ambiente=ambiente, pasta=pasta)
+
+
+def _pedir_pagina(corpo: dict, o_que: str, *, ambiente: Any = None,
+                  pasta=None) -> dict:
+    """Manda o corpo ao `visualizar_v2` e lê a página, nas formas medidas."""
     r = _bater("visualizar_v2", corpo=corpo, ambiente=ambiente, pasta=pasta)
-    resposta = _resposta_ou_erro(
-        r, f"consultar as ordens de {de} a {ate}"
-           + (" (sem consumir a fila)" if visualizadas else " (CONSUMINDO a fila)"))
+    resposta = _resposta_ou_erro(r, o_que)
     return {
         "ordens": ordens_da_resposta(resposta),
         "paginacao": paginacao_da_resposta(resposta),
@@ -621,6 +630,68 @@ def uma_pagina(de: str, ate: str, *, cpf_usuario: str,
         "mensagem": mensagem_da_resposta(resposta),
         "status": r["status"],
     }
+
+
+# ------------------------------------------------------------------ a fila
+#
+# A FILA É A LISTA DE ORDENS QUE A SERVENTIA AINDA NÃO VISUALIZOU, e ler com
+# `ordens_visualizadas=False` **tira da fila** o que veio (item 4 do cabeçalho).
+# Em 23/11/2026 ficou medido que a leitura com `True` deixou de trazer ordem
+# nova desde 12/08/2026: tudo indica que `True` devolve só o que já foi
+# visualizado, e que as ordens novas estão esperando na fila. A Central não
+# confirmou isso, e o contrato não descreve o campo.
+#
+# POR ISSO A FILA TEM FUNÇÃO PRÓPRIA, e não um `visualizadas=False` a mais na
+# janela: o pedido que consome é outro pedido, com outro corpo, e quem o chama
+# (`cnib_atualizador.ler_a_fila`) só anda com a autorização do oficial gravada
+# e grava cada página antes de pedir a próxima.
+#
+# O CORPO É O QUE SE MEDIU EM 18/09/2026, e nada além: **sem datas**, página 1
+# e páginas de 200. Com `False` a página 1 já é a próxima da fila, porque a
+# anterior saiu dela (341.697 → 341.497 → 341.496 em dois pedidos seguidos,
+# os dois com `pagina_inicial: 1`). Pedir a página 2 depois de consumir a 1
+# pularia 200 ordens sem ninguém ver. Ler a fila com janela de datas e com 500
+# por página **nunca foi medido**, e por isso não se manda.
+TAMANHO_DA_PAGINA_DA_FILA = 200
+
+# O FREIO DE UMA RODADA. 200 × 200 = 40.000 ordens. A fila tinha 341.496 em
+# 18/09/2026, e o atraso inteiro leva umas dez rodadas. Uma por dia é o que a
+# rotina faz; o oficial pode pedir mais pela tela.
+MAXIMO_DE_PAGINAS_DA_FILA = 200
+
+
+def _corpo_da_fila(*, cpf_usuario: str, tamanho: int) -> dict:
+    return {
+        "cpf_usuario": cpf_usuario,
+        "ordens_visualizadas": False,
+        "pagina_inicial": 1,
+        "tamanho_pagina": int(tamanho),
+        "proxima_pagina": False,
+    }
+
+
+def uma_pagina_da_fila(*, cpf_usuario: str,
+                       tamanho: int = TAMANHO_DA_PAGINA_DA_FILA,
+                       ambiente: Any = None, pasta=None) -> dict:
+    """A próxima página da fila. **CONSOME: o que vier sai da fila na Central.**
+
+    Devolve o mesmo que `uma_pagina`, mais `restantes`, que é o
+    `ordens_restantes` da Central (`None` quando ela não manda).
+
+    Não grava nada, como o resto deste módulo. Quem chama é obrigado a guardar
+    a página antes de pedir a seguinte: depois desta chamada, a Central não
+    devolve de novo o que mandou.
+    """
+    if not cpf_usuario:
+        raise CnibError(
+            "O CNIB exige o CPF de quem consulta (`cpf_usuario`): é por ele "
+            "que a Central registra quem pediu a lista. Informe em "
+            "Administrativo → Configurações, na seção do CNIB.")
+    p = _pedir_pagina(_corpo_da_fila(cpf_usuario=cpf_usuario, tamanho=tamanho),
+                      "ler a fila da serventia (CONSUMINDO a fila)",
+                      ambiente=ambiente, pasta=pasta)
+    p["restantes"] = p["paginacao"].get("ordens_restantes")
+    return p
 
 
 def ordens_na_janela(de: str, ate: str, *, cpf_usuario: str,

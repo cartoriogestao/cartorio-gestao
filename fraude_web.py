@@ -67,7 +67,44 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             rastro = FR.conferencias(con, limite=30)
         return render_template("fraudes.html", linhas=linhas, contas=contas,
                                rastro=rastro, busca=busca, situacao=situacao,
-                               papeis=FR.PAPEIS)
+                               papeis=FR.PAPEIS, todos_os_papeis=FR.TODOS_OS_PAPEIS)
+
+    @app.route("/fraudes/incluir-ato", methods=["POST"])
+    @roles_required("ADMIN", "MANAGER", "USER")
+    def fraude_incluir_ato():
+        """Põe um ATO de outra serventia na lista — 24/11/2026. ESCREVE.
+
+        A circular que suspende procurações sem dizer o nome das partes não
+        tinha onde entrar: a lista só aceitava pessoa. A procedência é a mesma
+        da pessoa, e sem ela o ato não entra.
+        """
+        try:
+            with db.transaction() as con:
+                con.row_factory = sqlite3.Row
+                r = FR.incluir_ato(
+                    con, origem=_campo("origem"), agora=agora(),
+                    livro=_campo("ato_livro") or None,
+                    folha=_campo("ato_folha") or None,
+                    ordem=_campo("ato_ordem") or None,
+                    serventia=_campo("ato_serventia") or None,
+                    cns=_campo("ato_cns") or None,
+                    cidade=_campo("ato_cidade") or None,
+                    uf=_campo("ato_uf") or None,
+                    natureza=_campo("ato_natureza") or None,
+                    data=_campo("ato_data") or None,
+                    origem_data=_campo("origem_data") or None,
+                    origem_orgao=_campo("origem_orgao") or None,
+                    observacao=_campo("observacao") or None,
+                    usuario=usuario_nome())
+        except FR.FraudeError as erro:
+            flash(str(erro), "danger")
+            return redirect(url_for("fraudes"))
+        audit("FRAUDE_INCLUIR", "fr_alertas", r["alerta_id"],
+              {"papel": r["papel"], "ato": r["descricao"]})
+        flash(f"{r['descricao']} entrou na lista de atenção. O sistema passa a "
+              "avisar quando esse livro e folha forem citados num ato.",
+              "success")
+        return redirect(url_for("fraudes"))
 
     @app.route("/fraudes/incluir", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -152,9 +189,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit):
             with _ler() as con:
                 achados = FR.conferir(con, nome=nome, documento=documento)
                 atos = FR.atos_da_pessoa(con, nome=nome, documento=documento)
+        # O ATO DE OUTRA SERVENTIA — 24/11/2026. Quem tem na mão um traslado
+        # (a procuração que veio de fora) confere livro, folha e serventia.
+        ato = {c: (request.args.get(f"ato_{c}") or "").strip()
+               for c in ("serventia", "cns", "cidade", "uf", "livro", "folha",
+                         "ordem")}
+        achados_ato = []
+        procurou_ato = bool(ato["livro"])
+        if procurou_ato:
+            with _ler() as con:
+                achados_ato = FR.conferir_ato(con, **{k: v or None
+                                                      for k, v in ato.items()})
         return render_template("fraude_consultar.html", nome=nome,
                                documento=documento, achados=achados,
-                               atos=atos, procurou=bool(nome or documento))
+                               atos=atos, procurou=bool(nome or documento),
+                               ato=ato, achados_ato=achados_ato,
+                               procurou_ato=procurou_ato)
 
     @app.route("/fraudes/<int:alerta_id>/conferir", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")

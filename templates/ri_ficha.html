@@ -48,12 +48,19 @@
   <ul>
   {% for c in cnib_pendencias %}
     <li>{{ c.nome }}{% if c.documento %} — {{ c.documento }}{% endif %}; ordem {{ c.protocolo_cnib }}.
-    <strong>{% if c.criterio == 'documento' %}Coincidência por CPF/CNPJ — revisar a minuta e lavrar.{% else %}Coincidência apenas por nome — conferir possível homônimo.{% endif %}</strong>
+    {# Devida ou aviso — ordem do oficial em 24/11/2026: minuta só quando o
+       CPF/CNPJ da ordem é o do dono de hoje; o resto é para conferir aqui. #}
+    <strong>{% if c.devida %}Averbação devida: o CPF/CNPJ da ordem é o do dono de hoje —
+      {% if c.minuta and c.minuta.situacao == 'A_REVISAR' %}revisar a minuta {{ c.minuta.id }}, conferir a ordem na Central e lavrar.
+      {%- elif c.minuta %}a minuta {{ c.minuta.id }} foi descartada; prepare de novo em «Conferir pendências da CNIB» ou registre a decisão.
+      {%- else %}a minuta ainda não foi preparada (Conferir pendências da CNIB).{% endif %}
+      {%- else %}Aviso — verifique se corresponde: {{ c.motivo_do_aviso }}.{% endif %}</strong>
     {{ resolver_cnib(c, m.id, csrf_token) }}
     </li>
   {% endfor %}
   </ul>
-  <p>O aviso permanece até a lavratura ou decisão registrada sobre a ocorrência.</p>
+  <p>O aviso permanece até a lavratura ou decisão registrada sobre a ocorrência. Se não for a mesma
+    pessoa, ou a ordem não alcançar este imóvel, registre o motivo no botão da própria linha.</p>
   <a style="color:#fff;text-decoration:underline;font-weight:bold" href="{{ url_for('ri_cnib_pendentes') }}">Conferir pendências da CNIB</a>
   {% if minutas %}<span> · </span><a style="color:#fff;text-decoration:underline;font-weight:bold" href="#minutas-para-lavrar">Revisar minutas desta matrícula</a>{% endif %}
 </section>
@@ -1181,8 +1188,17 @@
       editado nem apagado</strong>. É assim que deve ser num registro público:
       correção de ato lavrado se faz por averbação, não por alteração do texto.
     </div>
+    {# O SINAL DO SELO ANTES DE LAVRAR (P008, 24/11/2026). Em quatro semanas,
+       18 registros e averbações voltaram para a minuta porque o protocolo
+       não tinha o item com unidade sobrando, ou não havia protocolo ligado à
+       prenotação — e esta tela não conferia nada antes do clique. #}
     <div class="span2" data-passo="lavrar">
-      <button class="primary">Lavrar ato</button>
+      {% from '_sinal_do_selo.html' import sinal_do_selo %}
+      {{ sinal_do_selo('ri_atos', [], rotulo='Lavrar o ato',
+                       se_nao_sair='o selo não sai e o ato volta para a minuta, com o texto e as partes guardados') }}
+    </div>
+    <div class="span2" data-passo="lavrar">
+      <button class="primary" data-selo-lavra>Lavrar ato</button>
       {# GUARDAR A REVISÃO SEM LAVRAR — pedido do oficial em 15/09/2026:
          revisar pode levar mais de uma sentada. Sem isto, a correção de uma
          vírgula só existia dentro deste formulário: quem saísse da tela
@@ -1744,8 +1760,15 @@
     <div class="span2">
       {% if candidatos_do_selo_da_certidao %}
         {{ protocolo_do_selo(candidatos_do_selo_da_certidao, [],
-                             atendendo=atendendo_do_selo) }}
+                             atendendo=atendendo_do_selo, tabela='ri_certidoes',
+                             rotulo='Emitir',
+                             se_nao_sair='a certidão é gravada sem o selo e fica aguardando cobertura') }}
       {% else %}
+        {# Sem candidato o sinal continua: ele diz o que falta no protocolo
+           que você atende (P008) — o caso comum era a unidade já gasta. #}
+        {% from '_sinal_do_selo.html' import sinal_do_selo %}
+        {{ sinal_do_selo('ri_certidoes', [], rotulo='Emitir',
+                         se_nao_sair='a certidão é gravada sem o selo e fica aguardando cobertura') }}
         <p class="small muted">Nenhum protocolo pago do RI com o item da
           certidão (16.24.4 ou 16.24.1) nos últimos 30 dias. Abra o protocolo
           e registre o pagamento no caixa antes de emitir — sem ele a certidão
@@ -1860,7 +1883,8 @@
             {# O protocolo que paga o 16.2 — 22/10/2026, trava do selo pago. #}
             {% set _ps_abertura = protocolos_do_selo_ri('ri_matriculas', '16.2') %}
             <div class="span2">{{ protocolo_do_selo(_ps_abertura.candidatos,
-                _ps_abertura.pedidos, atendendo=_ps_abertura.atendendo) }}</div>
+                _ps_abertura.pedidos, atendendo=_ps_abertura.atendendo,
+                tabela='ri_matriculas', rotulo='Selar') }}</div>
 
             <label>Item da tabela de custas <span class="obrigatorio">— o selo exige</span>
               <input name="codigo_tj" value="16.2" list="itens_da_abertura"
@@ -1933,13 +1957,30 @@
                nenhum ato fica de pé sem selo, em atribuição nenhuma. Caixa
                que não leva a lugar nenhum é pior que caixa nenhuma. #}
           </form>
+          {# O QUADRO FICA ATÉ O SELO, e não só sem dono — T022, 26/11/2026: a
+             abertura de mais de um proprietário não tinha onde pôr o segundo.
+             Este ramo já é o da abertura sem selo; depois dele, trocar ou
+             acrescentar dono é por «Corrigir», com motivo escrito. #}
           {% set _abert2 = (partes or [])|selectattr('ato_id','none')|list %}
-          {% if not _abert2 %}
+          {% if not (m.selo_abertura_texto or '')|trim %}
           <form method="post" class="form-grid" style="padding:4px;margin-top:2px;border-top:1px dashed #bbb"
                 action="{{ url_for('ri_incluir_parte_abertura', matricula_id=m.id) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            {% if _abert2 %}
+            <div class="span2"><strong>Acrescentar outro proprietário da abertura</strong>
+              <small class="muted"> — um por vez, antes de pedir o selo</small></div>
+            <div class="span2 small" data-donos-da-abertura>
+              <small class="muted">Já cadastrados:</small>
+              <ul style="margin:2px 0 4px 18px;padding:0">
+                {% for p in _abert2 %}
+                <li>{{ p.nome }}{% if p.documento_numero %} — {{ p.documento_tipo or '' }} {{ p.documento_numero }}{% endif %}{% if p.fracao %} — fração {{ p.fracao }}{% endif %}</li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% else %}
             <div class="span2"><strong>Cadastrar o proprietário da abertura</strong>
               <small class="muted"> — necessário antes de pedir o selo</small></div>
+            {% endif %}
             <label class="span2">Nome
               <input name="nome" required placeholder="nome completo" autocomplete="off"></label>
             <label>CPF ou CNPJ
@@ -1953,7 +1994,7 @@
                      placeholder="nacionalidade, estado civil, profissão, residência e domicílio"></label>
             <label>Fração do imóvel
               <input name="fracao" autocomplete="off" placeholder="opcional — 50%, 1/4"></label>
-            <div class="span2"><button class="primary">Cadastrar proprietário</button></div>
+            <div class="span2"><button class="primary">{{ 'Acrescentar proprietário' if _abert2 else 'Cadastrar proprietário' }}</button></div>
           </form>
           {% endif %}
 
@@ -2468,7 +2509,8 @@ document.addEventListener('DOMContentLoaded',abrir);window.addEventListener('has
           {# O protocolo que paga o 16.39 — 22/10/2026, trava do selo pago. #}
           {% set _ps_arq = protocolos_do_selo_ri('ri_atos', '16.39') %}
           <div class="span2">{{ protocolo_do_selo(_ps_arq.candidatos, _ps_arq.pedidos,
-              atendendo=_ps_arq.atendendo, nome_campo='protocolo_selo') }}</div>
+              atendendo=_ps_arq.atendendo, nome_campo='protocolo_selo',
+              tabela='ri_atos', rotulo='Selar') }}</div>
           <label>Folhas do documento / processo
             <input type="number" name="folhas_arquivamento" min="1" step="1"
                    required placeholder="ex.: 12"></label>

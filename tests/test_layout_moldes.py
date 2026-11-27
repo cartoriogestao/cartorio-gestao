@@ -36,6 +36,7 @@ FICHAS = {
     "atrib_protesto_ficha.html": ["protesto_fases.py"],
     "rcpj_rtd_titulo.html": ["rg_titulo_fases.py"],
     "rcpj_rtd_fiduciaria.html": ["rg_fiduciaria.py"],
+    "ri_intimacao.html": ["ri_intimacao_fiduciaria.py"],
 }
 
 

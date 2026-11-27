@@ -71,6 +71,30 @@
 </section>
 
 <section class="panel">
+  <div class="panel-head"><span>Arquivo já importado, gerado fora desta tela</span><small>entra no histórico como veio</small></div>
+  <details style="padding:14px">
+    <summary>Registrar um arquivo que o oficial já importou no portal</summary>
+    <p class="small muted">O arquivo é guardado byte a byte, com o SHA-256, e cada registro é conferido contra o manual e
+      contra uma ficha ativa. As matrículas dele não saem em outro lote enquanto ele estiver vivo. Nada é enviado.</p>
+    <form method="post" enctype="multipart/form-data" action="{{ url_for('onr_ir_lotes_registrar_arquivo') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="filters">
+        <label>Arquivo .json <input type="file" name="arquivo" accept=".json,application/json" required></label>
+        <label>O portal mostra
+          <select name="situacao" required>
+            <option value="">Escolha…</option>
+            {% for s in situacoes_externo %}<option value="{{ s }}">{{ nome_situacao[s] }}</option>{% endfor %}
+          </select></label>
+        <label>Importado em <input type="date" name="visto_em" required></label>
+      </div>
+      <label style="display:block;margin-top:8px">De onde veio e como foi importado
+        <input name="observacao" required minlength="10" style="width:100%"></label>
+      <div class="actions" style="margin-top:10px"><button class="button" type="submit">Registrar no histórico</button></div>
+    </form>
+  </details>
+</section>
+
+<section class="panel">
   <div class="panel-head"><span>Histórico dos arquivos</span><small>o resultado é o que o portal mostrou</small></div>
   {% if historico %}
   <div class="table-wrap"><table>

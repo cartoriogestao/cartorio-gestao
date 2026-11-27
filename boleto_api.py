@@ -9,8 +9,9 @@ Este módulo não monta código de barras nenhum. **Quem gera a linha digitável
 o código de barras e o PIX é o BANCO**, na cobrança registrada; daqui sai o
 pedido e volta o que ele devolveu.
 
-**O PROVEDOR É CONFIGURÁVEL.** (Desde 24/11/2026 há também a Parcela
-Express, em `protesto_boleto_parcela`; o texto abaixo é o de 19/10/2026.) Cada banco tem a sua API
+**O PROVEDOR É CONFIGURÁVEL.** (Desde 25/11/2026 há os três de verdade — Parcela
+Express, Banco Inter e Unicred, em `protesto_boleto_parcela` e
+`protesto_boleto_banco`; o texto abaixo é o de 19/10/2026.) Cada banco tem a sua API
 de cobrança (e o seu manual, e a sua homologação); qual será o desta casa é
 decisão do oficial, e em 19/10/2026 não há convênio. `BancoDoContrato` é a vaga
 dele: recusa tudo dizendo o que falta. `BancoFalso` é a homologação: registra,
@@ -275,13 +276,20 @@ PROVEDORES: dict[str, dict[str, Any]] = {
     "BANCO": {"nome": "Banco do convênio de cobrança (a escolher)",
               "falso": False, "pronto": False, "falta": FALTA_DO_CONTRATO,
               "fabrica": lambda ambiente, pasta: BancoDoContrato(ambiente, pasta)},
-    # A PARCELA EXPRESS (PR007, 24/11/2026): a conta que o caixa já usa, por um
-    # link só com Pix, boleto e cartão (`protesto_boleto_parcela`). Na
-    # homologação fala com o SANDBOX da Parcela; na produção, com a produção —
-    # e a integração nasce DESLIGADA (`protesto_integracoes`).
-    "PARCELA": {"nome": "Parcela Express (link com Pix, boleto e cartão)",
+    # OS TRÊS PROVEDORES DE VERDADE (PR007, 24 e 25/11/2026): a casa escolhe
+    # «oportunamente o mais vantajoso». Os três emitem UM boleto registrado
+    # com o Pix dentro (cai no DDA do devedor) e usam a conta e a credencial
+    # que o caixa já tem. Na homologação falam com o sandbox de cada um; a
+    # integração nasce DESLIGADA (`protesto_integracoes`).
+    "PARCELA": {"nome": "Parcela Express (boleto híbrido: boleto registrado com Pix)",
                 "falso": False, "pronto": True, "falta": "",
                 "fabrica": lambda ambiente, pasta: _parcela(ambiente, pasta)},
+    "INTER": {"nome": "Banco Inter (Boleto com Pix, API Cobrança v3)",
+              "falso": False, "pronto": True, "falta": "",
+              "fabrica": lambda ambiente, pasta: _banco("INTER", ambiente, pasta)},
+    "UNICRED": {"nome": "Unicred (boleto registrado com Pix, API de cobrança v2)",
+                "falso": False, "pronto": True, "falta": "",
+                "fabrica": lambda ambiente, pasta: _banco("UNICRED", ambiente, pasta)},
 }
 
 
@@ -289,3 +297,9 @@ def _parcela(ambiente: Any, pasta: Any):
     """O transporte da Parcela, importado só quando escolhido."""
     import protesto_boleto_parcela as PBP
     return PBP.fabrica(ambiente, pasta)
+
+
+def _banco(qual: str, ambiente: Any, pasta: Any):
+    """O transporte do Inter ou da Unicred, importado só quando escolhido."""
+    import protesto_boleto_banco as PBB
+    return PBB.fabrica(qual, ambiente, pasta)

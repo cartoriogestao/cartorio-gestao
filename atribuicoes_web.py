@@ -12748,10 +12748,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             + "".join(f"<p>{_esc(x)}</p>" for x in canhoto["campos"])
             + f'<p><strong>{_esc(canhoto["tentativas_titulo"])}</strong></p>'
             + "".join(f"<p>{_esc(x)}</p>" for x in canhoto["tentativas"]))
-        # A COBRANÇA NO PAPEL (PR007, 24/11/2026): valor, vencimento, linha
-        # digitável e Pix quando vieram, o link sempre, e o QR para pagar. O QR
+        # A COBRANÇA NO PAPEL (PR007, 24 e 25/11/2026): valor, vencimento, a
+        # linha digitável do boleto registrado e o QR do Pix para pagar. O QR
         # do aviso (o do canhoto) não muda: é ele que o lote escaneado lê.
         import protesto_boleto as PBOL
+        # O BOLETO DO INTER E DA UNICRED REGISTRA DEPOIS (assíncrono): antes de
+        # imprimir, pergunta-se a linha que faltou. Fora de transação; o que
+        # falha deixa o aviso sem a cobrança, como antes.
+        with db.connect() as con:
+            if PBOL.ligada_no_aviso(con):
+                sem_linha = PBOL.boleto_sem_linha_do_titulo(con, int(aviso["titulo_id"]))
+            else:
+                sem_linha = None
+        if sem_linha:
+            try:
+                PBOL.completar_linha(db, sem_linha)
+            except Exception:  # a impressão não cai por causa do banco
+                pass
         with db.connect() as con:
             bloco = PBOL.bloco_de_pagamento(con, aviso)
         corpo = _linhas_em_html(teor)

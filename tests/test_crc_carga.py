@@ -67,6 +67,10 @@ def _assento(con, **extras):
               "nome": "MARIA ÍSIS", "data_ato": "2026-08-20",
               "data_fato": "2026-08-18", "situacao": "ATIVO",
               "origem": "SISTEMA", "criado_em": AGORA, "matricula": M32}
+    # O ÓBITO SEM TIPO DA MORTE FICA RETIDO desde o RC006 (26/11/2026): a CRC
+    # o recusa. O óbito de teste nasce com «natural», salvo quando o teste diz.
+    if extras.get("especie") == "OBITO":
+        campos["ibge_natureza_obito"] = "1"
     campos.update(extras)
     colunas = ", ".join(campos)
     marcas = ", ".join("?" for _ in campos)
@@ -78,6 +82,10 @@ def _assento(con, **extras):
 def _pessoa(con, aid, papel, nome, **extras):
     campos = {"assento_id": aid, "papel": papel, "nome": nome,
               "nome_norm": nome.lower(), "criado_em": AGORA}
+    # E o falecido sem estado civil também (RC006): nasce «solteiro», salvo
+    # quando o teste diz.
+    if papel == "FALECIDO":
+        campos["estado_civil"] = "solteiro"
     campos.update(extras)
     colunas = ", ".join(campos)
     marcas = ", ".join("?" for _ in campos)

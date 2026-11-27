@@ -44,8 +44,8 @@ transação inteira — o ato não chega a existir — e diz o que fazer:
 **A FAIXA DE PREÇO NÃO É O ITEM DO SELO.** O aparelho conhece o 17.4 e o 17.1
 (o E-Ofício mandou 17.4 em 190 selos de pagamento e retirada, e 17.1 em 70 de
 protesto, com o valor do título no envelope); o caixa cobra pela faixa (17.4.5,
-17.1.7). `codigo_para_o_selo` manda o item do Tribunal quando a faixa é de um
-item que o caminho conhece — a mesma regra do RI para o 16.45
+17.1.7). `codigo_para_o_selo` manda o item do Tribunal sempre que o código é
+faixa, em qualquer caminho (26/11/2026) — a mesma regra do RI para o 16.45
 (`caixa_protocolo.subitem_da_faixa`). Sem isso, todo pagamento pago por
 protocolo com a faixa do 17.4 seria recusado, e a recusa não teria saída.
 
@@ -185,17 +185,27 @@ def codigo_para_o_selo(codigo: Any, caminho: Any) -> str:
     """O código que vai no envelope: o item do Tribunal, e não a faixa. Só
     calcula.
 
-    A faixa (17.4.5) vira o item (17.4) quando o item é de faixa
-    (`caixa_protocolo.CODIGOS_TJ_DE_FAIXA`) E o caminho do selo o conhece pela
-    receita medida. Fora disso o código vai como está — e a conferência diz se
-    ele serve.
+    A faixa (17.4.5) vira o item (17.4) sempre que o item é de faixa
+    (`caixa_protocolo.CODIGOS_TJ_DE_FAIXA`), EM QUALQUER CAMINHO. O resto vai
+    como está, e a conferência diz se ele serve.
+
+    **A CONDIÇÃO DO CAMINHO FOI TIRADA EM 26/11/2026 (PR009).** Antes, a faixa
+    só virava item no caminho cuja receita medida tinha o item; no
+    cancelamento (`/selo/protesto/baixa-cancelamento`) o 17.1.7 e o 17.4.5
+    iam como faixa. Só que o aparelho NÃO CONHECE FAIXA EM CAMINHO NENHUM:
+    em `sd_selos` só há 17.1 (33, título) e 17.4 (2, pagamento), e nenhuma
+    faixa aceita; e o mesmo caminho do cancelamento aceitou 17.9, 17.10.1 e
+    17.7 do ato 4106, que também não estão na receita medida. Mandar a faixa
+    era recusa certa: o 4106 teve o 17.1.7 e o 17.4.5 recusados em 28/10 e
+    de novo em 26/11 («Não foi encontrado um ato para o código informado»),
+    mesmo com a afirmação expressa do oficial. O item fora da receita do
+    caminho continua pedindo essa afirmação (`_servem_ao_caminho`); o que
+    mudou é que o pedido, quando vai, leva um código que o aparelho conhece,
+    com o valor do título no envelope para ele achar a faixa.
     """
     import caixa_protocolo as CXP
     cod = str(codigo or "").strip()
-    pai = CXP.subitem_da_faixa(cod)
-    if pai and pai in ATR.itens_de_custa_do_ato(caminho):
-        return pai
-    return cod
+    return CXP.subitem_da_faixa(cod) or cod
 
 
 def validar_afirmacao(afirmo: Any, afirmacao: Any, *,

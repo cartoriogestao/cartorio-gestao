@@ -6519,11 +6519,27 @@
         "ADMIN",
         "MANAGER"
       ],
-      "campos": [],
-      "comandos": [],
+      "campos": [
+        "Área",
+        "Situação",
+        "Título (obrigatório) (obrigatório na tela)",
+        "Código",
+        "Responsável",
+        "Prazo",
+        "Origem",
+        "Resultado pleno",
+        "Colar o JSON",
+        "Ou o arquivo .json"
+      ],
+      "comandos": [
+        "Filtrar",
+        "Devolver à lista",
+        "Cadastrar projeto",
+        "Ler a carga"
+      ],
       "template": "dev_projetos_lista.html",
       "familia": "gestao",
-      "assinatura": "7f5ea320140ed5eeb4fbef44743c2be136f00506625c221fb1cf190312011f29",
+      "assinatura": "6613abea4cf8bf244be4dd6a8a19162412fc2127fbf24182b82ae13ee65abbf3",
       "tipo": "funcao"
     },
     {

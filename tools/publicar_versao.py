@@ -47,11 +47,22 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--repositorio", default=REPOSITORIO)
     ap.add_argument("--saida", type=Path, default=None, help="pasta onde deixar o pacote (padrão: temporária)")
     ap.add_argument("--sem-publicar", action="store_true", help="monta e assina, sem mandar ao GitHub")
+    ap.add_argument("--run-pip", action="store_true",
+                    help="o servidor roda pip install na atualização (já liga sozinho se requirements.txt mudou)")
     args = ap.parse_args(argv)
 
     etiqueta = f"v{args.versao}"
     _rodar("git", "rev-parse", "--verify", f"{etiqueta}^{{commit}}", cwd=RAIZ)
     _rodar("git", "rev-parse", "--verify", f"{args.desde}^{{commit}}", cwd=RAIZ)
+    # AS DEPENDÊNCIAS NOVAS VÃO JUNTO (25/11/2026). A 3.7.22 trouxe o Pillow 13 e a `geographiclib`,
+    # e o pacote de ensaio saiu com `run_pip: false`: o servidor copiaria o `requirements.txt`
+    # novo sem instalar nada. Se ele mudou desde a versão anterior, o pacote pede o `pip install`.
+    mudou_requisitos = bool(_rodar("git", "diff", "--name-only", args.desde, etiqueta, "--",
+                                   "requirements.txt", cwd=RAIZ).strip())
+    run_pip = args.run_pip or mudou_requisitos
+    if run_pip:
+        print("requirements.txt mudou desde " + args.desde + ": o pacote pede pip install no servidor"
+              if mudou_requisitos else "--run-pip: o pacote pede pip install no servidor")
     saida = args.saida or Path(tempfile.mkdtemp(prefix="publicar_"))
     saida.mkdir(parents=True, exist_ok=True)
     pacote = saida / f"CartorioGestao-{args.versao}.cgu"
@@ -62,6 +73,8 @@ def main(argv: list[str] | None = None) -> int:
             comando = [sys.executable, str(copia / "tools" / "criar_atualizacao.py"), str(copia),
                        "--version", args.versao, "--min-version", args.desde.lstrip("v"),
                        "--desde", args.desde, "--output", str(pacote), "--sem-versionar"]
+            if run_pip:
+                comando.append("--run-pip")
             if args.chave:
                 comando += ["--assinar", str(args.chave)]
             # Sem capturar: a senha da chave é pedida pelo `criar_atualizacao`, no terminal do oficial.

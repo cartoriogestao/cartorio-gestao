@@ -421,9 +421,10 @@ def atos_do_livro(con, serie: str, *, de: str = "", ate: str = "", busca: str = 
     """Os atos lançados numa série, com lugar, data e selo. Só LÊ.
 
     O acervo do E-Ofício entra junto: é o mesmo livro, e o volume de papel de cada
-    linha está em `volume`.
+    linha está em `volume`. A cópia repetida do acervo não entra: o livro tem a
+    linha uma vez só (`RG.sem_duplicata`).
     """
-    onde, param = ["r.serie = %s"], [serie]
+    onde, param = ["r.serie = %s", RG.sem_duplicata("r")], [serie]
     if de:
         onde.append("a.data_ato >= %s")
         param.append(de)
@@ -471,7 +472,8 @@ def entradas_do_indicador(con, *, atribuicao: int | None = None,
     sempre guardou, e sem ele os registros que ninguém detalhou sumiriam do indicador —
     que é o que responde à certidão pelo nome.
     """
-    onde, param = [], []
+    # A cópia repetida do acervo não é outra pessoa no índice: sai (`RG.sem_duplicata`).
+    onde, param = [RG.sem_duplicata("r")], []
     if atribuicao is not None:
         onde.append("r.atribuicao = %s")
         param.append(int(atribuicao))
@@ -542,9 +544,10 @@ def indicador_real(con, *, busca: str = "") -> list[dict]:
     procura = normalizar_nome(texto) if texto else ""
     saida = []
     for b in banco(con).ler(
-            """SELECT b.*, r.serie, r.numero, r.volume, r.situacao AS registro_situacao
+            f"""SELECT b.*, r.serie, r.numero, r.volume, r.situacao AS registro_situacao
                  FROM rg_bens b JOIN rg_registros r ON r.id = b.registro_id
-                WHERE r.atribuicao = %s ORDER BY b.identificacao, b.id""", (RTD,)):
+                WHERE r.atribuicao = %s AND {RG.sem_duplicata("r")}
+                ORDER BY b.identificacao, b.id""", (RTD,)):
         b = dict(b)
         if procura and procura not in (normalizar_nome(b["descricao"]) or "") \
                 and procura not in (normalizar_nome(b.get("identificacao")) or ""):
@@ -576,8 +579,8 @@ def quantos_no_livro(con, livro: dict, atribuicao: int) -> int | None:
                             (int(atribuicao),)))
     if livro["tipo"] == ATOS:
         return int(bd.valor(
-            """SELECT COUNT(*) n FROM rg_atos a JOIN rg_registros r ON r.id=a.registro_id
-                WHERE r.serie=%s""", (livro["serie"],)))
+            f"""SELECT COUNT(*) n FROM rg_atos a JOIN rg_registros r ON r.id=a.registro_id
+                WHERE r.serie=%s AND {RG.sem_duplicata("r")}""", (livro["serie"],)))
     if livro["tipo"] == INDICADOR_REAL:
         return int(bd.valor("SELECT COUNT(*) n FROM rg_bens WHERE baixado_em IS NULL"))
     return None

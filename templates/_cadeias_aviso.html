@@ -1,0 +1,23 @@
+{# AS CADEIAS AUTOMÁTICAS (A006, 26/11/2026) — o CNIB, a carga da CENSEC e o Constrijud (A008) rodam
+   sozinhos; esta faixa só aparece quando um elo para, e só para a TI, o gestor
+   e o administrador. Diz qual elo, desde quando e onde olhar. Não se fecha:
+   some sozinha quando a cadeia volta a funcionar (`cadeias_automaticas`).
+   Laranja no primeiro dia, vermelha a partir do segundo — a régua da faixa da
+   gratuidade. #}
+{% if cadeias_aviso %}
+{% set ca = cadeias_aviso %}
+<div role="alert" data-cadeias-aviso="{{ 'vermelho' if ca.vermelho else 'laranja' }}"
+     style="position:sticky;top:0;z-index:40;background:{{ '#b00020' if ca.vermelho else '#a34f00' }};color:#fff;
+     padding:10px 18px;font-size:15px;border-bottom:4px solid {{ '#6d0014' if ca.vermelho else '#6b3400' }}">
+  <strong>Rotina automática parada — a TI, o gestor e o administrador cuidam disto.</strong>
+  <ul style="margin:6px 0 0 18px;padding:0">
+  {% for e in ca.elos %}
+    <li data-elo="{{ e.cadeia }}:{{ e.elo }}">
+      <strong>{{ e.rotulo_da_cadeia }}:</strong> {{ e.titulo }}{% if e.desde %} desde {{ e.desde[8:10] }}/{{ e.desde[5:7] }}/{{ e.desde[:4] }}{% if e.dias %} ({{ e.dias }} dia(s)){% endif %}{% endif %}.
+      {% if e.detalhe %}<span style="font-weight:normal">{{ e.detalhe }}</span>{% endif %}
+      <a style="color:#fff;text-decoration:underline;font-weight:bold" href="{{ url_for(e.endpoint, **e.args) }}">Olhar em {{ e.onde }}</a>
+    </li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}

@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block title %}ONR — pedidos parados{% endblock %}
+{% block heading %}<h1>ONR — pedidos parados e os avisos da responsável</h1>{% endblock %}
+{% block content %}
+<section class="panel">
+  <p>Os pedidos do ONR que esperam andamento desta casa — certidões pedidas pelo Ofício
+    Eletrônico, títulos do e-Protocolo a prenotar e atendimentos do SAEC — e o aviso de cada um
+    na tela de quem faz o trabalho. No <strong>1º dia útil</strong> o aviso é simples; do
+    <strong>2º dia útil</strong> em diante, é a faixa vermelha em toda tela, até o pedido andar.
+    Esta tela e a verificação <strong>não mandam nada ao ONR</strong> e não mexem no pedido.</p>
+  <p>Quem recebe:
+    {% if responsavel.de_onde == 'CONFIGURADO' %}<strong>{{ responsavel.nome }}</strong> (configurado)
+    {% elif responsavel.de_onde == 'ADMIN' %}<strong>{{ responsavel.nome }}</strong> — o ADMIN, porque {{ responsavel.motivo }}
+    {% else %}<strong class="danger">ninguém</strong>: não há ADMIN ativo{% endif %}.
+    {% if user.role == 'ADMIN' %}<a href="{{ url_for('settings') }}#cfg-onr-pedidos">Mudar em Configurações</a>.{% endif %}</p>
+  <p class="small muted">Processo da central: <strong>{{ processo.codigo }}</strong>, a cada
+    {{ processo.agenda.intervalo_min }} min nos dias úteis, das {{ processo.agenda.janela[0] }} às
+    {{ processo.agenda.janela[1] }} (nasce desligado; quem liga é o oficial, na
+    {% if user.role in ['ADMIN', 'MANAGER'] %}<a href="{{ url_for('automacao_lista') }}">central de automação</a>{% else %}central de automação{% endif %}).
+    Última verificação:
+    {% if ultima %}<strong>{{ ultima.em[:16]|replace('T', ' ') }}</strong> ({{ 'robô' if ultima.origem == 'ROBO' else 'na tela' }}){% if ultima.nao_medidas %} — não medido: {{ ultima.nao_medidas }}{% endif %}
+    {% else %}<strong>nenhuma ainda</strong>{% endif %}.</p>
+  {% if user.role in ['ADMIN', 'MANAGER', 'USER'] %}
+  <form method="post" action="{{ url_for('onr_pedidos_avisos_verificar') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button" type="submit">Verificar agora</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Parados agora ({{ abertos|length }})</h2>
+  {% if abertos %}
+  <table>
+    <thead><tr><th>Aviso</th><th>Pedido</th><th>O que espera</th><th>Parado desde</th><th>Para</th><th></th></tr></thead>
+    <tbody>
+    {% for a in abertos %}
+      <tr>
+        <td>{% if a.nivel == 'FAIXA' %}<span class="badge critica">faixa vermelha</span>{% else %}<span class="badge media">aviso simples</span>{% endif %}</td>
+        <td>{{ a.fonte_rotulo }}<br><code>{{ a.protocolo }}</code></td>
+        <td>{{ a.descricao }}</td>
+        <td>{{ a.desde_br }} ({{ a.dias_uteis + 1 }}º dia útil)</td>
+        <td>{{ a.para or '—' }}</td>
+        <td>{% if a.href %}<a href="{{ a.href }}">Abrir</a>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>{% if ultima %}Nenhum pedido parado na última verificação.{% else %}Nada medido ainda: a verificação nunca rodou.{% endif %}</p>
+  {% endif %}
+</section>
+
+{% if encerrados %}
+<section class="panel">
+  <h2>Encerrados recentemente</h2>
+  <table>
+    <thead><tr><th>Pedido</th><th>Parado desde</th><th>Encerrado em</th><th>Por quê</th></tr></thead>
+    <tbody>
+    {% for a in encerrados %}
+      <tr><td>{{ a.fonte_rotulo }} <code>{{ a.protocolo }}</code></td><td>{{ a.desde_br }}</td>
+        <td>{{ (a.encerrado_em or '')[:16]|replace('T', ' ') }}</td><td>{{ a.motivo_encerramento }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

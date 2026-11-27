@@ -704,6 +704,27 @@ def _desenvolvimento(casa) -> None:
     import dev_projetos as DEV
     with casa.transacao() as con:
         DEV.seed_sandbox_exemplo(con)
+        # S006: um projeto com fases em todas as situações, comprovantes e
+        # andamento, para a varredura ver a ficha inteira (e não só a vazia).
+        DEV.importar(con, {
+            "codigo": "PRJ-ENSAIO", "titulo": "Homologação CRA21 (API)", "area": "Protesto",
+            "responsavel": "ti", "origem": "S006", "prazo": "2026-12-31",
+            "resultado_pleno": "Remessa e retorno aceitos pela Central em produção.",
+            "fases": [
+                {"titulo": "Levantar o contrato", "situacao": "CONCLUIDA",
+                 "iniciada_em": "2026-09-01", "concluida_em": "2026-09-10",
+                 "comprovantes": [{"tipo": "PR", "descricao": "Telas da Central", "referencia": "#518"}]},
+                {"titulo": "Homologar a remessa", "situacao": "AGUARDANDO", "prazo": "2026-10-01",
+                 "aguardando_o_que": "o nome do arquivo de remessa", "iniciada_em": "2026-09-20",
+                 "criterio": "A Central aceita a remessa de ensaio",
+                 "comprovantes": [{"tipo": "LINK", "descricao": "Roteiro",
+                                   "referencia": "https://exemplo.invalid/roteiro"}]},
+                {"titulo": "Conferir o retorno", "situacao": "DISPENSADA",
+                 "observacao": "O retorno vem pela mesma chamada"},
+                {"titulo": "Produção", "criterio": "Primeira remessa real aceita"},
+            ],
+            "comprovantes": [{"tipo": "TEXTO", "descricao": "Combinado com o oficial"}],
+        }, por="ensaio")
     projetos = casa.ler("SELECT id FROM dev_projetos ORDER BY id")
     assert projetos, "o projeto de exemplo não nasceu"
     for projeto in projetos[:2]:
@@ -840,7 +861,37 @@ def _atendimento_e_treinamento(casa) -> None:
     casa.pagina("tr_orientacao", chave="roteiro-atendimento")
 
 
-PARTES = PARTES + (_atendimento_e_treinamento,)
+def _rotina_da_serventia(casa) -> None:
+    """A rotina da serventia (26/11/2026): um item diário já feito, com a tela onde se faz, e
+    um mensal atrasado — a Checklist do dia, «Minha rotina» e o cadastro mostram os dois
+    estados; a ficha de editar abre pelos dois."""
+    import rotina_da_casa as RT
+    desde = datetime(2026, 1, 5, 9, 0)
+    with casa.transacao() as con:
+        diario = RT.criar(con, {
+            "codigo": "ENSAIO_TI_BACKUP", "area": "TI", "titulo": "Conferir a cópia de segurança",
+            "para_que": "Sem a cópia, um defeito no disco leva o acervo.",
+            "como_fazer": "Abra a Automação.\nConfira a linha da cópia de segurança.",
+            "pronto_quando": "A linha diz «em dia».", "se_der_errado": "Avise a TI.",
+            "prova": "A imagem da tela.", "onde_endpoint": "automacao_lista",
+            "onde_url": "https://exemplo.invalid/portal", "base_legal": "Norma de exemplo",
+            "periodicidade": "DIARIA", "horario": "até 09:00", "prioridade": 1}, por="ensaio",
+            agora=desde)
+        mensal = RT.criar(con, {
+            "codigo": "ENSAIO_FIN_GUIA", "area": "FINANCEIRO", "titulo": "Pagar a guia do fundo",
+            "como_fazer": "Gere a guia.\nPague.\nAnexe o comprovante.", "periodicidade": "MENSAL",
+            "dia_util": 5}, por="ensaio", agora=desde)
+        nominal, _prazo = RT.ocorrencia_atual(RT.uma(con, diario), date.today(),
+                                              feriados=RT.feriados_da_casa(con), desde=desde)
+        RT.marcar_feito(con, diario, nominal.isoformat(), resultado="COM_PENDENCIA",
+                        observacao="Cópia de ensaio com aviso", por="ensaio", usuario_id=None)
+    for rotina_id in (diario, mensal):
+        casa.pagina("rotina_editar", rotina_id=rotina_id)
+    casa.pagina("gestor_checklist", _consulta={"area": "TI"})
+    casa.pagina("rotina_cadastro", _consulta={"ver": "inativas"})
+
+
+PARTES = PARTES + (_atendimento_e_treinamento, _rotina_da_serventia)
 
 
 def semear(casa) -> None:

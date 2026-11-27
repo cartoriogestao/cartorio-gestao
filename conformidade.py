@@ -117,7 +117,7 @@ AREA_DO_SETOR = {
 }
 
 #: As regras que são do Financeiro qualquer que seja o setor gravado.
-REGRAS_DO_FINANCEIRO = frozenset({"FECHAMENTO_DO_MES"})
+REGRAS_DO_FINANCEIRO = frozenset({"FECHAMENTO_DO_MES", "REPASSE_DE_TERCEIRO"})
 PREFIXOS_DO_FINANCEIRO = ("CAIXA", "FISCAL")
 
 GRAVIDADES_CONHECIDAS = frozenset({"CRITICO", "VENCIDO", "NAO_MEDIU", "PRAZO", "ATENCAO"})

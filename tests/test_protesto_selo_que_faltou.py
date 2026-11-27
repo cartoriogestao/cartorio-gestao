@@ -482,12 +482,14 @@ def test_a_falha_do_selador_nao_muda_nada_e_diz_o_motivo(s):
 
 def test_o_codigo_que_o_caminho_nunca_selou_pede_afirmacao(s):
     """O 4106 (cancelamento, 28/10/2026) ficou com o 17.4.5 pago sem selo, e o
-    caminho do cancelamento não conhece o 17.4: a faixa vai como está, e pedir
-    de novo é insistir — só com afirmação expressa, como no lançamento."""
+    caminho do cancelamento não tem o 17.4 na receita medida: pedir de novo só
+    com afirmação expressa, como no lançamento. E o que vai ao aparelho é o
+    ITEM (17.4), e não a faixa — a faixa ele recusa em qualquer caminho
+    (26/11/2026, PR009)."""
     import protesto_selo_previo as PSELO
     c = _cenario(s, tipo="CANCELAMENTO")
     [p] = _pendencias(s, c["titulo_id"])
-    assert p["serve"] is False and p["codigo_selo"] == "17.4.5"
+    assert p["serve"] is False and p["codigo_selo"] == "17.4"
     antes = _retrato(s, c)
     r = _emitir(s, c, "17.4.5")
     assert any("Afirmo" in a and "nada foi gravado" in a for a in _avisos(r)), \

@@ -19,6 +19,9 @@
     "r",
     "sv",
     "telefone",
-    "tem_fundos"
+    "tem_fundos",
+    "terceiros",
+    "total_serventia",
+    "total_terceiros"
   ]
 }

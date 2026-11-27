@@ -7887,13 +7887,33 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         if not escolhidos:
             flash("Escolha ao menos um assento antes de marcar.", "warning")
             return redirect(url_for("rcpn_crc"))
+        # **O RETIDO NÃO ESTAVA NO ARQUIVO, E NÃO SE MARCA (26/11/2026, RC005
+        # e RC006).** O XML baixado em «arquivo» deixa de fora o que `montar`
+        # retém (sem matrícula, sem «possuía bens»…), mas esta marca gravava o
+        # token inteiro: o lote 4 marcou 58 com 50 no arquivo, o lote 5 marcou
+        # 53 com 48. Assim o nascimento duplicado sem número e um óbito sem
+        # «possuía bens» saíram da fila sem nunca chegar à Central. É a mesma
+        # régua do envio pelo web service, logo acima: só o que entrou.
+        with db.connect() as con:
+            retidos = CRC.montar(con, escolhidos, cns=_cns_rcpn())["retidos"]
+        retidos_ids = {int(r["assento_id"]) for r in retidos}
+        marcados = [a for a in escolhidos if a not in retidos_ids]
+        if not marcados:
+            flash("Nenhum assento marcado: todos os escolhidos estão retidos "
+                  "(não entram no arquivo da CRC). Corrija a ficha, baixe o "
+                  "arquivo de novo e suba-o antes de marcar.", "warning")
+            return redirect(url_for("rcpn_crc"))
         with db.transaction() as con:
-            CRCENVIOS.registrar_envio(con, escolhidos, agora=db.now(),
+            CRCENVIOS.registrar_envio(con, marcados, agora=db.now(),
                                 por=usuario_nome(), canal="MANUAL", nota=nota)
         audit("RCPN_CRC_MARCADO_ENVIADO", "rc_assentos", None,
-              {"quantos": len(escolhidos)})
-        flash(f"{len(escolhidos)} assento(s) marcado(s) como já enviados — "
+              {"quantos": len(marcados), "retidos_nao_marcados": len(retidos_ids)})
+        flash(f"{len(marcados)} assento(s) marcado(s) como já enviados — "
               "não vão mais aparecer na lista de pendentes.", "success")
+        if retidos_ids:
+            flash(f"{len(retidos_ids)} assento(s) retido(s) NÃO foram marcados: "
+                  "eles não estavam no arquivo da CRC e continuam na lista, "
+                  "com o motivo.", "warning")
         return redirect(url_for("rcpn_crc"))
 
     @app.route("/rcpn/crc/historico")
@@ -9990,10 +10010,15 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
     def rcpn_materializacoes():
         """O formulário e as materializações já seladas. Só LÊ."""
         import rc_materializacao as RCM
+        import rc_materializacao_repasse as RMR
         with db.connect() as con:
             linhas = RCM.listar(con, limite=100)
+            pend = RMR.pendentes(con, hoje=agora()[:10])
+            cobra_taxa = RMR.cobra_taxa_da_crc(con)
         return render_template("rc_materializacoes.html", linhas=linhas,
-                               codigo_ato=RCM.CODIGO_ATO)
+                               codigo_ato=RCM.CODIGO_ATO, pend=pend,
+                               cobra_taxa=cobra_taxa,
+                               SITUACOES_DO_REPASSE=RMR.SITUACOES)
 
     @app.route("/rcpn/materializacoes", methods=["POST"])
     @roles_required("ADMIN", "MANAGER", "USER")
@@ -10015,7 +10040,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         dados = {k: _campo(k) for k in (
             "nome_parte", "requerente", "cartorio_nome", "cartorio_cidade",
             "cartorio_uf", "funcionario_expedidor", "valor_emolumentos",
-            "especie", "matricula")}
+            "especie", "matricula", "pedido_crc")}
         # O ENVELOPE SE MONTA ANTES DE GRAVAR: o que falta no formulário ou no
         # cadastro (a versão da tabela) recusa aqui, sem deixar materialização
         # cancelada para trás.
@@ -10050,9 +10075,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                   {"motivo": motivo})
             flash(f"O selo da materialização NÃO saiu: {motivo}.", "danger")
             return redirect(volta)
+        # O VALOR DE TERCEIRO RECEBIDO SE LIGA À MATERIALIZAÇÃO pelo pedido da
+        # CRC (F010, 25/11/2026). Depois do selo, e fora dele: o envelope já
+        # saiu, e nada aqui o muda.
+        # Falhar aqui não desfaz o selo, que já saiu: fica no registro, e a
+        # ligação se refaz pelo pedido.
+        import rc_materializacao_repasse as RMR
+        try:
+            with db.transaction() as con:
+                ligados = RMR.vincular_materializacao(con, mid,
+                                                      conferido.get("pedido_crc"))
+        except Exception:                                   # noqa: BLE001
+            app.logger.exception("ligar o valor de terceiro à materialização %s", mid)
+            ligados = 0
         audit("RCPN_MATERIALIZACAO_SELADA", RCM.TABELA, mid,
               {"selo": res["numero"], "codigo": RCM.CODIGO_ATO,
-               "isento": bool(selo_isento)})
+               "isento": bool(selo_isento), "valor_de_terceiro_ligado": ligados})
         import selo_no_papel as SP
         with db.connect() as con:
             t = banco(con).um("SELECT texto FROM sd_selos WHERE numero=%s",
@@ -10275,7 +10313,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         pagina = _inteiro(request.args.get("pagina"), maximo=PAGINA_MAIS_ALTA) or 1
         atribuicao = (request.args.get("atribuicao") or "").strip()
         tipo = (request.args.get("tipo") or "").strip()
-        onde, params = [], []
+        # a cópia repetida do acervo não é ato praticado: não entra
+        onde, params = [RG.sem_duplicata("r")], []
         if atribuicao in ("3", "4"):
             onde.append("r.atribuicao = %s")
             params.append(int(atribuicao))
@@ -12727,10 +12766,23 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             + "".join(f"<p>{_esc(x)}</p>" for x in canhoto["campos"])
             + f'<p><strong>{_esc(canhoto["tentativas_titulo"])}</strong></p>'
             + "".join(f"<p>{_esc(x)}</p>" for x in canhoto["tentativas"]))
-        # A COBRANÇA NO PAPEL (PR007, 24/11/2026): valor, vencimento, linha
-        # digitável e Pix quando vieram, o link sempre, e o QR para pagar. O QR
+        # A COBRANÇA NO PAPEL (PR007, 24 e 25/11/2026): valor, vencimento, a
+        # linha digitável do boleto registrado e o QR do Pix para pagar. O QR
         # do aviso (o do canhoto) não muda: é ele que o lote escaneado lê.
         import protesto_boleto as PBOL
+        # O BOLETO DO INTER E DA UNICRED REGISTRA DEPOIS (assíncrono): antes de
+        # imprimir, pergunta-se a linha que faltou. Fora de transação; o que
+        # falha deixa o aviso sem a cobrança, como antes.
+        with db.connect() as con:
+            if PBOL.ligada_no_aviso(con):
+                sem_linha = PBOL.boleto_sem_linha_do_titulo(con, int(aviso["titulo_id"]))
+            else:
+                sem_linha = None
+        if sem_linha:
+            try:
+                PBOL.completar_linha(db, sem_linha)
+            except Exception:  # a impressão não cai por causa do banco
+                pass
         with db.connect() as con:
             bloco = PBOL.bloco_de_pagamento(con, aviso)
         corpo = _linhas_em_html(teor)

@@ -1938,6 +1938,37 @@ MUDOU_DEPOIS_DO_OURO["CAIXA_RECIBO"] = {
         ("<p>[observacao]</p>\n<p>None, ",
          "<p>[observacao]</p>\n" + _ACOMPANHAMENTO_NA_PREVIA + "<p>None, "),),
 }
+# O VALOR DE TERCEIRO NO RECIBO — F010, 25/11/2026 (solução B da CR004). Na
+# materialização pedida pela CRC o cliente paga também a certidão do outro
+# cartório; o recibo diz isso num bloco próprio, depois da composição dos
+# emolumentos e fundos desta casa. Sem valor de terceiro o papel é o de antes
+# (`terceiros` vazio); a prévia, que preenche tudo, mostra o bloco.
+_FIM_DA_COMPOSICAO_DO_RECIBO = "FERRFIS R$ {{ fundos.ferrfis }}.</p>{% endif %}\n"
+_TERCEIROS_NA_PREVIA = (
+    "<p><b>VALORES DE TERCEIROS — não são emolumentos nem fundos desta serventia</b></p>\n"
+    "<p>Recebidos para repasse ao cartório que emitiu a certidão materializada nesta "
+    "serventia:</p>\n"
+    '<table border="1" cols="5.4cm,2.6cm,2.4cm,2.2cm,2.0cm,2.2cm">\n'
+    "<tr><td><b>Cartório de origem</b></td><td><b>Pedido CRC</b></td>"
+    "<td><b>Emolumentos de lá</b></td><td><b>Fundos de lá</b></td>"
+    "<td><b>Taxa CRC</b></td><td><b>Total</b></td></tr>\n"
+    "</table>\n"
+    "<p><b>Desta serventia:</b> R$ [total_serventia]. <b>De terceiros, a repassar:</b> "
+    "R$ [total_terceiros].</p>\n\n")
+
+
+def _bloco_de_terceiros_do_recibo() -> str:
+    import caixa_web
+    return "{% if terceiros %}" + caixa_web.BLOCO_DE_TERCEIROS_DO_RECIBO + "{% endif %}\n"
+
+
+MUDOU_DEPOIS_DO_OURO["CAIXA_RECIBO"] = {
+    "texto": MUDOU_DEPOIS_DO_OURO["CAIXA_RECIBO"]["texto"] + (
+        (_FIM_DA_COMPOSICAO_DO_RECIBO,
+         _FIM_DA_COMPOSICAO_DO_RECIBO + _bloco_de_terceiros_do_recibo()),),
+    "papel": MUDOU_DEPOIS_DO_OURO["CAIXA_RECIBO"]["papel"] + (
+        ("FERRFIS R$ [fundos].</p>\n", "FERRFIS R$ [fundos].</p>\n" + _TERCEIROS_NA_PREVIA),),
+}
 _FIM_DA_OBSERVACAO_DA_RECEPCAO = ("{% if p.observacao %}<p><b>Observação:</b> "
                                   "{{ observacao }}</p>{% endif %}\n")
 MUDOU_DEPOIS_DO_OURO["CAIXA_RECEPCAO"] = {

@@ -99,6 +99,11 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
          # continuam levando a ela, e o endereço e os papéis são os mesmos. Veja `ATALHOS`.
          ("Checklist do dia", (
              _i("Checklist do dia (por área)", "gestor_checklist", AMA, atalho=True),)),
+         # MINHA ROTINA (26/11/2026): o que a pessoa tem para hoje e o atrasado na
+         # rotina da serventia, como responsável ou suplente — para todos, também
+         # o escrevente. Porta única: o cadastro mora em Gestão.
+         ("Minha rotina", (
+             _i("Minha rotina", "rotina_minha", termos="rotina tarefa manutencao do dia feito"),)),
      )},
     {"chave": "NOTAS", "curto": "Notas", "nome": "Tabelionato de Notas", "cor": "NOTAS",
      "icone": "pena", "lavra": True, "secoes": (
@@ -432,6 +437,11 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
          ("Checklist do dia", (
              _i("Checklist de gestão do dia", "gestor_checklist", AMA,
                 termos="conformidade semaforo achados conferencia"),)),
+         # A ROTINA DA SERVENTIA (26/11/2026): o cadastro da rotina de manutenção
+         # que a Checklist do dia mostra no alto de cada área. O auditor lê.
+         ("Rotina da serventia", (
+             _i("Rotina da serventia", "rotina_cadastro", AMA,
+                termos="rotina manutencao delegar cadastro diaria mensal"),)),
          ("Envios às Centrais", (
              _i("Envios às Centrais", "gestor_envios"),)),
          ("Erros e correções", (
@@ -525,6 +535,9 @@ ATALHOS: dict[str, str] = {
 # chega nela. Sem isto a tela abriria com o menu fechado — o defeito que `modulos.py`
 # existe para impedir.
 PAI: dict[str, tuple[str, str]] = {
+    # A rotina da serventia: o formulário abre dentro da seção do cadastro.
+    "rotina_nova": ("GESTAO", "Rotina da serventia"),
+    "rotina_editar": ("GESTAO", "Rotina da serventia"),
     "caixa_protocolos": ("CAIXA", "Protocolo geral"),
     "ri_qualificacao_ia_nota": ("RI", "Protocolo"),
     "ri_geo_ver": ("RI", "Consulta"),
@@ -573,6 +586,7 @@ PAI: dict[str, tuple[str, str]] = {
     "onr_certidao_ficha": ("RI", "Certidões"),
     "onr_eprotocolo_ficha": ("RI", "Protocolo"),
     "onr_certidoes_certificado": ("RI", "Certidões"),
+    "onr_acompanhamento_prova": ("RI", "Certidões"),
     "ri_retificacao": ("RI", "Processos longos"),
     "ri_intimacao": ("RI", "Processos longos"),
     "ri_intimacao_nova": ("RI", "Processos longos"),
@@ -594,6 +608,7 @@ PAI: dict[str, tuple[str, str]] = {
     "onr_cobranca_nova": ("RI", "Centrais e obrigações"),
     "onr_cobranca_gerar": ("RI", "Centrais e obrigações"),
     "onr_cobranca_ficha": ("RI", "Centrais e obrigações"),
+    "onr_pedidos_avisos": ("RI", "Centrais e obrigações"),     # A005: pedidos do ONR parados
     "ri_onr_endereco": ("RI", "Centrais e obrigações"),
     "ri_onr_indicador": ("RI", "Centrais e obrigações"),
     "onr_ir_conferir": ("RI", "Centrais e obrigações"),
@@ -634,6 +649,8 @@ PAI: dict[str, tuple[str, str]] = {
     "rcpn_certidao_previa": ("RCPN", "Certidões"),
     "rcpn_certidao_eletronica_nova": ("RCPN", "Certidões"),
     "rcpn_pedido": ("RCPN", "Certidões"),
+    # O saldo de repasse da CRC (F010) se abre pela materialização de outra serventia.
+    "rcpn_materializacao_repasses": ("RCPN", "Certidões"),
     "rcpn_anotacao_oficio": ("RCPN", "Comunicações"),
     "rcpn_crc_historico": ("RCPN", "Comunicações"),
     "rcpn_funai_oficio": ("RCPN", "Comunicações"),

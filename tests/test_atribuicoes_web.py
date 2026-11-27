@@ -1133,7 +1133,9 @@ def test_o_4127_e_recusado_antes_e_a_afirmacao_vence(s):
     html = _post(s, f"/protesto/{ids['titulo']}/lancar", **campos)
     texto = " ".join(html.split())
     assert "Ato NÃO lançado, e nada foi gravado" in texto
-    assert "17.4.5" in texto and "17.2" in texto       # o que serve
+    # desde o PR009 (26/11/2026) a faixa 17.4.5 vai como o item 17.4, que é o
+    # que a recusa diz não servir ao caminho do cancelamento
+    assert "o item 17.4 não saiu" in texto and "17.2" in texto       # o que serve
     assert "data-afirmacao-expressa" in html           # a caixa se abriu
     con = _con(s)
     assert con.execute(
@@ -1160,7 +1162,7 @@ def test_o_4127_e_recusado_antes_e_a_afirmacao_vence(s):
     assert (linha["entity_type"], int(linha["entity_id"])) == ("pt_atos", ato["id"])
     detalhes = json.loads(linha["details"])
     assert set(detalhes) >= {"regra", "afirmacao", "o_que_faltava"}
-    assert "17.4.5" in detalhes["o_que_faltava"]
+    assert "o item 17.4 não saiu" in detalhes["o_que_faltava"]
 
 
 def test_a_faixa_do_pagamento_sai_pelo_item_do_tribunal(s):

@@ -3315,6 +3315,8 @@ def _montar_app(test_config: dict | None = None) -> Flask:
         "RI_PROTOCOLO": ("ri_protocolo_ver",),
         # O COMPROVANTE DA PENDENCIA DO PAINEL DO ONR (RI010): abre para quem ve o painel.
         "ONR_PENDENCIA": ("ri_onr_conformidade",),
+        # O COMPROVANTE DE UMA FASE DOS PROJETOS (S006, 26/11/2026): abre para quem abre a ficha.
+        "DEV_PROJETO_COMPROVANTE": ("dev_projetos_detalhe",),
         "RG_ATO": ("rcpj_rtd_registro",),
         "RG_REGISTRO": ("rcpj_rtd_registro",),
         "RG_TITULO": ("rcpj_rtd_titulo",),
@@ -3340,6 +3342,10 @@ def _montar_app(test_config: dict | None = None) -> Flask:
         "SELO_GRATUIDADE_CERTIDAO": ("selo_gratuidades_portal",),
         "ONR_CERTIDAO": ("onr_certidao_ficha",),
         "PLD_CASO": ("pld_caso",),
+        # A PROVA DO «FEITO» DA ROTINA DA SERVENTIA (26/11/2026): abre na
+        # Checklist do dia e em «Minha rotina» — e, em «Minha rotina», só para
+        # quem responde pelo item (`DONO_DO_ANEXO`).
+        "GE_ROTINA_FEITO": ("gestor_checklist", "rotina_minha"),
     }
     app.extensions["tela_do_anexo"] = TELA_DO_ANEXO
 
@@ -3389,9 +3395,29 @@ def _montar_app(test_config: dict | None = None) -> Flask:
             return leitura is not None and RCL.e_de(
                 con, leitura, nome=usuario_nome(), user_id=usuario_id() or 0)
 
+    def _rotina_e_de_quem_pede(row) -> bool:
+        """A prova do «feito»: quem vê a checklist vê todas; os outros, a do
+        item de que são responsáveis ou suplentes — e quem registrou o feito
+        continua vendo a sua, mesmo depois da troca do responsável."""
+        import gestor_checklist as CK
+        import rotina_da_casa as RT
+        if PAP.equivale_a(current_user(), CK.QUEM_VE):
+            return True
+        uid = usuario_id()
+        with db.connect() as con:
+            linha = banco(con).um(
+                "SELECT r.responsavel_id, r.suplente_id, f.usuario_id FROM ge_rotina_feitos f "
+                "JOIN ge_rotina r ON r.id = f.rotina_id WHERE f.id = %s",
+                (int(row["entity_id"]),))
+        if not (linha and uid):
+            return False
+        return (str(linha["usuario_id"] or "") == str(uid)
+                or RT.pode_marcar(linha, "USER", uid))
+
     DONO_DO_ANEXO = {
         "NT_LEITURA": _leitura_das_notas_e_de_quem_pede,
         "RC_LEITURA": _leitura_do_rcpn_e_de_quem_pede,
+        "GE_ROTINA_FEITO": _rotina_e_de_quem_pede,
     }
     app.extensions["dono_do_anexo"] = DONO_DO_ANEXO
 
@@ -3484,6 +3510,11 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     import cnib_web
     cnib_web.registrar_rotas(app, db, login_required, roles_required,
                              audit, fmt_date)
+    # AS CADEIAS AUTOMÁTICAS (A006): a faixa da TI, do gestor e do administrador
+    # quando o CNIB ou a carga da CENSEC param. Depois do CNIB: aponta para as
+    # telas dele e da automação.
+    import cadeias_automaticas_web
+    cadeias_automaticas_web.registrar_rotas(app, db, login_required, roles_required, audit)
 
     import caixa_web
     caixa_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
@@ -3633,6 +3664,12 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     import protesto_repasse_web
     protesto_repasse_web.registrar_rotas(app, db, login_required,
                                          roles_required, audit)
+    # O VALOR DE TERCEIRO DA MATERIALIZAÇÃO (F010, 25/11/2026), no molde do
+    # repasse ao apresentante: o que o cliente paga para o outro cartório entra
+    # no caixa fora da receita e sai pelo repasse, com comprovante.
+    import rc_materializacao_repasse_web
+    rc_materializacao_repasse_web.registrar_rotas(app, db, login_required,
+                                                  roles_required, audit)
     # O PIX DO PROTESTO (29/10/2026): só é pagamento com o comprovante e o
     # crédito conferido. As telas apontam para `protesto_titulo`, e a ficha
     # dele lê o PIX pelo `context_processor` daqui.
@@ -3768,6 +3805,9 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     # títulos remetidos, na ordem da remessa, e o aviso no painel. Só lê.
     import onr_eprotocolo_web
     onr_eprotocolo_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+    # Os pedidos do ONR parados: o aviso na tela de quem faz o trabalho (A005).
+    import onr_pedidos_avisos_web
+    onr_pedidos_avisos_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
     # A CONFERENCIA DO ENDERECO QUE VAI AO ONR — o que o teor da ficha diz,
     # ao lado do que a ficha tem, com a frase de onde cada campo saiu.
@@ -3937,6 +3977,12 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     # dos achados abertos do gestor — para o oficial, o gerente e o auditor.
     import conformidade_web
     conformidade_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+
+    # A ROTINA DA SERVENTIA (26/11/2026): o cadastro da rotina de manutenção da
+    # casa, o «feito» de cada vencimento e «Minha rotina». O bloco do dia mora
+    # na Checklist do dia, no alto de cada área.
+    import rotina_da_casa_web
+    rotina_da_casa_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
     # A PASTA DO PROCESSO e o rascunho que vira processo (12/10/2026) — fase 1
     # do módulo único de Processos.

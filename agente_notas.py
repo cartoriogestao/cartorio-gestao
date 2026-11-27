@@ -852,7 +852,11 @@ ROTULOS = {
 #: (`RASCUNHO_QUINZENA_FECHADA`) e o ato lavrado há 30 dias ou mais sem o PDF
 #: assinado (`PDF_30_DIAS`). São regras próprias, e não estas duas: o resto de
 #: `NOTAS_RASCUNHO` e `NOTAS_PDF` continua só no relatório.
-REGRAS_SEM_TAREFA = frozenset({"NOTAS_RASCUNHO", "NOTAS_PDF"})
+#:
+#: G007, «pode» do titular em 25/11/2026: as duas viram tarefa também no caso
+#: comum. São trabalho de quem lavrou, e a Checklist do dia só mostra o que a
+#: TI e o admin resolvem (`gestor_destino`); sem tarefa, ninguém as veria.
+REGRAS_SEM_TAREFA: frozenset[str] = frozenset()
 
 #: «Onde abrir» de quem não tem ato próprio.
 TELA = {

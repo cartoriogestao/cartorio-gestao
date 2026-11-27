@@ -702,10 +702,47 @@ def _numero(valor):
     Zero é gratuidade, e branco é campo não preenchido — tratá-los como a mesma
     coisa faria o sistema mandar «custou zero» onde ninguém informou nada, e é
     o domínio que tem de recusar o branco.
+
+    **O PONTO DECIMAL TAMBÉM SE LÊ** (26/11/2026, PR009). A própria tela
+    preenche o campo com a sugestão em `retirada_sugerida` («566.19»), e
+    esta função apagava todo ponto antes de ler: «566.19» subia à Central como
+    56619,00 — cem vezes o valor. O pedido 3925045 (título 9633) subiu assim
+    em 18/11, com `vl_retirada` 10073.0. Agora:
+      - com vírgula e ponto, o último dos dois é o decimal («1.234,56» e
+        «1,234.56» dão 1234.56);
+      - só com vírgula, ela é o decimal («566,19»);
+      - só com ponto, ele é o decimal quando sobra uma ou duas casas depois
+        dele («566.19», «566.1»); com grupos de três, é milhar («1.234» e
+        «1.234.567»);
+      - o que não se lê com segurança devolve None, e não um número
+        inventado: o domínio recusa o branco e pede de novo.
     """
-    texto = str(valor or "").strip().replace(".", "").replace(",", ".")
+    texto = (str(valor or "").replace("R$", "").replace(" ", "")
+             .replace(" ", "").strip())
     if not texto:
         return None
+    if "," in texto and "." in texto:
+        decimal = "," if texto.rfind(",") > texto.rfind(".") else "."
+        milhar = "." if decimal == "," else ","
+        inteiro, _, fracao = texto.rpartition(decimal)
+        if milhar in fracao or decimal in inteiro:
+            return None
+        grupos = inteiro.split(milhar)
+        if not grupos[0] or any(len(g) != 3 for g in grupos[1:]):
+            return None
+        texto = "".join(grupos) + "." + fracao
+    elif "," in texto:
+        if texto.count(",") > 1:
+            return None
+        texto = texto.replace(",", ".")
+    elif "." in texto:
+        grupos = texto.split(".")
+        if len(grupos) == 2 and 1 <= len(grupos[1]) <= 2:
+            pass  # ponto decimal: «566.19»
+        elif grupos[0] and all(len(g) == 3 for g in grupos[1:]):
+            texto = "".join(grupos)  # milhar: «1.234», «1.234.567»
+        else:
+            return None
     try:
         return float(texto)
     except ValueError:

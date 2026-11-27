@@ -60,9 +60,15 @@ por linha tocada, com o antes e o depois dela, e a `AFIRMACAO_EXPRESSA` do
 oficial (regra `CORRECAO_DE_OFICIO`). Correção executada sem a auditoria dela
 seria o script direto no banco outra vez.
 
-O CATÁLOGO COMEÇA PELO PROTESTO e é extensível: um tipo novo é uma subclasse
+O CATÁLOGO COMEÇOU PELO PROTESTO e é extensível: um tipo novo é uma subclasse
 de `Tipo`, com a atribuição dele, registrada em `CATALOGO`. A fila, as telas,
 a tarefa, a auditoria e a conferência do «antes» não mudam.
+
+O RTD/PJ ENTRA COM O REGISTRO REPETIDO DO ACERVO (T021, 26/11/2026): o
+E-Ofício gravou a mesma linha duas vezes, e a carga trouxe as duas fichas. Não
+havia tela que tirasse a cópia: a correção do acervo não muda situação, e o
+cancelamento lavra ato novo, com selo e custas. Aqui a cópia passa a CANCELADO
+por «duplicidade do acervo», sem ato, e o tipo inverso a devolve a ATIVO.
 """
 from __future__ import annotations
 
@@ -125,7 +131,8 @@ LIMITE_DAS_PENDENCIAS = 200
 LIMITE_DAS_LINHAS = 300
 
 ATRIBUICAO_PROTESTO = "PROTESTO"
-NOME_DA_ATRIBUICAO = {ATRIBUICAO_PROTESTO: "Protesto"}
+ATRIBUICAO_RTDPJ = "RTDPJ"
+NOME_DA_ATRIBUICAO = {ATRIBUICAO_PROTESTO: "Protesto", ATRIBUICAO_RTDPJ: "RTD/PJ"}
 
 
 class _Falha(Exception):
@@ -1605,10 +1612,416 @@ class TituloDevolvido(Tipo):
         return problemas + _conferir_situacoes(bd, depois)
 
 
+# ------------------------------- 6. o registro repetido do acervo (RTD/PJ)
+
+#: As situações de `rg_registros` (ATIVO | CANCELADO).
+REGISTRO_ATIVO = "ATIVO"
+REGISTRO_CANCELADO = "CANCELADO"
+#: `rg_registros.atribuicao`: 3 é o RCPJ, 4 o RTD.
+NOME_DO_REGISTRO = {3: "RCPJ", 4: "RTD"}
+#: O que prende a ficha a outra coisa da casa: com qualquer um deles, a ficha
+#: não é uma cópia solta, e quem decide é o oficial fora da fila. (tabela,
+#: frase). Só tabela que tem `registro_id` para `rg_registros`.
+VINCULOS_DO_REGISTRO: tuple[tuple[str, str], ...] = (
+    ("rg_titulos", "título do Livro de Protocolo"),
+    ("rg_bens", "bem do indicador real"),
+    ("rg_doi", "DOI"),
+    ("rg_fiduciarias", "alienação fiduciária"),
+    ("rg_notificacoes", "notificação"),
+    ("rg_livros_contabeis", "livro contábil"),
+)
+
+
+def _volume(valor: Any) -> str | None:
+    """«07» e «7» são o mesmo volume, como em `rg_registro.volume_canonico`.
+    Sem dígito, o texto como está. Só calcula."""
+    digitos = "".join(c for c in str(valor or "") if c.isdigit())
+    return str(int(digitos)) if digitos else _txt(valor)
+
+
+def _impressao(texto: Any) -> str | None:
+    """Uma impressão curta do teor: o «antes» não carrega o teor inteiro, mas
+    a aprovação percebe se ele mudou. Só calcula."""
+    import hashlib
+    limpo = _txt(texto)
+    return hashlib.sha256(limpo.encode("utf-8")).hexdigest()[:16] if limpo else None
+
+
+def _contar(bd, sql: str, args: tuple) -> int:
+    return int(bd.valor(sql, args) or 0)
+
+
+def _ficha_do_registro(bd, registro_id: int, *, travar: bool) -> dict | None:
+    """A ficha como o «antes» a vê: o registro, os atos dele e o que o prende.
+    Só LÊ (e prende a linha do registro, com `travar`)."""
+    from pt_schema import normalizar_nome
+    trava = " FOR UPDATE" if travar else ""
+    r = bd.um(f"""SELECT id, atribuicao, serie, volume, numero, situacao, origem,
+                         origem_chave, requerente_nome, natureza, teor,
+                         duplicata_de, duplicata_motivo
+                    FROM rg_registros WHERE id = %s{trava}""", (int(registro_id),))
+    if r is None:
+        return None
+    atos = [{"id": int(a["id"]), "tipo": str(a["tipo"] or ""),
+             "folha": a["folha"], "data_ato": str(a["data_ato"] or ""),
+             "selo": _txt(a["selo"]), "selos_antigos": _txt(a["selos_antigos"]),
+             "protocolo_id": a["protocolo_id"], "lancamento_id": a["lancamento_id"]}
+            for a in bd.ler("""SELECT id, tipo, folha, data_ato, selo, selos_antigos,
+                                      protocolo_id, lancamento_id
+                                 FROM rg_atos WHERE registro_id = %s ORDER BY id""",
+                            (int(registro_id),))]
+    rid = int(r["id"])
+    anexos = 0
+    if bd.tem_tabela("attachments"):
+        anexos = _contar(bd, "SELECT count(*) FROM attachments WHERE entity_type = %s "
+                             "AND entity_id = %s", ("RG_REGISTRO", rid))
+        for a in atos:
+            anexos += _contar(bd, "SELECT count(*) FROM attachments WHERE entity_type = %s "
+                                  "AND entity_id = %s", ("RG_ATO", a["id"]))
+    certidoes = 0
+    if bd.tem_tabela("at_certidoes"):
+        certidoes = _contar(bd, "SELECT count(*) FROM at_certidoes WHERE tabela = %s "
+                                "AND registro_id = %s", ("rg_registros", rid))
+    vinculos: dict[str, list[int]] = {}
+    for tabela, _frase in VINCULOS_DO_REGISTRO:      # o nome sai da constante
+        if bd.tem_tabela(tabela) and bd.tem_coluna(tabela, "registro_id"):
+            ids = [int(x["id"]) for x in bd.ler(
+                f"SELECT id FROM {tabela} WHERE registro_id = %s ORDER BY id", (rid,))]
+            if ids:
+                vinculos[tabela] = ids
+    requerente = normalizar_nome(r["requerente_nome"]) or ""
+    partes = [str(p["nome_norm"] or "") for p in bd.ler(
+        """SELECT nome_norm FROM rg_partes
+            WHERE registro_id = %s AND retirada_em IS NULL ORDER BY id""", (rid,))]
+    return {"atribuicao": int(r["atribuicao"]), "serie": str(r["serie"] or ""),
+            "volume": _txt(r["volume"]), "numero": r["numero"],
+            "situacao": str(r["situacao"] or ""), "origem": r["origem"],
+            "origem_chave": r["origem_chave"],
+            "requerente_nome": _txt(r["requerente_nome"]),
+            "natureza": _txt(r["natureza"]), "teor": _impressao(r["teor"]),
+            "duplicata_de": r["duplicata_de"],
+            "duplicata_motivo": r["duplicata_motivo"],
+            "atos": atos, "anexos": anexos, "certidoes": certidoes,
+            "vinculos": vinculos,
+            "partes_alem_do_requerente": sum(1 for p in partes if p != requerente)}
+
+
+def _o_registro(ficha: dict) -> dict | None:
+    """O ato de REGISTRO da ficha: o primeiro. Só calcula."""
+    return next((a for a in ficha["atos"] if a["tipo"] == "REGISTRO"), None)
+
+
+def _rotulo_da_ficha(rid: Any, ficha: dict | None) -> str:
+    if not ficha:
+        return f"ficha {rid}"
+    vol = f", vol. {ficha['volume']}" if ficha.get("volume") else ""
+    return (f"ficha {rid} ({NOME_DO_REGISTRO.get(ficha['atribuicao'], '?')} "
+            f"{ficha['serie']}{vol}, nº {ficha['numero'] or '—'})")
+
+
+def _registro_id(valor: Any, rotulo: str, recusas: list[str]) -> int | None:
+    ids, ruins = _ids(valor)
+    if ruins or len(ids) != 1:
+        recusas.append(f"Informe {rotulo}, pelo número do sistema (o da ficha "
+                       "/rcpj-rtd/N).")
+        return None
+    return ids[0]
+
+
+class RegistroRepetidoDoAcervo(Tipo):
+    """Tira a cópia de um registro do RTD/PJ que veio duas vezes do acervo.
+
+    O CASO (T021, 26/11/2026): o E-Ofício gravou a mesma linha duas vezes (a
+    folha escrita com e sem o zero na frente), e a carga trouxe as duas. As
+    duas fichas são iguais: mesma série, volume, número, folha e data do ato,
+    e nenhuma tem selo, custas ou anexo.
+
+    O EFEITO: a cópia passa a CANCELADO por «duplicidade do acervo», com
+    `duplicata_de` apontando a ficha que fica. NÃO LAVRA ATO, não gasta selo e
+    não lança custas: não houve ato a cancelar, houve uma linha a mais. Nada se
+    apaga. A ficha cancelada sai dos livros, dos índices e das buscas da
+    certidão (`rg_registro.sem_duplicata`), e o alerta do gestor só conta o
+    ATIVO. O caminho de volta é o tipo inverso, `RG_REGISTRO_REPETIDO_DESFEITO`.
+
+    QUAL FICA É DECISÃO DO OFICIAL, à vista do livro. A pré-condição só
+    garante que as duas são a mesma linha e que a que sai está solta: sem
+    selo, sem anexo, sem certidão, sem protocolo nem título, sem parte além do
+    requerente, e com um ato só, o de registro.
+    """
+
+    chave = "RG_REGISTRO_REPETIDO"
+    atribuicao = ATRIBUICAO_RTDPJ
+    rotulo = "Registro de acervo repetido (RTD/PJ): cancelar a cópia"
+    descricao = ("A mesma linha do sistema antigo veio duas vezes. A cópia fica "
+                 "CANCELADO por duplicidade do acervo, sem ato novo, selo ou custas, "
+                 "e sai dos livros e dos índices. Nada é apagado.")
+    alvo_tabela = "rg_registros"
+    campos = (
+        ("registro_que_fica", "A ficha que FICA (número do sistema)", "numero",
+         "o número da ficha /rcpj-rtd/N que corresponde ao livro, conferido pelo oficial"),
+        ("registro_que_sai", "A ficha repetida, que SAI (número do sistema)", "numero",
+         "a cópia: fica CANCELADO e guardada, fora dos livros e dos índices"),
+    )
+
+    def normalizar(self, pedido):
+        recusas: list[str] = []
+        fica = _registro_id(pedido.get("registro_que_fica"), "a ficha que fica", recusas)
+        sai = _registro_id(pedido.get("registro_que_sai"), "a ficha que sai", recusas)
+        if fica and sai and fica == sai:
+            recusas.append("A ficha que fica e a que sai são a mesma.")
+        return {"registro_que_fica": fica, "registro_que_sai": sai}, recusas
+
+    def ler_antes(self, bd, parametros, *, travar):
+        # AS DUAS LINHAS PRESAS NA ORDEM DO NÚMERO, como as do Protesto: duas
+        # aprovações cruzadas não se esperam uma à outra.
+        ids = sorted({int(parametros["registro_que_fica"]), int(parametros["registro_que_sai"])})
+        fichas = {str(i): _ficha_do_registro(bd, i, travar=travar) for i in ids}
+        return {"registros": fichas}
+
+    def conferir_pedido(self, bd, parametros, antes):
+        recusas: list[str] = []
+        avisos: list[str] = []
+        fica_id, sai_id = str(parametros["registro_que_fica"]), str(parametros["registro_que_sai"])
+        fica, sai = antes["registros"].get(fica_id), antes["registros"].get(sai_id)
+        for rid, f in ((fica_id, fica), (sai_id, sai)):
+            if f is None:
+                recusas.append(f"A ficha {rid} não existe.")
+        if recusas:
+            return parametros, recusas, avisos
+        for rid, f in ((fica_id, fica), (sai_id, sai)):
+            if f["duplicata_de"]:
+                recusas.append(f"A ficha {rid} já está cancelada por duplicidade do "
+                               f"acervo (a que vale é a {f['duplicata_de']}).")
+            elif f["situacao"] != REGISTRO_ATIVO:
+                recusas.append(f"A ficha {rid} está {f['situacao']}: esta correção só "
+                               "trata duas fichas ATIVAS.")
+        # A MESMA LINHA: série, volume, número, folha e data do ato de registro.
+        iguais = [("atribuição", fica["atribuicao"], sai["atribuicao"]),
+                  ("série", fica["serie"], sai["serie"]),
+                  ("volume", _volume(fica["volume"]), _volume(sai["volume"])),
+                  ("número", fica["numero"], sai["numero"])]
+        reg_fica, reg_sai = _o_registro(fica), _o_registro(sai)
+        if reg_fica is None or reg_sai is None:
+            sem = [rid for rid, a in ((fica_id, reg_fica), (sai_id, reg_sai)) if a is None]
+            recusas.append(f"Sem ato de registro na ficha {', '.join(sem)}: não há "
+                           "folha nem data para conferir que são a mesma linha.")
+        else:
+            iguais += [("folha", reg_fica["folha"], reg_sai["folha"]),
+                       ("data do ato de registro", reg_fica["data_ato"][:10],
+                        reg_sai["data_ato"][:10])]
+        if fica["numero"] is None:
+            recusas.append(f"A ficha {fica_id} não tem número de registro.")
+        diferentes = [f"{nome} ({a or '—'} × {b or '—'})" for nome, a, b in iguais if a != b]
+        if diferentes:
+            recusas.append("As duas fichas não são a mesma linha do livro — diferem em: "
+                           + "; ".join(diferentes) + ". Esta correção é só para a "
+                           "cópia idêntica.")
+        # A QUE SAI TEM DE ESTAR SOLTA.
+        outros = [f"{a['tipo']} {a['id']}" for a in sai["atos"] if a["tipo"] != "REGISTRO"]
+        if outros or len(sai["atos"]) > 1:
+            recusas.append(f"A ficha {sai_id} tem mais que o ato de registro "
+                           f"({', '.join(outros) or 'dois registros'}): não é uma cópia "
+                           "solta, e o oficial decide fora da fila.")
+        selos = [a["selo"] or a["selos_antigos"] for a in sai["atos"]
+                 if a["selo"] or a["selos_antigos"]]
+        if selos:
+            recusas.append(f"A ficha {sai_id} tem selo ({', '.join(selos)}): a cópia "
+                           "não pode ter selo.")
+        protocolos = [str(a["id"]) for a in sai["atos"]
+                      if a["protocolo_id"] or a["lancamento_id"]]
+        if protocolos:
+            recusas.append(f"A ficha {sai_id} tem ato amarrado a protocolo ou a custas "
+                           f"(ato {', '.join(protocolos)}).")
+        if sai["anexos"]:
+            recusas.append(f"A ficha {sai_id} tem {sai['anexos']} anexo(s).")
+        if sai["certidoes"]:
+            recusas.append(f"A ficha {sai_id} tem {sai['certidoes']} certidão(ões) "
+                           "emitida(s).")
+        frases = dict(VINCULOS_DO_REGISTRO)
+        for tabela, ids in sorted(sai["vinculos"].items()):
+            recusas.append(f"A ficha {sai_id} está amarrada a {frases[tabela]} "
+                           f"({tabela} {', '.join(str(i) for i in ids)}).")
+        if sai["partes_alem_do_requerente"]:
+            recusas.append(f"A ficha {sai_id} tem {sai['partes_alem_do_requerente']} "
+                           "parte(s) além do requerente.")
+        if not recusas:
+            for nome, onde in (("requerente_nome", "no requerente"),
+                               ("natureza", "na natureza"), ("teor", "no teor")):
+                if fica[nome] != sai[nome]:
+                    avisos.append(f"As duas fichas diferem {onde}: confira à vista do "
+                                  "livro antes de aprovar.")
+            if int(sai_id) < int(fica_id):
+                avisos.append(f"A ficha que sai ({sai_id}) é a mais antiga das duas: a "
+                              "carga das partes manda as partes para a mais antiga. "
+                              "Confira à vista do livro qual fica.")
+            avisos.append("Não lavra ato, não gasta selo e não lança custas. Não avisa "
+                          "a Central ONRTDPJ. A ficha que sai fica guardada e se abre "
+                          "pelo número; o caminho de volta é o tipo «devolver a ficha "
+                          "repetida a ATIVO».")
+        return parametros, recusas, avisos
+
+    def _motivo_na_ficha(self, motivo, numero, fica):
+        import rg_registro as RG
+        return (f"CANCELADO POR {RG.MOTIVO_DA_DUPLICATA.upper()} — a ficha que vale é a "
+                f"{fica}. Correção de ofício {_numero(numero)}, aprovada pelo oficial: "
+                f"{motivo}")
+
+    def calcular_depois(self, parametros, antes, *, motivo, numero):
+        fica, sai = int(parametros["registro_que_fica"]), int(parametros["registro_que_sai"])
+        return {"registros": {str(sai): {
+            "situacao": REGISTRO_CANCELADO, "duplicata_de": fica,
+            "duplicata_motivo": self._motivo_na_ficha(motivo, numero, fica)}}}
+
+    def alvos(self, parametros, antes):
+        # sem título do Protesto: `titulo_ids` é dos títulos de `pt_titulos`
+        return [int(parametros["registro_que_sai"])], []
+
+    def resumo(self, parametros, antes, depois):
+        fica, sai = str(parametros["registro_que_fica"]), str(parametros["registro_que_sai"])
+        return (f"Cancelar por duplicidade do acervo a "
+                f"{_rotulo_da_ficha(sai, antes['registros'].get(sai))}, cópia da "
+                f"ficha {fica}, que fica. Sem ato, selo ou custas.")
+
+    def mudancas(self, antes, depois, resultado):
+        linhas = []
+        for rid, d in sorted(depois["registros"].items(), key=lambda x: int(x[0])):
+            f = antes["registros"].get(rid) or {}
+            linhas.append({"tabela": "rg_registros", "id": int(rid), "titulo_id": None,
+                           "registro_id": int(rid), "rotulo": _rotulo_da_ficha(rid, f),
+                           "antes": {k: f.get(k) for k in d}, "depois": dict(d)})
+        return linhas
+
+    def executar(self, bd, parametros, antes, depois, contexto):
+        for rid, d in sorted(depois["registros"].items(), key=lambda x: int(x[0])):
+            feito = bd.escrever(
+                """UPDATE rg_registros
+                      SET situacao = %s, duplicata_de = %s, duplicata_motivo = %s
+                    WHERE id = %s AND situacao = %s AND duplicata_de IS NULL
+                RETURNING id""",
+                (d["situacao"], int(d["duplicata_de"]), d["duplicata_motivo"],
+                 int(rid), REGISTRO_ATIVO))
+            if not feito:
+                raise _Falha(f"a ficha {rid} já não estava ATIVA na execução — nada "
+                             "foi gravado")
+        return {"fichas_canceladas_por_duplicidade": sorted(
+            int(r) for r in depois["registros"])}
+
+    def conferir_execucao(self, bd, parametros, antes, depois, resultado):
+        problemas = []
+        for rid, d in depois["registros"].items():
+            r = bd.um("""SELECT situacao, duplicata_de, duplicata_motivo FROM rg_registros
+                          WHERE id = %s""", (int(rid),))
+            if not r or r["situacao"] != d["situacao"] \
+                    or int(r["duplicata_de"] or 0) != int(d["duplicata_de"]) \
+                    or r["duplicata_motivo"] != d["duplicata_motivo"]:
+                problemas.append(f"a ficha {rid} não ficou cancelada por duplicidade")
+            novos = _contar(bd, "SELECT count(*) FROM rg_atos WHERE registro_id = %s",
+                            (int(rid),))
+            if novos != len((antes["registros"].get(rid) or {}).get("atos") or []):
+                problemas.append(f"a ficha {rid} ganhou ato — esta correção não lavra")
+        fica = int(parametros["registro_que_fica"])
+        situacao = bd.valor("SELECT situacao FROM rg_registros WHERE id = %s", (fica,))
+        if situacao != REGISTRO_ATIVO:
+            problemas.append(f"a ficha {fica}, que fica, está {situacao}")
+        return problemas
+
+
+class RegistroRepetidoDesfeito(Tipo):
+    """O caminho de volta do `RG_REGISTRO_REPETIDO`: devolve a ficha que saiu
+    por duplicidade do acervo a ATIVO, e limpa `duplicata_de` e o motivo.
+
+    Só alcança a ficha cancelada POR DUPLICIDADE (com `duplicata_de`): o
+    registro cancelado por ato tem o ato de cancelamento no livro, e voltar
+    atrás dele não é correção de ofício. O «antes» guarda o motivo e a ficha
+    que valia, e a auditoria os grava. Volta também o alerta do gestor, se as
+    duas fichas ainda forem a mesma linha.
+    """
+
+    chave = "RG_REGISTRO_REPETIDO_DESFEITO"
+    atribuicao = ATRIBUICAO_RTDPJ
+    rotulo = "Registro de acervo repetido (RTD/PJ): devolver a ficha repetida a ATIVO"
+    descricao = ("Desfaz o «cancelar a cópia»: a ficha volta a ATIVO, aos livros e aos "
+                 "índices. Só para a ficha cancelada por duplicidade do acervo.")
+    alvo_tabela = "rg_registros"
+    campos = (
+        ("registro_id", "A ficha cancelada por duplicidade (número do sistema)", "numero",
+         "o número da ficha /rcpj-rtd/N que a correção tirou"),
+    )
+
+    def normalizar(self, pedido):
+        recusas: list[str] = []
+        rid = _registro_id(pedido.get("registro_id"), "a ficha", recusas)
+        return {"registro_id": rid}, recusas
+
+    def ler_antes(self, bd, parametros, *, travar):
+        rid = int(parametros["registro_id"])
+        return {"registros": {str(rid): _ficha_do_registro(bd, rid, travar=travar)}}
+
+    def conferir_pedido(self, bd, parametros, antes):
+        rid = str(parametros["registro_id"])
+        f = antes["registros"].get(rid)
+        if f is None:
+            return parametros, [f"A ficha {rid} não existe."], []
+        recusas, avisos = [], []
+        if not f["duplicata_de"]:
+            recusas.append(f"A ficha {rid} não foi cancelada por duplicidade do acervo "
+                           f"(está {f['situacao']}): este tipo só desfaz o «cancelar a "
+                           "cópia».")
+        elif f["situacao"] != REGISTRO_CANCELADO:
+            recusas.append(f"A ficha {rid} está {f['situacao']}, e não CANCELADO.")
+        cancelamentos = [str(a["id"]) for a in f["atos"] if a["tipo"] == "CANCELAMENTO"]
+        if cancelamentos:
+            recusas.append(f"A ficha {rid} tem ato de cancelamento ({', '.join(cancelamentos)}):"
+                           " o cancelamento por ato não se desfaz por esta fila.")
+        if not recusas:
+            avisos.append(f"A ficha {rid} volta aos livros, aos índices e às buscas da "
+                          f"certidão, ao lado da ficha {f['duplicata_de']}. Se as duas "
+                          "ainda são a mesma linha, o alerta do registro repetido volta.")
+        return parametros, recusas, avisos
+
+    def calcular_depois(self, parametros, antes, *, motivo, numero):
+        return {"registros": {str(parametros["registro_id"]): {
+            "situacao": REGISTRO_ATIVO, "duplicata_de": None, "duplicata_motivo": None}}}
+
+    def alvos(self, parametros, antes):
+        return [int(parametros["registro_id"])], []
+
+    def resumo(self, parametros, antes, depois):
+        rid = str(parametros["registro_id"])
+        f = antes["registros"].get(rid) or {}
+        return (f"Devolver a {_rotulo_da_ficha(rid, f)} a ATIVO (estava cancelada por "
+                f"duplicidade do acervo, cópia da ficha {f.get('duplicata_de') or '?'}).")
+
+    def mudancas(self, antes, depois, resultado):
+        return RegistroRepetidoDoAcervo.mudancas(self, antes, depois, resultado)
+
+    def executar(self, bd, parametros, antes, depois, contexto):
+        rid = int(parametros["registro_id"])
+        era = antes["registros"][str(rid)]
+        feito = bd.escrever(
+            """UPDATE rg_registros
+                  SET situacao = %s, duplicata_de = NULL, duplicata_motivo = NULL
+                WHERE id = %s AND situacao = %s AND duplicata_de = %s
+            RETURNING id""",
+            (REGISTRO_ATIVO, rid, REGISTRO_CANCELADO, int(era["duplicata_de"])))
+        if not feito:
+            raise _Falha(f"a ficha {rid} mudou no meio da execução — nada foi gravado")
+        return {"fichas_devolvidas_a_ativo": [rid]}
+
+    def conferir_execucao(self, bd, parametros, antes, depois, resultado):
+        rid = int(parametros["registro_id"])
+        r = bd.um("SELECT situacao, duplicata_de, duplicata_motivo FROM rg_registros "
+                  "WHERE id = %s", (rid,))
+        if not r or r["situacao"] != REGISTRO_ATIVO or r["duplicata_de"] is not None \
+                or r["duplicata_motivo"] is not None:
+            return [f"a ficha {rid} não voltou a ATIVO"]
+        return []
+
+
 #: O CATÁLOGO FECHADO. Tipo novo entra aqui, com a atribuição dele.
 CATALOGO: dict[str, Tipo] = {t.chave: t for t in (
     AtoSemEfeito(), SituacaoSustentada(), CadastroDoTitulo(), AtoDeCorrecao(),
-    TituloDevolvido())}
+    TituloDevolvido(), RegistroRepetidoDoAcervo(), RegistroRepetidoDesfeito())}
 
 
 def tipos_disponiveis() -> list[dict]:

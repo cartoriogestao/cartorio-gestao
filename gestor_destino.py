@@ -153,6 +153,7 @@ DESTINO: dict[str, tuple[str, str]] = {
     "CAIXA_PRONTO_PARA_VISTO": (TI_ADMIN, "visto do oficial no caixa fechado"),
     "CAIXA_COM_PONTOS": (TI_ADMIN, "visto do oficial no caixa fechado"),
     "FECHAMENTO_DO_MES": (TI_ADMIN, "fechamento do mês: selos × caixa, pelo administrador"),
+    "REPASSE_DE_TERCEIRO": (TI_ADMIN, "saldo de repasse da CRC: recarregar é decisão do oficial"),
     "PLD_COAF": (TI_ADMIN, _DECIDE + " (sigiloso)"),
     "RTDPJ_SEM_PAGAMENTO": (TI_ADMIN, "cobrança e dinheiro da casa: administrador"),
     # ---- o que já passou do prazo e não tem ato a praticar: controle

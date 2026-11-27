@@ -7,9 +7,9 @@ Naturais, Registro Civil das Pessoas Jurídicas e Registro de Títulos e
 Documentos — mais o caixa e o protocolo geral, o selo eletrônico, as remessas
 às Centrais e a gestão interna da serventia.
 
-Roda numa máquina Windows da própria serventia, servindo os computadores do
-balcão pela rede local. Não depende de nuvem: o banco, os documentos e os
-backups ficam na casa.
+Roda num servidor da própria serventia — **Windows, macOS ou Linux** —,
+servindo os computadores do balcão pela rede local. Não depende de nuvem: o
+banco, os documentos e os backups ficam na casa.
 
 > **Licença: GNU Affero General Public License v3.0** (`LICENSE`). Quem usar,
 > modificar ou oferecer este sistema como serviço pela rede tem de disponibilizar
@@ -46,13 +46,27 @@ backups ficam na casa.
 
 O que cada versão trouxe está em [`docs/NOVIDADES.md`](docs/NOVIDADES.md).
 
+## Onde roda
+
+| Sistema | Papel | Como instalar |
+|---|---|---|
+| **Windows 10/11** | servidor principal, em produção | `INSTALAR_SERVIDOR.cmd` ([`docs/INSTALACAO.md`](docs/INSTALACAO.md)) |
+| **macOS** | servidor reserva em uso desde 11/2026: réplica do banco do principal, só de consulta, que **assume** se o principal cair. É também onde roda o executor da CI. | `installer/macos/instalar_reserva.sh` ([`docs/SERVIDOR_RESERVA_MACOS.md`](docs/SERVIDOR_RESERVA_MACOS.md)) |
+| **Linux** (Debian 12+, Ubuntu 24.04+) | **caminho facilitado**: um comando instala os pacotes, o PostgreSQL, a conta de serviço e o systemd. A suíte inteira roda em Linux a cada PR. Indicado para ensaio, treinamento e desenvolvimento; para produção, veja o que ainda é só do Windows. | `sudo bash installer/linux/instalar_servidor.sh` ([`docs/SERVIDOR_LINUX.md`](docs/SERVIDOR_LINUX.md)) |
+
+O núcleo (Python, Flask, waitress e PostgreSQL) é o mesmo nos três. O que ainda
+prende ao Windows (token A3, Agendador de Tarefas, atualização pela tela) está
+medido em [`docs/MIGRAR_PARA_MACOS.md`](docs/MIGRAR_PARA_MACOS.md) e resumido
+para o Linux em [`docs/SERVIDOR_LINUX.md`](docs/SERVIDOR_LINUX.md#o-que-ainda-é-só-do-windows).
+
 ## Requisitos
 
-- Um computador **Windows 10/11** como servidor (Windows PowerShell 5.1).
+- Um computador como servidor: **Windows 10/11** (Windows PowerShell 5.1) na
+  instalação de referência; macOS e Linux como na seção acima.
 - **Python 3.11 ou superior** no servidor — o instalador tenta instalar o
   Python 3.12 pelo `winget` quando ele não existe.
 - **PostgreSQL** no servidor — o banco de dados desde a versão 3.7.0 (o
-  instalador ainda não o instala; ver
+  instalador do Windows ainda não o instala; o do Linux, sim; ver
   [`docs/REQUISITOS.md`](docs/REQUISITOS.md#o-banco-de-dados-postgresql)).
 - Os computadores do balcão só precisam de um navegador.
 - LibreOffice no servidor, para os papéis saírem em PDF, e Chrome ou Edge,
@@ -138,7 +152,8 @@ diz a [política de segurança](SECURITY.md).
 
 ## Estado
 
-Em uso de produção numa serventia de ofício único. A publicação do código é
+Em uso de produção numa serventia de ofício único, com o servidor principal
+no Windows e o servidor reserva no macOS. A publicação do código é
 recente: a documentação pública está sendo escrita, e o histórico de
 desenvolvimento (que traz dados da serventia de origem) não faz parte deste
 repositório.

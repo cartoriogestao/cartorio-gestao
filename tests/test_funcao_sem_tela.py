@@ -779,6 +779,36 @@ ACHADAS_EM_26_11_2026: dict[str, str] = {
 }
 
 
+# 27/11/2026: o transporte do WSOfício (RI013 B0). O cliente SOAP ganhou todos os
+# métodos do e-Protocolo, da e-Intimação e da matrícula online, sem ligar nada e sem
+# chamar o ONR. A regra de negócio e a tela de cada um vêm nas fases P2, P3, I2, I3
+# e C2. test_onr_wsoficio_transporte guarda o envelope de cada método.
+_B0 = ("onr_wsoficio — método do contrato WSOfício (RI013 B0), testado; a regra e a "
+       "tela vêm nas fases P2, P3, I2, I3 e C2")
+ACHADAS_EM_27_11_2026: dict[str, str] = {
+    "ler_data_do_onr": _B0,
+    "ler_detalhes_da_intimacao": _B0,
+    "ler_pagamentos_da_intimacao": _B0,
+    "ler_pedidos_da_intimacao": _B0,
+    "pedido_alterar_ac": _B0,
+    "pedido_averbado_ac": _B0,
+    "pedido_baixa_boleto_ac": _B0,
+    "pedido_baixa_custas_ac": _B0,
+    "pedido_cancelamento_judicial_in": _B0,
+    "pedido_cumprimento_exigencia_ri": _B0,
+    "pedido_custas_ac": _B0,
+    "pedido_devolvido_ac": _B0,
+    "pedido_emolumento_in": _B0,
+    "pedido_excluir_emolumento_in": _B0,
+    "pedido_exigencia_ac": _B0,
+    "pedido_finalizar_protocolo_ac": _B0,
+    "pedido_importar_prenotacao_in": _B0,
+    "pedido_mensagem_in": _B0,
+    "pedido_prenotacao_ac": _B0,
+    "pedido_prenotacao_exame_calculo_ac": _B0,
+    "pedido_prorrogar_prenotacao_ac": _B0,
+}
+
 def _conhecidas() -> set[str]:
     """As medições datadas que formam o piso do varredor."""
     return (set(JA_SABIDAS) | set(NASCIDAS_DEPOIS_DA_3_6_51)
@@ -799,7 +829,8 @@ def _conhecidas() -> set[str]:
             | set(ACHADAS_EM_30_10_2026)
             | set(ACHADAS_EM_11_11_2026)
             | set(ACHADAS_EM_16_11_2026) | set(ACHADAS_EM_23_11_2026)
-            | set(ACHADAS_EM_26_11_2026))
+            | set(ACHADAS_EM_26_11_2026)
+            | set(ACHADAS_EM_27_11_2026))
 
 
 def test_nenhuma_funcao_nova_fica_sem_tela():

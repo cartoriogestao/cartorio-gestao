@@ -29,8 +29,10 @@ EXECUTOR="$CASA/actions-runner"
 TRABALHO="$EXECUTOR/_work"
 BREW="/opt/homebrew/bin"
 CPUS="${CG_CI_CPUS:-14}"
-# 12 GB (27/11/2026; eram 18): a suíte usa uns 9 GB, e o resto fica para a IA local.
-MEMORIA="${CG_CI_MEMORIA_GB:-12}"
+# 18 GB, contêiner 16. Com 12/10 (27/11/2026) o PostgreSQL do contêiner morreu no meio de
+# três suítes seguidas. A memória para a IA local vem da chave da suíte (ci/chave/), que
+# desliga a VM — não de um teto menor.
+MEMORIA="${CG_CI_MEMORIA_GB:-18}"
 MEMORIA_CONTEINER="${CG_SUITE_MEMORIA:-$((MEMORIA - 2))g}"
 
 [ "$(id -u)" -eq 0 ] || { echo "Rode com sudo."; exit 1; }

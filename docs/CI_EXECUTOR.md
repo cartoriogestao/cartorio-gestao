@@ -126,10 +126,11 @@ confere cada um (modo de uma lista, horas `HH:MM`, dias 0–6) e ignora o resto;
 arquivo se for do dono da pasta, numa pasta que ninguém mais grava, sem seguir link. O
 próprio controlador fica numa pasta do root, não na do repositório.
 
-O teto da VM caiu de 18 para **12 GB** (o contêiner, de 16 para 10 GB) em 27/11/2026: a
-suíte usa uns 9 GB medidos no Mac, com 14 processos, e o tempo dela não muda. Se uma suíte
-morrer por memória (código 137 no relatório), volte com
-`sudo CG_CI_MEMORIA_GB=18 bash ci/chave/instalar_chave.sh`.
+O teto da VM é **18 GB** (o contêiner, 16 GB). **Não o baixe**: em 27/11/2026 ele foi a 12/10 GB
+e o PostgreSQL do contêiner morreu no meio de três suítes seguidas («the database system is not
+yet accepting connections», «in recovery mode», milhares de erros), em PRs diferentes, todas
+depois da troca. O «uns 9 GB» medido no Mac era só o que a VM tinha residente, não o pico do
+contêiner. A memória para a IA vem da chave, que desliga a VM.
 
 Instalar (uma vez):
 
@@ -187,5 +188,6 @@ e, se quiser, apague o usuário: `sudo sysadminctl -deleteUser ci-runner`.
   manual; a regra do `main` olha essa rodada parada (#408, #424). Com o teste vencido, a fila
   agora só pede a suíte de novo: ela já junta o PR com o `main` atual, e a branch não muda.
 - 27/11/2026: a chave da suíte. A VM (18 GB, ligada o dia todo) tirava a memória da IA local;
-  agora ela desliga nas janelas da IA, com a suíte em andamento terminando antes, e o teto
-  caiu para 12 GB. Um app na barra de menus muda a chave e a agenda.
+  agora ela desliga nas janelas da IA, com a suíte em andamento terminando antes. Um app na
+  barra de menus muda a chave e a agenda. O teto chegou a cair para 12 GB (contêiner 10 GB) no
+  mesmo dia e o PostgreSQL do contêiner morreu em três suítes seguidas: voltou a 18/16.

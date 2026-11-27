@@ -813,6 +813,25 @@ def _leituras_vazias_em_seguida(bd) -> tuple[int, int, str | None]:
     return vazias, len(dias), desde
 
 
+def _ultima_rodada_da_fila(bd) -> dict | None:
+    """A última rodada da fila que terminou, ou None.
+
+    A linha da fila se reconhece pela frase que `cnib_atualizador` grava nela
+    (`_frase_da_fila`, «Fila da serventia.»): a tabela não tem coluna própria.
+
+    FICA DEPOIS DE DESFAZER O #540 (26/11/2026). O alerta do gestor voltou ao
+    que era, por ordem do oficial, mas a faixa das cadeias automáticas (A006,
+    `cadeias_automaticas`) usa esta leitura para não chamar de rotina parada a
+    base atrasada com a fila da serventia andando.
+    """
+    for leitura in bd.ler(
+            """SELECT pedida_em, lidas, novas, mensagem FROM ri_cnib_leituras
+                WHERE terminada_em IS NOT NULL AND mensagem LIKE %s
+                ORDER BY id DESC LIMIT 1""", ("Fila da serventia%",)):
+        return dict(leitura)
+    return None
+
+
 def regra_cnib_parado(con, hoje: date) -> list[dict]:
     """A base local do CNIB parou de receber ordens, ou a leitura volta vazia.
 

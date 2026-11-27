@@ -46,6 +46,7 @@ import conformidade as CF
 import gestao_retirados as GR
 import gestor_checklist as CK
 import papeis as PAP
+import quem_resolve_web as QRW
 import rotina_da_casa as RT
 import rotina_da_casa_web as RTW
 from bd_nativo import banco
@@ -107,6 +108,19 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                           pode_retirar=PAP.equivale_a(u, GR.QUEM_RETIRA))
         RTW.preparar(dados["rotina_itens"], papel=papel, usuario_id=usuario_id(),
                      abre=lambda endpoint: _abre(endpoint, papel))
+        # QUEM ESTÁ RESOLVENDO (26/11/2026): a marca em cada linha e quantos em
+        # resolução por área. A leitura que quebra não derruba a checklist.
+        dados["em_resolucao_rotina"], dados["em_resolucao_achados"] = {}, {}
+        dados["erro_quem_resolve"] = ""
+        try:
+            for area, lista in dados["rotina"].items():
+                dados["em_resolucao_rotina"][area] = QRW.preparar_rotina(
+                    db, lista, papel=papel, usuario_id=usuario_id(), eh_robo=QRW.e_robo(u))
+            dados["em_resolucao_achados"] = QRW.preparar_achados(
+                db, dados["achados"], papel=papel, usuario_id=usuario_id(),
+                eh_robo=QRW.e_robo(u))
+        except Exception as falha:                         # noqa: BLE001
+            dados["erro_quem_resolve"] = str(falha) or falha.__class__.__name__
         return render_template(
             "gestor_checklist.html", ck=dados, areas={**CF.ROTULO_DA_AREA, **RT.ROTULO_DA_AREA},
             ordem_areas=CF.AREAS, outros=CF.OUTROS, cores=CF.ROTULO_DA_COR,

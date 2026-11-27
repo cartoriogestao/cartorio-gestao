@@ -182,6 +182,9 @@ def achados_por_area(con, hoje: date, *, papel: str, area: str | None = None,
         idade = CF.idade_do_achado(r["primeiro_visto_em"], hoje)
         grupos.setdefault(cod, []).append({
             "id": r["id"],
+            # a identidade estável do achado (a do «Retirar» e de «quem resolve»);
+            # a tela não a mostra — os formulários mandam o id
+            "chave": str(r["chave"]),
             "regra": regra,
             "gravidade": gravidade,
             "titulo": TITULO_SIGILOSO if sigiloso else GD.limpar(r["titulo"]),

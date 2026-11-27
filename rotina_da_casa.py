@@ -1134,11 +1134,18 @@ def marcar_feito(con, rotina_id: int, referencia: str, *, resultado: str, observ
              por, usuario_id, resultado, texto))
         ja = bd.um(f"SELECT {colunas} FROM {TABELA_FEITOS} WHERE rotina_id = %s "
                    "AND referencia = %s", (int(rotina_id), ref.isoformat()))
+    # QUEM ESTAVA RESOLVENDO este vencimento termina com o «feito» (`quem_resolve`).
+    quem_resolvia = None
+    if novo:
+        import quem_resolve as QR
+        quem_resolvia = QR.encerrar(con, QR.ROTINA, QR.chave_da_rotina(rotina_id, ref.isoformat()),
+                                    por=por, agora=agora)
     return {"gravou": bool(novo), "id": int(ja["id"]), "codigo": item["codigo"],
             "titulo": item["titulo"], "referencia": str(ja["referencia"]),
             "prazo": str(ja["prazo"] or ""), "com_atraso": bool(int(ja["com_atraso"] or 0)),
             "por": ja["feito_por"], "em": str(ja["feito_em"])[:16],
-            "resultado": ja["resultado"], "observacao": ja["observacao"] or ""}
+            "resultado": ja["resultado"], "observacao": ja["observacao"] or "",
+            "quem_resolvia": quem_resolvia}
 
 
 # ------------------------------------------------------------------ as listas

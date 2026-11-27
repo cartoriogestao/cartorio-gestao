@@ -3984,6 +3984,11 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     import rotina_da_casa_web
     rotina_da_casa_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
+    # QUEM ESTÁ RESOLVENDO (26/11/2026): «Eu resolvo», «Largar» e «Assumir no
+    # lugar» na Checklist do dia, em «Minha rotina» e nas fases dos Projetos.
+    import quem_resolve_web
+    quem_resolve_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+
     # A PASTA DO PROCESSO e o rascunho que vira processo (12/10/2026) — fase 1
     # do módulo único de Processos.
     import processo_pasta_web

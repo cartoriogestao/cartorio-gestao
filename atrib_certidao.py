@@ -974,7 +974,9 @@ def consta_em_nome_de(con, *, atribuicao: int, nome: Any,
     """Os registros da atribuição em que a pessoa figura. Só LÊ.
 
     Pelo requerente (nome igual, ou o mesmo CPF/CNPJ) e pelo nome no texto do
-    registro e de qualquer ato dele.
+    registro e de qualquer ato dele. A cópia repetida do acervo
+    (`rg_registro.sem_duplicata`) não entra: é o mesmo registro, e a certidão
+    o diria duas vezes.
     """
     alvo = _nome_de_busca(nome)
     doc = "".join(c for c in str(documento or "") if c.isdigit())
@@ -982,6 +984,7 @@ def consta_em_nome_de(con, *, atribuicao: int, nome: Any,
         """SELECT r.id, r.numero, r.serie, r.situacao, r.requerente_nome
              FROM rg_registros r
             WHERE r.atribuicao = %(a)s
+              AND r.duplicata_de IS NULL
               AND ((%(doc)s <> '' AND digitos(r.requerente_documento) = %(doc)s)
                 OR upper(translate(coalesce(r.requerente_nome, ''), %(de)s, %(para)s))
                    = %(nome)s

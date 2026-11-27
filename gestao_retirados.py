@@ -97,6 +97,29 @@ def ativas(con, tela: str) -> dict[str, dict]:
     return saida
 
 
+def historico(con, tela: str, chave: str) -> list[dict]:
+    """Todas as retiradas de um item, devolvidas ou não, da mais antiga à mais
+    nova. SÓ LÊ. É o que a linha do tempo do projeto mostra (S006)."""
+    _conferir_tela(tela)
+    bd = banco(con)
+    if not bd.tem_tabela(TABELA):
+        return []
+    saida = []
+    for r in bd.ler(
+            f"""SELECT id, motivo_codigo, motivo, retirado_em, retirado_por,
+                       devolvido_em, devolvido_por
+                  FROM {TABELA} WHERE tela = %s AND chave = %s ORDER BY id""",
+            (tela, str(chave or "").strip())):
+        codigo = str(r["motivo_codigo"] or "")
+        saida.append({
+            "id": r["id"], "motivo": r["motivo"], "motivo_codigo": codigo or None,
+            "motivo_pronto": ROTULO_DO_MOTIVO.get(codigo),
+            "retirado_em": str(r["retirado_em"] or ""), "retirado_por": r["retirado_por"],
+            "devolvido_em": str(r["devolvido_em"] or "") or None,
+            "devolvido_por": r["devolvido_por"]})
+    return saida
+
+
 def retirar(con, tela: str, chave: str, *, motivo: str, motivo_codigo: str | None = None,
             por: str, usuario_id: int | None, agora: datetime | None = None) -> dict:
     """Marca o item como «não cabe à gestão». Devolve {gravou, retirada}.

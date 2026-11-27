@@ -10295,7 +10295,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         pagina = _inteiro(request.args.get("pagina"), maximo=PAGINA_MAIS_ALTA) or 1
         atribuicao = (request.args.get("atribuicao") or "").strip()
         tipo = (request.args.get("tipo") or "").strip()
-        onde, params = [], []
+        # a cópia repetida do acervo não é ato praticado: não entra
+        onde, params = [RG.sem_duplicata("r")], []
         if atribuicao in ("3", "4"):
             onde.append("r.atribuicao = %s")
             params.append(int(atribuicao))

@@ -253,7 +253,9 @@ def test_a_lista_fechada_do_cadastro_nao_tem_o_que_identifica_o_titulo():
         assert proibido not in permitidos, proibido
     assert set(CDO.CATALOGO) == {"PT_ATO_SEM_EFEITO", "PT_SITUACAO_SUSTENTADA",
                                  "PT_CADASTRO_DO_TITULO", "PT_ATO_DE_CORRECAO",
-                                 "PT_TITULO_DEVOLVIDO"}
+                                 "PT_TITULO_DEVOLVIDO",
+                                 # o RTD/PJ (T021): a cópia repetida do acervo, e a volta
+                                 "RG_REGISTRO_REPETIDO", "RG_REGISTRO_REPETIDO_DESFEITO"}
     assert CDO.TIPOS_QUE_SE_COPIAM == ("PAGAMENTO",)
 
 

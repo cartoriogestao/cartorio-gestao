@@ -87,9 +87,11 @@ def test_as_centrais_ficam_com_a_ti_e_a_digitalizacao_vai_ao_escrevente():
     for regra in ("SIRC", "CRC", "CENSEC", "DOI", "IBGE", "OBITO_MENSAL", "CARGAS_RCPN_PRONTA",
                   "ONR_ENVIO_FALHOU"):
         assert GDS.destino(regra) == GDS.TI_ADMIN, regra
-    for regra in ("BACKUP", "DISCO", "CNIB_PARADO", "IDENTIDADE_DOS_ROBOS",
+    for regra in ("BACKUP", "DISCO", "IDENTIDADE_DOS_ROBOS",
                   "CAIXA_PRONTO_PARA_VISTO", "PLD_COAF"):
         assert GDS.destino(regra) == GDS.TI_ADMIN, regra
+    # A006 (26/11/2026): o CNIB roda sozinho; quando para, quem avisa é a faixa.
+    assert GDS.destino("CNIB_PARADO") == GDS.AVISO
     # «Digitalizacao so pode ser feito por quem esta no cartorio»
     for regra in ("DIGITALIZACAO_DA_FICHA", "DIGITALIZACAO_ATRASADA", "CAIXA_DO_DIA_ABERTO",
                   "RCPN_ANOTACAO", "NOTAS_PDF", "PRENOTACAO_VENCIDA", "PROTESTO_TITULO_PARADO"):
@@ -126,7 +128,7 @@ def test_a_checklist_so_lista_ti_admin_e_o_resto_vai_ao_quadro(cg_casa):
     regras = {a: [x["regra"] for x in v] for a, v in ck["achados"].items()}
     assert regras == {"RCPN": ["SIRC"], "ADMINISTRACAO": ["REGRA_NOVA"]}
     assert ck["total_achados"] == 2
-    assert ck["total_fora"] == {GDS.ESCREVENTE: 3, GDS.COMPLIANCE: 1}
+    assert ck["total_fora"] == {GDS.ESCREVENTE: 3, GDS.COMPLIANCE: 1, GDS.AVISO: 0}
     linhas = {x["regra"]: x for x in ck["fora"][GDS.ESCREVENTE]}
     assert linhas["RCPN_ANOTACAO"]["n"] == 2 and linhas["RCPN_ANOTACAO"]["area"] == "RCPN"
     assert linhas["RCPN_ANOTACAO"]["tarefas"] == [{"id": anotacao, "setor": "RCPN"}]

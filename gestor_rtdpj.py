@@ -548,19 +548,45 @@ def regra_sem_pagamento(con, hoje: date) -> list[dict]:
 
 
 def regra_registro_repetido(con, hoje: date) -> list[dict]:
+    """O mesmo número, na mesma série e no mesmo volume, em mais de uma ficha
+    ATIVA. Só LÊ.
+
+    SÓ CONTA O ATIVO (T021, 26/11/2026). A cópia que a correção de ofício
+    «registro de acervo repetido» tirou fica CANCELADO e guardada; contá-la
+    deixaria o alerta aceso depois da correção. O registro cancelado por ato
+    também não é repetição: o número dele é o mesmo, mas a ficha não vale mais.
+
+    O VOLUME ENTRA NO GRUPO: o mesmo número em dois volumes do livro são dois
+    lugares diferentes, e não a mesma linha gravada duas vezes.
+    """
+    linhas = banco(con).ler(
+        """SELECT serie, volume, numero, COUNT(*) n, MIN(id) primeiro, MAX(id) ultimo
+             FROM rg_registros
+            WHERE numero IS NOT NULL AND situacao = 'ATIVO'
+            GROUP BY serie, volume, numero HAVING COUNT(*) > 1
+            ORDER BY serie, numero, volume""")
+    # A CHAVE DO ACHADO NÃO MUDA quando o número só se repete num volume: é a
+    # mesma de antes, e a checklist continua contando os dias do mesmo achado.
+    # Só leva o volume quando o mesmo número se repete em mais de um.
+    grupos: dict[tuple, int] = {}
+    for r in linhas:
+        grupos[(r["serie"], r["numero"])] = grupos.get((r["serie"], r["numero"]), 0) + 1
     saida = []
-    for r in banco(con).ler(
-            """SELECT serie, numero, COUNT(*) n, MIN(id) primeiro, MAX(id) ultimo
-                 FROM rg_registros WHERE numero IS NOT NULL
-                GROUP BY serie, numero HAVING COUNT(*) > 1
-                ORDER BY serie, numero"""):
+    for r in linhas:
+        chave = f"RTDPJ_REPETIDO:{r['serie']}:{r['numero']}"
+        if grupos[(r["serie"], r["numero"])] > 1:
+            chave += f":{r['volume'] or '-'}"
+        volume = f", vol. {r['volume']}" if r["volume"] else ""
         saida.append(_achado(
-            f"RTDPJ_REPETIDO:{r['serie']}:{r['numero']}", REGISTRO_REPETIDO,
+            chave, REGISTRO_REPETIDO,
             "ATENCAO", SETOR_QUALIFICACAO,
-            f"O registro n. {r['numero']} ({r['serie']}) está {r['n']} vezes na base",
+            f"O registro n. {r['numero']} ({r['serie']}{volume}) está {r['n']} vezes "
+            "na base",
             f"Fichas /rcpj-rtd/{r['primeiro']} e "
             f"/rcpj-rtd/{r['ultimo']}. Veio assim do acervo do "
-            f"sistema antigo; qual fica é decisão do oficial, à vista do livro."))
+            f"sistema antigo; qual fica é decisão do oficial, à vista do livro. "
+            "A cópia sai por Administrativo → Correções de ofício, tipo «registro "
+            "de acervo repetido (RTD/PJ)», sem ato, selo nem custas."))
     return saida
 
 

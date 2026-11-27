@@ -504,19 +504,29 @@ def verificar_cnib(ctx: Contexto) -> dict:
         return texto + f" e {len(casos) - len(devidas)} aviso(s) para conferir na ficha"
 
     base = ctx.estado.get("conhecidos")
-    estado = None
-    if not isinstance(base, list):
+    primeira = not isinstance(base, list)
+    if primeira:
         base = sorted({_caso_cnib(p) for p in pendentes})
         estado = {"conhecidos": base, "base_em": ctx.agora.isoformat(timespec="seconds"),
                   "base_tamanho": len(base)}
+    else:
+        estado = dict(ctx.estado)
+    # A AVERBAÇÃO DEVIDA SEM MINUTA (A006): a faixa das cadeias automáticas
+    # (`cadeias_automaticas`) a lê daqui, com o dia em que apareceu — contá-la
+    # na tela custaria esta busca inteira a cada tela.
+    sem_minuta = sum(1 for p in pendentes if p["devida"] and not p["ordem"].get("minuta"))
+    estado["devidas_sem_minuta"] = sem_minuta
+    estado["sem_minuta_desde"] = ((ctx.estado.get("sem_minuta_desde") if ctx.estado.get(
+        "devidas_sem_minuta") else None) or ctx.hoje.isoformat()) if sem_minuta else None
+    estado["sem_minuta_medido_em"] = ctx.agora.isoformat(timespec="seconds")
     conhecidos = set(base)
     novos = [p for p in pendentes if _caso_cnib(p) not in conhecidos]
     velhos = [p for p in pendentes if _caso_cnib(p) in conhecidos]
-    base_em = str((estado or ctx.estado).get("base_em") or "")[:10]
+    base_em = str(estado.get("base_em") or "")[:10]
     sobre_os_velhos = (f"Dos {len(conhecidos)} já conhecidos em {base_em}, {len(velhos)} seguem "
                        f"pendentes — {quadro(velhos)}; esses não abrem tarefa (Registro de "
                        "Imóveis → CNIB e ficha da matrícula).")
-    if estado is not None:
+    if primeira:
         r = resultado(SCH.OK, f"CNIB: base gravada com os {len(base)} caso(s) pendentes hoje, por "
                       "ordem do oficial de 25/11/2026; daqui em diante, só caso novo abre tarefa. "
                       f"{sobre_os_velhos}", estado=estado)
@@ -529,9 +539,10 @@ def verificar_cnib(ctx: Contexto) -> dict:
                       f"CNIB: {len(novos)} caso(s) novo(s) desde {base_em}: {quadro(novos)}. Devida "
                       "é quando o documento da ordem é o do dono de hoje: lavre ou decida; nos "
                       "avisos, confira na ficha se corresponde e grave a decisão em Registro de "
-                      f"Imóveis → CNIB. {sobre_os_velhos}", achados)
+                      f"Imóveis → CNIB. {sobre_os_velhos}", achados, estado=estado)
     else:
-        r = resultado(SCH.OK, f"CNIB: nenhum caso novo desde {base_em}. {sobre_os_velhos}")
+        r = resultado(SCH.OK, f"CNIB: nenhum caso novo desde {base_em}. {sobre_os_velhos}",
+                      estado=estado)
     if acoes:
         r["acoes"] = acoes
     return r

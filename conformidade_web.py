@@ -28,6 +28,12 @@ O QUE NÃO CABE À GESTÃO — 25/11/2026 (T019)
     motivo e auditoria. O cartão do painel continua com a COR OFICIAL — a que
     vai ao retrato e que ninguém pinta à mão — e mostra, quando há retirados,
     quantos são e a cor «sem os retirados».
+
+A ROTINA DO DIA — 26/11/2026
+    A checklist abre com o bloco «Rotina do dia» de cada área (`rotina_da_casa`):
+    o «Como fazer» e o «Feito» de cada item. O «Feito» mora em
+    `rotina_da_casa_web` (é o mesmo de «Minha rotina»); aqui a tela só põe em
+    cada item o link da tela onde se faz e se esta pessoa o marca.
 """
 from __future__ import annotations
 
@@ -40,6 +46,8 @@ import conformidade as CF
 import gestao_retirados as GR
 import gestor_checklist as CK
 import papeis as PAP
+import rotina_da_casa as RT
+import rotina_da_casa_web as RTW
 from bd_nativo import banco
 
 #: Quem vê o semáforo no painel geral — e abre a checklist que ele leva.
@@ -97,11 +105,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         dados = CK.montar(db, papel=papel, area=(request.args.get("area") or "").upper() or None,
                           abre=lambda endpoint: _abre(endpoint, papel),
                           pode_retirar=PAP.equivale_a(u, GR.QUEM_RETIRA))
+        RTW.preparar(dados["rotina_itens"], papel=papel, usuario_id=usuario_id(),
+                     abre=lambda endpoint: _abre(endpoint, papel))
         return render_template(
-            "gestor_checklist.html", ck=dados, areas=CF.ROTULO_DA_AREA, ordem_areas=CF.AREAS,
-            outros=CF.OUTROS, cores=CF.ROTULO_DA_COR, motivos=CF.ROTULO_DO_MOTIVO,
-            gravidades=CK.ROTULO_DA_GRAVIDADE, nao_mede=CF.NAO_MEDE,
-            ver_retirados=request.args.get("ver") == "retirados")
+            "gestor_checklist.html", ck=dados, areas={**CF.ROTULO_DA_AREA, **RT.ROTULO_DA_AREA},
+            ordem_areas=CF.AREAS, outros=CF.OUTROS, cores=CF.ROTULO_DA_COR,
+            motivos=CF.ROTULO_DO_MOTIVO, gravidades=CK.ROTULO_DA_GRAVIDADE, nao_mede=CF.NAO_MEDE,
+            ver_retirados=request.args.get("ver") == "retirados", area_ti=RT.TI,
+            **RTW.contexto())
 
     def _achado_do_formulario():
         """O achado aberto do formulário: (id, chave, área, regra) — ou 400/404."""
@@ -174,7 +185,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         item = (request.form.get("item") or "").strip().upper()
         area = (request.form.get("area") or "").strip().upper()
         voltar = url_for("gestor_checklist", area=area or None)
-        if area and area not in CF.ROTULO_DA_AREA:
+        if area and area not in CF.ROTULO_DA_AREA and area != RT.TI:
             voltar = url_for("gestor_checklist")
         if item not in CK.CODIGOS:
             abort(400)

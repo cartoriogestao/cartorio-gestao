@@ -85,6 +85,7 @@ from ri_odt import (MIOLO_DA_CERTIDAO,
 import ri_cnib as CNIB
 import ri_georref as GEO  # a conferencia do georreferenciamento no ato (RI011, art. 343-F, II)
 import nome_humano as NOMEHUM
+import cpf_cnpj as CPFCNPJ
 # O VOCABULARIO DAS LEITURAS MORA NO ATUALIZADOR, e se le de la em vez de
 # repetir os textos aqui: situacao que existe em dois lugares vira duas
 # situacoes no dia em que uma das duas mudar.
@@ -1674,6 +1675,75 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 RC.titulares_com_a_qualificacao_atual([dict(p) for p in partes]))
         except RC.CorrecaoError as erro:
             return f"Há fração de titular que não se lê: {erro}"
+
+    def _donos_da_abertura(form) -> list[dict]:
+        """Os proprietários que a «Nova matrícula» trouxe, um por bloco. **Só confere.**
+
+        PEDIDO DE 26/11/2026 (T022): a abertura cabia um dono só. Os blocos
+        chegam como os das partes do ato (`_parte_do_ato.html`): nomes
+        repetidos, lidos por `getlist` e casados pela POSIÇÃO. A tela antiga,
+        que manda um nome e nenhuma fração, cai no mesmo caminho com um bloco.
+
+        Bloco totalmente vazio é ignorado. Bloco com qualquer coisa e sem nome
+        é recusado, dizendo qual: o documento ou a fração de alguém sem nome
+        seria apagado calado. Fração ilegível e documento repetido também
+        recusam, e tudo ANTES de gravar.
+        """
+        listas = [form.getlist(c) for c in ("proprietario_nome", "proprietario_documento",
+                                            "proprietario_qualificacao", "proprietario_fracao")]
+        donos: list[dict] = []
+        de_quem: dict[str, int] = {}
+        for i in range(max(len(x) for x in listas)):
+            nome, doc_bruto, qualificacao, fracao_bruta = (
+                str(x[i] if i < len(x) else "").strip() for x in listas)
+            if not (nome or doc_bruto or qualificacao or fracao_bruta):
+                continue
+            n = i + 1
+            if not nome:
+                raise RC.CorrecaoError(
+                    f"O {n}º proprietário está sem nome, mas tem "
+                    f"{'CPF ou CNPJ' if doc_bruto else 'fração' if fracao_bruta else 'qualificação'}. "
+                    f"Informe o nome ou apague o bloco.")
+            try:
+                fracao = RC.fracao_escrita(fracao_bruta)
+            except RC.CorrecaoError as erro:
+                raise RC.CorrecaoError(f"{n}º proprietário ({nome}): {erro}") from erro
+            doc = so_digitos(doc_bruto)
+            if doc and doc in de_quem:
+                raise RC.CorrecaoError(
+                    f"O documento {CPFCNPJ.formatar_documento(doc)} está no "
+                    f"{de_quem[doc]}º e no {n}º proprietário. Cada dono entra uma vez.")
+            if doc:
+                de_quem[doc] = n
+            donos.append({"nome": nome, "documento": doc, "qualificacao": qualificacao or None,
+                          "fracao": fracao})
+        return donos
+
+    def _aviso_de_nome_repetido(novos, ja_cadastrados=()) -> str:
+        """O mesmo nome em dois donos da abertura, sem documento que os separe. **Só calcula.**
+
+        DECISÃO DO OFICIAL (26/11/2026, T022, pergunta 2): avisa e não impede,
+        como a soma das frações. O nome se compara por `normalizar_busca` (sem
+        acento, sem caixa, sem espaço sobrando). Dois documentos diferentes
+        dizem que são duas pessoas, e aí não há aviso; basta um dos dois sem
+        documento para não haver como saber.
+
+        `novos` são os que entram agora; `ja_cadastrados`, os que a abertura
+        já tinha (o quadro da ficha), com `nome` e `documento`.
+        """
+        antes = [(normalizar_busca(d["nome"]), so_digitos(d.get("documento") or ""), d["nome"])
+                 for d in ja_cadastrados]
+        repetidos: list[str] = []
+        for d in novos:
+            chave, doc = normalizar_busca(d["nome"]), so_digitos(d.get("documento") or "")
+            if any(c == chave and not (doc and o) for c, o, _ in antes) and d["nome"] not in repetidos:
+                repetidos.append(d["nome"])
+            antes.append((chave, doc, d["nome"]))
+        if not repetidos:
+            return ""
+        nomes = ", ".join(f"«{n}»" for n in repetidos)
+        return (f"Há mais de um proprietário da abertura com o nome {nomes}, e sem documento "
+                f"que os distinga. Confira se não é a mesma pessoa cadastrada duas vezes.")
 
     @app.route("/registro-imoveis/<int:matricula_id>")
     @login_required
@@ -7363,6 +7433,20 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             flash(str(erro), "danger")
             return voltar
         with db.transaction() as con:
+            # O MESMO DONO NÃO ENTRA DUAS VEZES (T022, 26/11/2026): o quadro
+            # agora aparece também com donos já cadastrados, até o selo.
+            ja_na_abertura = [
+                {"nome": ja["nome"], "documento": ja["documento_numero"]}
+                for ja in banco(con).ler(
+                    """SELECT nome, documento_numero FROM ri_partes
+                       WHERE matricula_id=%s AND ato_id IS NULL ORDER BY id""", (matricula_id,))]
+            if doc:
+                for ja in ja_na_abertura:
+                    if so_digitos(ja["documento"] or "") == doc:
+                        flash(f"O documento {CPFCNPJ.formatar_documento(doc)} já está na "
+                              f"abertura, com {ja['nome']}. Para mudar esse dono, use "
+                              f"Corrigir na linha dele.", "danger")
+                        return voltar
             banco(con).escrever(
                 """INSERT INTO ri_partes
                    (matricula_id, ato_id, nome, nome_norm, documento_tipo,
@@ -7377,9 +7461,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                  1, 1, "MANUAL", "parte_abertura_antes_selo", fracao),
             )
         audit("RI_PARTE_ABERTURA_INCLUIDA", "RI_MATRICULA", matricula_id,
-              {"matricula": m["numero"], "nome": nome, "documento": doc or None})
+              {"matricula": m["numero"], "nome": nome, "documento": doc or None,
+               "fracao": fracao, "origem": "parte_abertura_antes_selo"})
         flash(f"Proprietário da abertura cadastrado: {nome}. "
               f"Agora dá para selar a abertura em Identificação.", "success")
+        _aviso_nome = _aviso_de_nome_repetido([{"nome": nome, "documento": doc}], ja_na_abertura)
+        if _aviso_nome:
+            flash(_aviso_nome, "warning")
+        _aviso_fr = _aviso_das_fracoes(q(
+            "SELECT * FROM ri_partes WHERE matricula_id=%s ORDER BY id", (matricula_id,)))
+        if _aviso_fr:
+            flash(_aviso_fr, "warning")
         return voltar
 
     @app.route("/registro-imoveis/partes/<int:parte_id>/corrigir", methods=["POST"])
@@ -7811,7 +7903,9 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                         flash("Este rascunho não é de matrícula nova.", "danger")
                         rascunho_id = None
                     else:
-                        form_ini = _r.get("dados") or {}
+                        # COM OS NOMES REPETIDOS (T022): o segundo e o terceiro
+                        # proprietário voltam do rascunho, e não só o primeiro.
+                        form_ini = _RASCT.formulario(_r)
                         flash(f"Aberto do rascunho #{rascunho_id}. Confira os dados "
                               f"e o número ({proximo}) antes de gravar.", "info")
                 except _RASCT.RascunhoError as _e:
@@ -7828,6 +7922,22 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         # de tirar: das 1.701 matrículas, **zero** têm selo de abertura, e
         # nenhuma tem QR. As colunas ficam no esquema, e a ficha continua
         # mostrando o que houver nelas; o que saiu foi o campo de entrada.
+        #
+        # OS PROPRIETÁRIOS SE CONFEREM ANTES DE TOMAR O NÚMERO (T022, 26/11/2026):
+        # fração que não se lê, bloco sem nome ou documento repetido voltam
+        # à tela com tudo o que foi digitado, e nada se grava. A ficha de
+        # acervo não tem o passo: o que viesse nela seria ignorado, como antes.
+        try:
+            donos = _donos_da_abertura(request.form)
+        except RC.CorrecaoError as erro:
+            with db.connect() as _c_prox:
+                _prox = RC.proximo_numero(_c_prox, livro)
+            if not matricula_de_acervo(_prox):
+                flash(str(erro), "danger")
+                return render_template("ri_nova.html", livro=livro, proximo=_prox,
+                                       e_acervo=False, do_arquivo=None, form=request.form,
+                                       rascunho_id=request.form.get("_rascunho_id_tela", type=int))
+            donos = []
         with db.transaction() as con:
             # O numero vem da SERIE, nao do volume. Contar por volume abriu a
             # matricula 4011 em 18/08/2026 quando a serventia ja tinha a 4013 no
@@ -7957,30 +8067,32 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             # PROPRIETARIO DA ABERTURA — 23/09/2026 (Beatriz 4018/4019).
             # Sem isto a ficha nasce sem ri_partes com ato_id IS NULL e
             # ri_selar_abertura recusa. Acervo nao pede: abertura historica.
-            if not e_acervo:
-                prop_nome = (request.form.get("proprietario_nome") or "").strip()
-                if prop_nome:
-                    prop_doc = so_digitos(request.form.get("proprietario_documento") or "")
-                    prop_tipo = ("CPF" if len(prop_doc) == 11
-                                 else "CNPJ" if len(prop_doc) == 14 else None)
-                    bd.escrever(
-                        """INSERT INTO ri_partes
-                           (matricula_id, ato_id, nome, nome_norm, documento_tipo,
-                            documento_numero, documento_valido, papel, qualificacao,
-                            proprietario, proprietario_ativo, origem, origem_chave)
-                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                        (novo_id, None, prop_nome, normalizar_busca(prop_nome),
-                         prop_tipo, prop_doc or None,
-                         1 if prop_doc and valida_cpf_cnpj(prop_doc) else
-                         (0 if prop_doc else None),
-                         # A QUALIFICAÇÃO DO DONO DA ABERTURA — LT03, 20/10/2026:
-                         # LRP art. 176, § 1º, II, 4, e CN-MA art. 479, I. Era
-                         # `None` escrito, e a ficha saía só com nome e CPF.
-                         "proprietario",
-                         (request.form.get("proprietario_qualificacao") or "").strip() or None,
-                         1, 1, "MANUAL",
-                         "abertura_nova_matricula"),
-                    )
+            # VÁRIOS DONOS (T022, 26/11/2026): uma linha por bloco com nome, na
+            # mesma transação da matrícula, com a fração conferida.
+            if e_acervo:
+                donos = []
+            for dono in donos:
+                prop_doc = dono["documento"]
+                prop_tipo = ("CPF" if len(prop_doc) == 11
+                             else "CNPJ" if len(prop_doc) == 14 else None)
+                bd.escrever(
+                    """INSERT INTO ri_partes
+                       (matricula_id, ato_id, nome, nome_norm, documento_tipo,
+                        documento_numero, documento_valido, papel, qualificacao,
+                        proprietario, proprietario_ativo, origem, origem_chave,
+                        fracao)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (novo_id, None, dono["nome"], normalizar_busca(dono["nome"]),
+                     prop_tipo, prop_doc or None,
+                     1 if prop_doc and valida_cpf_cnpj(prop_doc) else
+                     (0 if prop_doc else None),
+                     # A QUALIFICAÇÃO DO DONO DA ABERTURA — LT03, 20/10/2026:
+                     # LRP art. 176, § 1º, II, 4, e CN-MA art. 479, I. Era
+                     # `None` escrito, e a ficha saía só com nome e CPF.
+                     "proprietario", dono["qualificacao"],
+                     1, 1, "MANUAL",
+                     "abertura_nova_matricula", dono["fracao"]),
+                )
             # Avanca a serie inteira: todos os volumes passam a apontar para o
             # numero seguinte, senao o proximo volume repetiria este numero.
             RC.sincronizar_numeracao(con, livro, db.now())
@@ -7999,9 +8111,25 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
 
         audit("RI_MATRICULA_ABERTA", "RI_MATRICULA", novo_id,
               {"numero": numero, "livro": livro,
-               "tipo_ficha": "ACERVO" if e_acervo else "ESTRUTURADA"})
+               "tipo_ficha": "ACERVO" if e_acervo else "ESTRUTURADA",
+               "proprietarios": len(donos)})
+        for dono in donos:
+            audit("RI_PARTE_ABERTURA_INCLUIDA", "RI_MATRICULA", novo_id,
+                  {"matricula": numero, "nome": dono["nome"],
+                   "documento": dono["documento"] or None, "fracao": dono["fracao"],
+                   "origem": "abertura_nova_matricula"})
         flash(f"Matrícula {numero} aberta no livro {livro}. "
               f"O próximo número do livro passou a ser {numero + 1}.", "success")
+        # A SOMA DAS FRAÇÕES NÃO IMPEDE A ABERTURA (T022): avisa, como a ficha.
+        # E o mesmo nome sem documento também só avisa (decisão de 26/11/2026).
+        _aviso_nome = _aviso_de_nome_repetido(donos)
+        if _aviso_nome:
+            flash(_aviso_nome, "warning")
+        if donos:
+            _aviso_fr = _aviso_das_fracoes(q(
+                "SELECT * FROM ri_partes WHERE matricula_id=%s ORDER BY id", (novo_id,)))
+            if _aviso_fr:
+                flash(_aviso_fr, "warning")
         if conferencia_georref is not None:
             audit("RI_GEORREF_CONFERENCIA", "RI_MATRICULA", novo_id,
                   {"matricula": numero, "situacao": conferencia_georref["situacao"],

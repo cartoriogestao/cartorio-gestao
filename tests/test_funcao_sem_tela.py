@@ -764,10 +764,16 @@ ACHADAS_EM_23_11_2026: dict[str, str] = {
 }
 
 
+# 26/11/2026: a carga em lote da rotina da serventia. A porta é o script do
+# agente 11 (o superusuário), fora do repositório, que a chama para cadastrar a
+# rotina com a auditoria de cada item; a tela é o cadastro item a item.
+# test_rotina_da_casa guarda a carga e a trilha.
 # 26/11/2026: os avisos dos pedidos do ONR parados (A005). Entrada do catálogo
 # da central de automação, que o despachante chama; a tela «ONR — pedidos
 # parados» tem o botão «Verificar agora», que chama a mesma verificação.
 ACHADAS_EM_26_11_2026: dict[str, str] = {
+    "importar_e_auditar": "rotina_da_casa — a porta é a carga do agente 11; "
+                          "test_rotina_da_casa guarda a trilha",
     "rodada_dos_avisos": "onr_pedidos_avisos — chamada pelo catálogo da central de "
                          "automação; test_onr_pedidos_avisos guarda o processo",
 }

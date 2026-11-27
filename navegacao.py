@@ -99,6 +99,11 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
          # continuam levando a ela, e o endereço e os papéis são os mesmos. Veja `ATALHOS`.
          ("Checklist do dia", (
              _i("Checklist do dia (por área)", "gestor_checklist", AMA, atalho=True),)),
+         # MINHA ROTINA (26/11/2026): o que a pessoa tem para hoje e o atrasado na
+         # rotina da serventia, como responsável ou suplente — para todos, também
+         # o escrevente. Porta única: o cadastro mora em Gestão.
+         ("Minha rotina", (
+             _i("Minha rotina", "rotina_minha", termos="rotina tarefa manutencao do dia feito"),)),
      )},
     {"chave": "NOTAS", "curto": "Notas", "nome": "Tabelionato de Notas", "cor": "NOTAS",
      "icone": "pena", "lavra": True, "secoes": (
@@ -432,6 +437,11 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
          ("Checklist do dia", (
              _i("Checklist de gestão do dia", "gestor_checklist", AMA,
                 termos="conformidade semaforo achados conferencia"),)),
+         # A ROTINA DA SERVENTIA (26/11/2026): o cadastro da rotina de manutenção
+         # que a Checklist do dia mostra no alto de cada área. O auditor lê.
+         ("Rotina da serventia", (
+             _i("Rotina da serventia", "rotina_cadastro", AMA,
+                termos="rotina manutencao delegar cadastro diaria mensal"),)),
          ("Envios às Centrais", (
              _i("Envios às Centrais", "gestor_envios"),)),
          ("Erros e correções", (
@@ -525,6 +535,9 @@ ATALHOS: dict[str, str] = {
 # chega nela. Sem isto a tela abriria com o menu fechado — o defeito que `modulos.py`
 # existe para impedir.
 PAI: dict[str, tuple[str, str]] = {
+    # A rotina da serventia: o formulário abre dentro da seção do cadastro.
+    "rotina_nova": ("GESTAO", "Rotina da serventia"),
+    "rotina_editar": ("GESTAO", "Rotina da serventia"),
     "caixa_protocolos": ("CAIXA", "Protocolo geral"),
     "ri_qualificacao_ia_nota": ("RI", "Protocolo"),
     "ri_geo_ver": ("RI", "Consulta"),

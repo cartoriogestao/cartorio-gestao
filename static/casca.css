@@ -304,9 +304,10 @@
 /* OS MONITORES DO BALCÃO SÃO FULL HD (o oficial, 30/10/2026). Com a largura sobrando, os campos
    cabem em três colunas e alguns quadros ficam lado a lado. Abaixo disso, nada muda. A grade só
    passa a três se tiver três campos à vista, porque com dois sobraria uma coluna vazia, e não
-   passa se tiver quadro dentro ou se já estiver em meia largura. */
+   passa se tiver quadro dentro ou se já estiver em meia largura (os formulários de cada fase dos Projetos
+   moram em blocos de ~18rem, lado a lado: em três colunas o campo de data saía cortado — 26/11/2026). */
 @media (min-width:1600px){
-.cg-corpo :is(.grid2,.form-grid):has(>:not([type=hidden],[hidden],.span2)~:not([type=hidden],[hidden],.span2)~:not([type=hidden],[hidden],.span2)):not(:has(>.panel,>.cg-passo-bloco)):not(.cg-ato-cabeca *,.cg-lado *,.cg-lado-largo *,.cra-api *,.pagina-configuracoes *){grid-template-columns:repeat(3,minmax(0,1fr))}
+.cg-corpo :is(.grid2,.form-grid):has(>:not([type=hidden],[hidden],.span2)~:not([type=hidden],[hidden],.span2)~:not([type=hidden],[hidden],.span2)):not(:has(>.panel,>.cg-passo-bloco)):not(.cg-ato-cabeca *,.cg-lado *,.cg-lado-largo *,.cra-api *,.pagina-configuracoes *,.dev-projetos-fase-acoes *){grid-template-columns:repeat(3,minmax(0,1fr))}
 .cg-ficha>.cg-lado-largo{flex:1 1 calc(50% - 6px)}
 .cg-ficha #avisos form.form{grid-template-columns:repeat(4,minmax(0,1fr))}
 .cg-lista-larga{column-count:2;column-gap:32px}

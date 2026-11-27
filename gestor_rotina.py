@@ -135,7 +135,7 @@ ROTULOS = {
     "SELO_CANCELADO_LOCAL": "Selos cancelados: confirmar no Portal do Selo",
     "PRENOTACAO_VENCIDA": "Prenotações vencidas ainda abertas",
     "REGISTRO_SEM_CNIB": "Registros com ordem de indisponibilidade no CNIB",
-    "CNIB_PARADO": "Cópia local do CNIB atrasada",
+    "CNIB_PARADO": "Cópia local do CNIB parada",
     "BACKUP": "Backup fora do prazo",
     "DIGITALIZACAO_DA_FICHA": "Digitalizar a ficha depois do ato (7 dias)",
     "REVISAO_DO_AGENTE": "Atos já lavrados com apontamento da revisão em lote",

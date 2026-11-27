@@ -563,6 +563,11 @@
      por que — e o que subiu e depois deixou de ser verdade aqui. #}
   <div class="panel-head"><span>Acompanhamento no ONR</span>
     <span class="small muted"><a href="{{ url_for('onr_acompanhamento') }}">a fila inteira</a></span></div>
+  {% if acompanhamento_onr.senha %}
+  <p class="small" data-senha-onr>Senha de consulta no ONR (o «código verificador» que o apresentante usa,
+    com o nº do protocolo, no Acompanhamento Registral Online): <strong style="letter-spacing:.1em">{{ acompanhamento_onr.senha }}</strong>.
+    Sai também no comprovante de prenotação.</p>
+  {% endif %}
   {% for t in acompanhamento_onr.titulos %}
     <p class="small">Título nº {{ t.id_titulo_onr }} no ONR ({{ t.ambiente|lower }}),
       {{ 'cadastrado' if t.como == 'CADASTRADO' else 'que já existia lá' }} em {{ (t.cadastrado_em or '')[:16]|replace('T', ' ') }}.</p>

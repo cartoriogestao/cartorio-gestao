@@ -101,6 +101,16 @@ O CONTRATO, CONFERIDO EM 26/11/2026 (A008)
     - No WSDL, `ValorDeposito` e `ValorEmolumentos` são `decimal` com
       minOccurs=1, embora o manual os diga opcionais; não vão (o .NET os lê
       como zero). A prova confirma também isso.
+
+O CÓDIGO VERIFICADOR É OBRIGATÓRIO — A PROVA DE 27/11/2026
+    A primeira chamada real (`InsertTituloAT` do título de prova) voltou com
+    «código 36 — Código Verificador não foi informado». O manual o dá como
+    opcional, e o WSDL com minOccurs=0; o serviço o exige. O que ele é está na
+    API REST nova do ONR (`FONTES_EXTERNAS/onr_ri/openapi_limpo.json`, esquema
+    `protocoloRequest`): «Código verificador/ senha para consulta ao título» —
+    a SENHA com que o apresentante abre, com o número do protocolo, o
+    andamento no Acompanhamento Registral Online. Quem a define é o cartório.
+    Ver «A SENHA DE CONSULTA» abaixo.
 """
 from __future__ import annotations
 
@@ -151,6 +161,11 @@ CREATE TABLE IF NOT EXISTS onr_at_eventos (
 );
 CREATE INDEX IF NOT EXISTS ix_onr_at_eventos_fila
     ON onr_at_eventos(situacao, protocolo_id, data_status, id);
+CREATE TABLE IF NOT EXISTS onr_at_senhas (
+    protocolo_id bigint PRIMARY KEY,
+    cifra TEXT NOT NULL,
+    criada_em TEXT NOT NULL
+);
 """
 
 #: As colunas que nasceram depois da tabela (A008, 26/11/2026) — só
@@ -243,6 +258,157 @@ class AcompanhamentoError(ValueError):
     """Recusa com a frase pronta para o balcão."""
 
 
+# ------------------------------------------------- a senha de consulta (27/11)
+#
+# A SENHA DE CONSULTA DO TÍTULO NO ONR (o `CodigoVerificador`)
+#     Uma por prenotação, ALEATÓRIA (`secrets`), com o alfabeto sem ambiguidade
+#     do código do portal da casa (`acompanhamento_cliente.ALFABETO`): oito
+#     caracteres que se ditam ao telefone. Nasce junto com o «prenotado»
+#     (`anotar_prenotacao`, na transação da prenotação), para já sair no
+#     comprovante; o título antigo, que não a tem, a ganha na hora do envio.
+#
+#     É UMA SENHA DO CLIENTE: fica CIFRADA (AES-GCM) no banco, com a chave no
+#     cofre da casa (`ARQUIVO_DO_COFRE`, fora do banco), para poder sair de novo
+#     no comprovante e na ficha sem morar em claro no backup. Não vai a log,
+#     auditoria nem `ultimo_erro`; a prévia da prova a mostra mascarada.
+#
+#     NÃO É O CÓDIGO DO PORTAL DA CASA. Aquele abre o protocolo geral no portal
+#     da serventia; este vai ao ONR, que é terceiro e o guarda do lado dele.
+#     Juntar os dois daria ao ONR a chave do portal da casa.
+#
+#     O QUE FICA DE FORA: trocar a senha de um título que já está no ONR pede
+#     `UpdateTituloAT`, que o sistema ainda não usa. A cifra que não abre mais
+#     (chave perdida) só se refaz para título que ainda não subiu.
+
+#: O cofre da senha — arquivo próprio, e não o `portal.cred` do portal da casa.
+ARQUIVO_DO_COFRE = "onr_acompanhamento.cred"    # `cofre_cred.ONR_ACOMPANHAMENTO`
+CHAVE_DA_CIFRA = "chave_das_senhas"
+VERSAO_DA_CIFRA = "v1"
+TAMANHO_DA_SENHA = 8
+
+
+def _alfabeto() -> str:
+    import acompanhamento_cliente as AC
+    return AC.ALFABETO
+
+
+def gerar_senha() -> str:
+    """Uma senha nova: `TAMANHO_DA_SENHA` caracteres sorteados por `secrets`."""
+    import secrets
+    alfabeto = _alfabeto()
+    return "".join(secrets.choice(alfabeto) for _ in range(TAMANHO_DA_SENHA))
+
+
+def senha_valida(senha: Any) -> bool:
+    texto = str(senha or "")
+    return len(texto) == TAMANHO_DA_SENHA and all(c in _alfabeto() for c in texto)
+
+
+def _pasta_do_cofre(con):
+    import cofre_cred as COFRE
+    return COFRE.pasta_do_banco(con)
+
+
+def _chave_da_cifra(con, *, criar: bool) -> bytes | None:
+    import base64
+    import os
+    import cofre_cred as COFRE
+    pasta = _pasta_do_cofre(con)
+    guardada = COFRE.ler(pasta, ARQUIVO_DO_COFRE).get(CHAVE_DA_CIFRA, "")
+    if not guardada and criar:
+        COFRE.gravar(pasta, ARQUIVO_DO_COFRE, {
+            CHAVE_DA_CIFRA: base64.b64encode(os.urandom(32)).decode("ascii")})
+        # RELIDA DO ARQUIVO: duas gravações ao mesmo tempo sorteiam duas
+        # chaves, e só a que ficou no arquivo abre.
+        guardada = COFRE.ler(pasta, ARQUIVO_DO_COFRE).get(CHAVE_DA_CIFRA, "")
+    try:
+        chave = base64.b64decode(guardada) if guardada else b""
+    except ValueError:
+        return None
+    return chave if len(chave) == 32 else None
+
+
+def _associado(protocolo_id: int) -> bytes:
+    # O id entra como dado associado: a cifra copiada para outra linha não abre.
+    return f"onr_at_senhas:ri_protocolos:{int(protocolo_id)}".encode("ascii")
+
+
+def _cifrar(con, protocolo_id: int, senha: str) -> str:
+    import base64
+    import os
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    chave = _chave_da_cifra(con, criar=True)
+    if chave is None:
+        raise AcompanhamentoError("O cofre da casa não tem uma chave válida para a senha de "
+                                  "consulta do ONR. Confira a pasta de dados do servidor.")
+    nonce = os.urandom(12)
+    cifra = AESGCM(chave).encrypt(nonce, senha.encode("ascii"), _associado(protocolo_id))
+    return f"{VERSAO_DA_CIFRA}:" + base64.b64encode(nonce + cifra).decode("ascii")
+
+
+def _decifrar(con, protocolo_id: int, texto: Any) -> str | None:
+    import base64
+    from cryptography.exceptions import InvalidTag
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    versao, _, corpo = str(texto or "").partition(":")
+    if versao != VERSAO_DA_CIFRA or not corpo:
+        return None
+    chave = _chave_da_cifra(con, criar=False)
+    if chave is None:
+        return None
+    try:
+        bruto = base64.b64decode(corpo)
+        claro = AESGCM(chave).decrypt(bruto[:12], bruto[12:],
+                                      _associado(protocolo_id)).decode("ascii")
+    except (ValueError, InvalidTag, UnicodeDecodeError):
+        return None
+    return claro if senha_valida(claro) else None
+
+
+def senha_ja_gravada(con, protocolo_id: int) -> str | None:
+    """A senha de consulta do título, ou None. SÓ LÊ — é a da ficha e do
+    comprovante (GET). Cofre que não abre também é None: a tela não cai."""
+    bd = banco(con)
+    if not bd.tem_tabela("onr_at_senhas"):
+        return None
+    linha = bd.um("SELECT cifra FROM onr_at_senhas WHERE protocolo_id=%s", (int(protocolo_id),))
+    if not linha:
+        return None
+    try:
+        return _decifrar(con, int(protocolo_id), linha["cifra"])
+    except Exception:                                   # noqa: BLE001
+        LOG.exception("Acompanhamento do ONR: o cofre não abriu para ler a senha de consulta")
+        return None
+
+
+def senha_do_titulo(con, protocolo_id: int, *, agora: str) -> str:
+    """A senha de consulta do título; cria e grava na primeira vez. ESCREVE.
+
+    A cifra que não abre mais (o cofre perdeu a chave) é trocada por uma nova
+    SÓ enquanto o título não subiu: depois, a do ONR é a antiga, e a troca
+    pediria `UpdateTituloAT`."""
+    init_schema(con)
+    bd = banco(con)
+    linha = bd.um("SELECT cifra FROM onr_at_senhas WHERE protocolo_id=%s", (int(protocolo_id),))
+    if linha:
+        guardada = _decifrar(con, int(protocolo_id), linha["cifra"])
+        if guardada:
+            return guardada
+        if bd.valor("SELECT COUNT(*) FROM onr_at_titulos WHERE protocolo_id=%s",
+                    (int(protocolo_id),)):
+            raise AcompanhamentoError("A senha de consulta deste título não abre mais (o cofre "
+                                      "perdeu a chave), e ele já está no ONR: trocá-la pede "
+                                      "UpdateTituloAT, que o sistema ainda não faz.")
+        LOG.warning("protocolo %s: a senha de consulta do ONR não abriu e foi trocada",
+                    protocolo_id)
+    senha = gerar_senha()
+    bd.escrever("""INSERT INTO onr_at_senhas (protocolo_id, cifra, criada_em) VALUES (%s,%s,%s)
+                   ON CONFLICT (protocolo_id) DO UPDATE SET cifra=excluded.cifra,
+                       criada_em=excluded.criada_em""",
+                (int(protocolo_id), _cifrar(con, int(protocolo_id), senha), agora))
+    return senha
+
+
 def init_schema(con) -> None:
     bd = banco(con)
     bd.escrever(SCHEMA)
@@ -332,7 +498,12 @@ def anotar_prenotacao(con, protocolo_id: int, *, agora: str, atrasado: bool = Fa
                        f"(Protocolo) em {_data_br(p['data_prenotacao'])}"
                        f"{', às ' + str(p['hora'])[:5] if p.get('hora') else ''}.{limite}"),
             origem_tabela="ri_protocolos", origem_id=p["id"], agora=agora, atrasado=atrasado)
-    return _sem_derrubar("prenotacao", faz, con)
+    anotou = _sem_derrubar("prenotacao", faz, con)
+    # A SENHA DE CONSULTA NASCE COM O «PRENOTADO» (27/11/2026), para já sair no
+    # comprovante. Também sem derrubar: cofre fora do ar não impede prenotar —
+    # o envio a cria depois.
+    _sem_derrubar("senha", lambda bd: bool(senha_do_titulo(bd, protocolo_id, agora=agora)), con)
+    return anotou
 
 
 def anotar_prenotacao_retroativa(con, protocolo_id: int, *, agora: str) -> bool:
@@ -556,7 +727,7 @@ def telefone_do_onr(telefone: Any) -> tuple[str, str] | None:
     return d[:2], d[2:]
 
 
-def campos_do_titulo(p: dict, ev: dict) -> dict:
+def campos_do_titulo(p: dict, ev: dict, senha: str | None = None) -> dict:
     """Os campos do `InsertTituloAT` — o título como está NESTE banco, e o
     evento da fila como status inicial. Recusa (`AcompanhamentoError`) o que
     o manual exige e a prenotação não tem: melhor a fila esperar com a frase
@@ -610,6 +781,9 @@ def campos_do_titulo(p: dict, ev: dict) -> dict:
         "InteressadoNome": apresentante,
         "InteressadoCPFCNPJ": doc or None,
         "NaturezaTitulo": natureza,
+        # A SENHA DE CONSULTA (27/11/2026): o serviço a exige (código 36). Quem
+        # a põe é o envio (`senha_do_titulo`); a prévia mostra uma máscara.
+        "CodigoVerificador": senha or None,
         "TipoSolicitacao": 1,                      # 1 = Prenotação (manual 3.2.8)
         "IDTipoStatus": int(ev["id_tipo_status"]),
         "DataStatus": max(ev["data_status"], data_protocolo),
@@ -917,8 +1091,19 @@ def enviar_pendentes(db, sessao_de: Callable[[], Any], *, amb: str, quem: str,
             if sessao is None:
                 sessao = sessao_de()
             if titulo is None:
+                # A SENHA DE CONSULTA, gravada antes da chamada: se o ONR aceitar
+                # e a gravação de depois falhar, a próxima rodada manda a mesma.
                 try:
-                    r = sessao.cadastrar_titulo_no_acompanhamento(v["campos"])
+                    with db.transaction() as con:
+                        senha = senha_do_titulo(con, pid, agora=agora())
+                except Exception as e:                  # noqa: BLE001 — cofre, disco
+                    erro = f"não deu para gerar a senha de consulta do ONR ({type(e).__name__})"
+                    _anotar_erro(db, ev, erro, agora(), conta=False, espera=None)
+                    feito["parou"] = erro
+                    break
+                try:
+                    r = sessao.cadastrar_titulo_no_acompanhamento(
+                        dict(v["campos"], CodigoVerificador=senha))
                     id_titulo, como = _id_do_onr(r, "IDTitulo"), "CADASTRADO"
                     id_status = _id_do_onr(r, "IDStatus")
                 except WS.WSOficioRecusou as e:
@@ -1165,7 +1350,8 @@ def previa_da_prova(con, protocolo_id: int, *, amb: str) -> dict:
             break
         metodo = "InsertTituloAT" if titulo is None else "InsertStatusAT"
         if titulo is None:
-            campos = dict(v["campos"])
+            # A senha de consulta NUNCA aparece na prévia: só a máscara.
+            campos = dict(v["campos"], CodigoVerificador=MASCARA_DA_SENHA)
         else:
             campos = {"IDTitulo": int(titulo["id_titulo_onr"]),
                       "IDTipoStatus": int(ev["id_tipo_status"]),
@@ -1178,6 +1364,10 @@ def previa_da_prova(con, protocolo_id: int, *, amb: str) -> dict:
         break
     return {"protocolo": p, "titulo": titulo, "ambiente": amb, "vai": vai, "segura": segura,
             "anulados": anulados, "texto_curto": curto}
+
+
+#: O que a prévia mostra no lugar da senha de consulta.
+MASCARA_DA_SENHA = "•" * TAMANHO_DA_SENHA
 
 
 def enviar_prova(db, sessao_de: Callable[[], Any], *, amb: str, quem: str,
@@ -1296,7 +1486,8 @@ def da_prenotacao(con, protocolo_id: int, *, amb: str | None = None) -> dict:
     _avaliar_sem_derrubar(bd, eventos, amb=amb or _amb_do_banco(bd))
     titulos = bd.ler("SELECT * FROM onr_at_titulos WHERE protocolo_id=%s ORDER BY id",
                      (int(protocolo_id),))
-    return {"eventos": eventos, "titulos": titulos}
+    return {"eventos": eventos, "titulos": titulos,
+            "senha": senha_ja_gravada(con, protocolo_id) if eventos else None}
 
 
 def painel(con, *, todos: bool = False, limite: int = 300, amb: str | None = None) -> dict:

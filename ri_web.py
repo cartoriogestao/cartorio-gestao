@@ -4067,6 +4067,17 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             etiqueta = AS.etiqueta_do_ato(
                 _c, "ri_protocolos", protocolo_id,
                 (p["selo_prenotacao"] or "").strip())
+        # A SENHA DE CONSULTA NO ONR (27/11/2026, A008): o «código verificador»
+        # com que o apresentante abre o andamento no Acompanhamento Registral
+        # Online. Só com o envio ligado, e só a que já existe — esta rota é
+        # GET e não grava (a senha nasce com o «prenotado», no POST).
+        if ACOMP.ligado(db.get_setting):
+            with db.connect() as _c:
+                _senha_onr = ACOMP.senha_ja_gravada(_c, protocolo_id)
+            if _senha_onr:
+                html += (f"<p>Acompanhamento Registral Online do ONR: consulte o andamento "
+                         f"deste título com o protocolo nº {p['numero']} e o código "
+                         f"verificador <strong>{_senha_onr}</strong>.</p>")
         frag_do_selo, imagens_do_selo = carimbo_da_certidao_odf(
             etiqueta, rotulo="SELO DA PRENOTAÇÃO",
             prefixo="qr-selo-prenotacao")

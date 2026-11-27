@@ -154,7 +154,10 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
              _i("Pedidos em andamento", "ri_pedidos"),
              _i("ONR: e-Protocolo (títulos remetidos)", "onr_eprotocolo", QUATRO,
                 antigo="ONR — e-Protocolo (títulos remetidos)",
-                termos="eprotocolo titulo eletronico remessa central"),)),
+                termos="eprotocolo titulo eletronico remessa central"),
+             _i("ONR: e-Intimação (pedidos)", "onr_intimacoes", QUATRO,
+                antigo="ONR — e-Intimação (pedidos)",
+                termos="intimacao fiduciaria alienacao credor central"),)),
          ("Matrículas", (
              _i("Matrículas", "ri_matriculas", termos="ficha imovel"),)),
          ("Certidões", (
@@ -609,6 +612,7 @@ PAI: dict[str, tuple[str, str]] = {
     "onr_cobranca_gerar": ("RI", "Centrais e obrigações"),
     "onr_cobranca_ficha": ("RI", "Centrais e obrigações"),
     "onr_pedidos_avisos": ("RI", "Centrais e obrigações"),     # A005: pedidos do ONR parados
+    "onr_intimacao_ficha": ("RI", "Protocolo"),                # A005: a ficha da e-Intimação
     "ri_onr_endereco": ("RI", "Centrais e obrigações"),
     "ri_onr_indicador": ("RI", "Centrais e obrigações"),
     "onr_ir_conferir": ("RI", "Centrais e obrigações"),

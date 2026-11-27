@@ -234,16 +234,23 @@ def test_a_afirmacao_nao_vence_as_travas_que_o_aparelho_nao_perdoa():
         assert not erro.value.vencivel
 
 
-def test_a_faixa_vira_o_item_so_onde_o_caminho_conhece_o_item():
+def test_a_faixa_vira_o_item_em_qualquer_caminho():
     """O E-Ofício mandou 17.4 em 190 selos de pagamento e retirada, e 17.1 em
-    70 de protesto; o aparelho recusou o 17.4.5 e o 17.1.7. No cancelamento o
-    17.4 não é item do caminho — e lá a faixa fica como está, para a
-    conferência recusá-la."""
+    70 de protesto; o aparelho recusou o 17.4.5 e o 17.1.7 — também no
+    cancelamento 4106, em 28/10 e em 26/11. Faixa o aparelho não conhece em
+    caminho nenhum: no cancelamento ela vira o item também, e quem decide se o
+    item serve ao caminho é a conferência (`_servem_ao_caminho`)."""
     assert PSELO.codigo_para_o_selo("17.4.5", "/selo/protesto/pagamento") == "17.4"
     assert PSELO.codigo_para_o_selo("17.4.5", "/selo/protesto/retirada") == "17.4"
     assert PSELO.codigo_para_o_selo("17.1.7", "/selo/protesto/titulo") == "17.1"
     assert PSELO.codigo_para_o_selo(
-        "17.4.5", "/selo/protesto/baixa-cancelamento") == "17.4.5"
+        "17.4.5", "/selo/protesto/baixa-cancelamento") == "17.4"
+    assert PSELO.codigo_para_o_selo(
+        "17.1.7", "/selo/protesto/baixa-cancelamento") == "17.1"
+    assert PSELO.codigo_para_o_selo("17.1.7", None) == "17.1"
+    # O que não é faixa fica como está: 17.10.1 e 17.5.1 são itens.
+    assert PSELO.codigo_para_o_selo(
+        "17.5.1", "/selo/protesto/baixa-cancelamento") == "17.5.1"
     assert PSELO.codigo_para_o_selo("17.10.1", "/selo/protesto/pagamento") == "17.10.1"
     assert PSELO.codigo_para_o_selo(" 17.2 ", "/selo/protesto/pagamento") == "17.2"
     # E a faixa mapeada passa na conferência do pagamento.

@@ -540,7 +540,7 @@ def _restaurar_do_seed(db_path: Path, seed_path: Path, seed_tables: list[str]) -
         con.close()
 
 
-def cg_login(client, username: str, password: str):
+def cg_login(client, username: str, password: str, *, recusa: bool = False):
     """Login via test_client com CSRF da tela /login — e confere que ENTROU.
 
     O LOGIN QUE NÃO ENTRA FALHA AQUI (25/11/2026). A tela de erro do login
@@ -548,6 +548,10 @@ def cg_login(client, username: str, password: str):
     /login que não dizia o porquê. Agora a falha é na hora, e a primeira linha
     (a que vai ao comentário da CI) traz o que o servidor respondeu, o recado da
     tela, a exceção da rota e se o relógio voltou.
+
+    `recusa=True` é para o teste que QUER o login recusado (a senha errada que a
+    auditoria grava): aí a sessão aberta é que é a falha. A conferência continua
+    nos dois sentidos; nenhum dos dois passa calado.
     """
     pagina = client.get("/login")
     html = pagina.get_data(as_text=True)
@@ -580,6 +584,11 @@ def cg_login(client, username: str, password: str):
         )
     with client.session_transaction() as sessao:
         entrou = bool(sessao.get("user_id"))
+    if recusa:
+        if entrou:
+            raise AssertionError(
+                f"cg_login({username!r}, recusa=True): o login devia ser recusado e abriu a sessão")
+        return resposta
     if not entrou:
         caminho = " → ".join(
             f"{r.status_code} {r.request.path}" for r in [*resposta.history, resposta])

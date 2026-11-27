@@ -56,3 +56,13 @@ def test_cg_login_que_nao_entra_falha_na_hora_e_diz_por_que(cg_casa):
     assert "relógio" in mensagem
     # E o login certo segue devolvendo a tela de entrada, como antes.
     assert conftest.cg_login(cg_casa["c"], "mario", SENHA).status_code == 200
+
+
+def test_cg_login_com_recusa_exige_a_recusa(cg_casa):
+    """O teste que quer a senha recusada pede `recusa=True`: a recusa passa, e o login
+    que entra por engano é que cai — a conferência não afrouxa em nenhum sentido."""
+    cg_casa["db"].create_user("mario", "MARIO EXEMPLO DOS SANTOS", SENHA, "ADMIN")
+    r = conftest.cg_login(cg_casa["c"], "mario", "senha-errada", recusa=True)
+    assert "Usuário ou senha inválidos" in r.get_data(as_text=True)
+    with pytest.raises(AssertionError, match="devia ser recusado e abriu a sessão"):
+        conftest.cg_login(cg_casa["app"].test_client(), "mario", SENHA, recusa=True)

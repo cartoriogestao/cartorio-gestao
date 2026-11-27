@@ -756,9 +756,10 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             # para o ato delas. Só os que ainda têm saldo.
             itens_do_protocolo = []
             if titulo["situacao"] == TIT.QUALIFICADO and protocolo_geral_id:
-                itens_do_protocolo = [
+                # Da divisão em linhas, só a primeira vem marcada (27/11/2026).
+                itens_do_protocolo = CXP.pre_marcar_uma_de_cada_divisao(con, [
                     r | {"marcado": RG.item_e_do_registro(r["codigo_ato"])}
-                    for r in CXP.itens_disponiveis(con, protocolo_geral_id)]
+                    for r in CXP.itens_disponiveis(con, protocolo_geral_id)])
 
         # AS NOTAS QUE A CENTRAL GUARDA — e a chamada de rede vem **DEPOIS de a
         # conexão fechar**, que é a regra da casa: quem fala com fora não segura

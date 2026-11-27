@@ -485,6 +485,8 @@ preciso abrir outro. O protocolo só de cálculo traz a marca **só cálculo** n
 e na ficha, e quitá-lo lança o dinheiro no caixa sem serviço nenhum: se o cliente
 decidiu fazer o ato, abra um protocolo de serviço.
 
+**Item com quantidade maior que 1: uma linha com N ou N linhas de 1.** Ao acrescentar um item com quantidade maior que 1, escolha o que a quantidade quer dizer. **Uma linha com N** (vem marcada, e é como sempre foi) é um ato só: nas atribuições de folhas (RTD, RCPJ, Protesto, certidões) são as folhas daquele ato, e o primeiro ato que a usa leva a linha inteira; no RI são N unidades do saldo. **N linhas de 1, uma para cada ato** grava N linhas iguais de quantidade 1, e cada ato lavrado leva a sua: na tela de lavrar vem marcada só a primeira linha livre da divisão (as outras ficam para os próximos atos), e o ato lavrado sem marcar nada também leva uma só. As outras linhas do protocolo vêm marcadas como sempre. O total é o mesmo. A divisão vai até 50 linhas e é recusada, sem gravar nada, quando mudaria o total ou contrariaria a regra do item: item com teto (como o 16.5) ou com faixa do tribunal, garantia em vários imóveis (16.31), base pela metade (16.22.4.1), autenticação de cópia (13.18, em que a quantidade já são selos), certidão do RI (16.24.4) e folha acrescida. Nesses, lance uma linha com N.
+
 - **Quitar um item lança no caixa**, pelo valor calculado quando o item entrou.
 - **Pagamento feito em data anterior** (o Pix de dias atrás): na quitação do item
   ou do lote, marque **pagamento feito em data anterior** e informe a data, o

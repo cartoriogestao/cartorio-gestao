@@ -39,6 +39,12 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="servico" value="{{ r.codigo }}">
             <input name="quantidade" value="1" size="2" title="Quantidade">
+            {# «Uma linha com N» ou «N linhas de 1» (T023): a mesma escolha do
+               formulário da faixa, ver `caixa_protocolo.html`. #}
+            <span class="small" data-separar style="display:inline-flex;gap:6px">
+              <label title="Como sempre: folhas de um ato só, ou várias unidades no RI"><input type="radio" name="separar" value="linha" checked> uma linha com <span data-separar-n>N</span></label>
+              <label title="Uma linha de quantidade 1 para cada ato"><input type="radio" name="separar" value="linhas"> <span data-separar-n>N</span> linhas de 1, uma por ato</label>
+            </span>
             <button class="small" name="acao" value="acrescentar">acrescentar</button>
           </form>
           {% endif %}

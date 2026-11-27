@@ -266,6 +266,90 @@ def test_depois_que_o_ips_leva_a_carga_vem_o_incremental(casa):
     assert a["setor"] == "RI"
 
 
+def _completa_levada(casa) -> None:
+    """A carga completa de hoje, levada pelo IPS (copiada para `Processados`)."""
+    arq = Path(G.cuidar_do_pessoal(casa["con"], HOJE)["arquivo"])
+    processados = casa["tmp"] / "INDICADORES" / "Processados"
+    processados.mkdir(parents=True, exist_ok=True)
+    (processados / arq.name).write_bytes(arq.read_bytes())
+    assert G.cuidar_do_pessoal(casa["con"], HOJE)["levados"] == 1
+
+
+def test_ato_de_acervo_lancado_depois_da_carga_vai_no_incremental(casa):
+    """RI022: os atos de acervo lançados em 27/10/2026 não foram em arquivo nenhum."""
+    con = casa["con"]
+    mid = _matricula(con)
+    _parte(con, mid, "FULANO DE TAL")
+    _completa_levada(casa)
+    ato = _ato(con, mid, numero=3, lavrado_em="2030-01-01T09:00:00")
+    con.execute("UPDATE ri_atos SET acervo=1, data_ato='1990-05-02' WHERE id=?", (ato,))
+    con.commit()
+    _parte(con, mid, "ANTIGO DONO DO ACERVO", ato_id=ato)
+    r = G.cuidar_do_pessoal(con, date(2030, 1, 1))
+    assert r["acao"] == "arquivo gerado" and r["vinculos"] == 1
+    assert b"ANTIGO DONO DO ACERVO" in Path(r["arquivo"]).read_bytes()
+
+
+def test_parte_sem_ato_em_matricula_antiga_vai_pelo_id(casa):
+    con = casa["con"]
+    mid = _matricula(con)
+    _parte(con, mid, "FULANO DE TAL")
+    _completa_levada(casa)
+    ato = _ato(con, mid, numero=2, lavrado_em="2030-01-01T09:00:00")
+    _parte(con, mid, "CICRANO COMPRADOR", ato_id=ato, documento="52998224725")
+    r1 = G.cuidar_do_pessoal(con, date(2030, 1, 1))
+    assert r1["vinculos"] == 1
+    con.execute("UPDATE ge_onr_cargas SET periodo_ate='2030-01-01T10:00:00' "
+                "WHERE tipo='INCREMENTAL'")          # o arquivo saiu depois do ato de 2030
+    con.commit()
+    # parte corrigida à mão na ficha antiga: sem ato, sem data de lançamento
+    _parte(con, mid, "HERDEIRO ACRESCIDO", documento="")
+    r2 = G.cuidar_do_pessoal(con, date(2030, 1, 2))
+    assert r2["acao"] == "arquivo gerado" and r2["vinculos"] == 1
+    assert b"HERDEIRO ACRESCIDO" in Path(r2["arquivo"]).read_bytes()
+    assert G.cuidar_do_pessoal(con, date(2030, 1, 2))["acao"] == "nada novo"
+
+
+def test_levados_so_conta_o_que_foi_para_processados(casa):
+    con = casa["con"]
+    mid = _matricula(con)
+    _parte(con, mid, "FULANO DE TAL")
+    _completa_levada(casa)
+    ato = _ato(con, mid, numero=2, lavrado_em="2030-01-01T09:00:00")
+    _parte(con, mid, "CICRANO COMPRADOR", ato_id=ato)
+    G.cuidar_do_pessoal(con, date(2030, 1, 1))
+    # o arquivo continua na pasta do IPS: não foi levado
+    assert G.cuidar_do_pessoal(con, date(2030, 1, 1))["levados"] == 0
+
+
+def test_complemento_fica_na_carga_inicial_e_nao_mexe_no_incremental(casa):
+    con = casa["con"]
+    mid = _matricula(con)
+    _parte(con, mid, "FULANO DE TAL")
+    _completa_levada(casa)
+    desde = con.execute("SELECT MAX(periodo_ate) FROM ge_onr_cargas WHERE canal='PESSOAL' "
+                        "AND situacao IN ('PROCESSADO','NA_PASTA')").fetchone()[0]
+    ato = _ato(con, mid, numero=3, lavrado_em="2030-01-01T09:00:00")
+    con.execute("UPDATE ri_atos SET acervo=1 WHERE id=?", (ato,))
+    con.commit()
+    _parte(con, mid, "ANTIGO DONO DO ACERVO", ato_id=ato)
+    r = G.gerar_complemento(con, date(2030, 1, 2))
+    assert r["acao"] == "complemento gerado" and r["vinculos"] == 1
+    arq = Path(r["arquivo"])
+    assert arq.parent == casa["tmp"] / "CARGA_INICIAL"            # nunca a pasta do IPS
+    assert not list((casa["tmp"] / "INDICADORES").glob("*COMPLEMENTO*"))
+    # o complemento não empurra o começo do próximo incremental
+    assert con.execute("SELECT MAX(periodo_ate) FROM ge_onr_cargas WHERE canal='PESSOAL' "
+                       "AND situacao IN ('PROCESSADO','NA_PASTA')").fetchone()[0] == desde
+    # o oficial move; o IPS leva; a rodada o acha pelo sha
+    (casa["tmp"] / "INDICADORES" / "Processados" / arq.name).write_bytes(arq.read_bytes())
+    G.cuidar_do_pessoal(con, date(2030, 1, 3))
+    (sit,) = con.execute("SELECT situacao FROM ge_onr_cargas WHERE tipo='COMPLEMENTO'").fetchone()
+    assert sit == "PROCESSADO"
+    assert G.gerar_complemento(con, date(2030, 1, 4), desde="2031-01-01T00:00:00")["acao"] \
+        == "nada esquecido"
+
+
 # -------------------------------------------------------------- as imagens
 
 def _pdf(caminho: Path, paginas: int = 2) -> str:

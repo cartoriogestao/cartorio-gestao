@@ -40,6 +40,10 @@ AS TABELAS, E A PRIMEIRA É A QUE FALTAVA À CASA INTEIRA
     problema da Checklist do dia e cada fase dos Projetos (`quem_resolve`),
     para duas pessoas não fazerem o mesmo trabalho. Aponta para `users`, e por
     isso nasce à parte também (`init_quem_resolve_schema`).
+
+    `ge_rotina.destino` (A011, 27/11/2026) diz para quem o item aparece: a
+    gestão (TI_ADMIN, o padrão) ou só o escrevente que responde por ele. Chega
+    por ALTER, só acréscimo: o item que já existia fica na gestão.
 """
 from __future__ import annotations
 
@@ -246,6 +250,8 @@ CREATE TABLE IF NOT EXISTS ge_rotina (
     horario TEXT,                     -- 'até 09:00'
     responsavel_id bigint REFERENCES users(id),
     suplente_id bigint REFERENCES users(id),
+    destino TEXT NOT NULL DEFAULT 'TI_ADMIN'  -- A011: TI_ADMIN (checklist) ou ESCREVENTE
+        CONSTRAINT ge_rotina_destino_ck CHECK (destino IN ('TI_ADMIN', 'ESCREVENTE')),
     prioridade INTEGER NOT NULL DEFAULT 2   -- 1 alta, 2 normal, 3 baixa
         CONSTRAINT ge_rotina_prioridade_ck CHECK (prioridade BETWEEN 1 AND 3),
     ordem INTEGER NOT NULL DEFAULT 100,
@@ -282,6 +288,9 @@ _COLUNAS_TARDIAS_DA_ROTINA = (
     ("ge_rotina", "vale_desde", "TEXT"),
     ("ge_rotina_feitos", "prazo", "TEXT"),
     ("ge_rotina_feitos", "com_atraso", "INTEGER NOT NULL DEFAULT 0"),
+    # A011 (27/11/2026): para quem o item aparece. O item que já existia fica
+    # na gestão, como estava; o titular escolhe depois o que é do escrevente.
+    ("ge_rotina", "destino", "TEXT NOT NULL DEFAULT 'TI_ADMIN'"),
 )
 
 #: As travas da rotina que o banco guarda, pelo nome: no banco novo vêm no
@@ -290,6 +299,7 @@ _COLUNAS_TARDIAS_DA_ROTINA = (
 _RESTRICOES_DA_ROTINA = (
     ("ge_rotina", "ge_rotina_prioridade_ck", "CHECK (prioridade BETWEEN 1 AND 3)"),
     ("ge_rotina", "ge_rotina_ativo_ck", "CHECK (ativo IN (0, 1))"),
+    ("ge_rotina", "ge_rotina_destino_ck", "CHECK (destino IN ('TI_ADMIN', 'ESCREVENTE'))"),
     ("ge_rotina_feitos", "ge_rotina_feitos_com_atraso_ck", "CHECK (com_atraso IN (0, 1))"),
     ("ge_rotina_feitos", "ge_rotina_feitos_usuario_fk",
      "FOREIGN KEY (usuario_id) REFERENCES users(id)"),

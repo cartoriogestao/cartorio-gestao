@@ -13,7 +13,9 @@
    contando os retirados; ao lado vem a cor «sem os retirados».
    A ROTINA DO DIA (26/11/2026, `rotina_da_casa`): o bloco «Rotina do dia»
    vem antes dos achados, por área (e «TI e sistema» para a TI), com o «Como
-   fazer» e o «Feito» de cada item. Não mexe nos achados nem na cor. #}
+   fazer» e o «Feito» de cada item. Não mexe nos achados nem na cor.
+   A ROTINA DO ESCREVENTE (27/11/2026, A011): o item de destino ESCREVENTE
+   não entra no bloco; a linha «Fora desta lista» diz quantos são. #}
 {% from '_rotina.html' import lista as lista_da_rotina with context %}
 {% block title %}Checklist de gestão do dia{% endblock %}
 {% block heading %}<h1>Checklist de gestão do dia</h1>{% endblock %}
@@ -126,6 +128,8 @@
     {% if ck.abre_cadastro_rotina %}<a class="small" href="{{ url_for('rotina_cadastro', area=ck.area) }}">Rotina da serventia (cadastro)</a>{% endif %}</div>
   {% if ck.erro_rotina %}
   <div class="notice critical">Não deu para ler a rotina: {{ ck.erro_rotina }}. Isto não quer dizer que não há rotina para hoje.</div>
+  {% elif ck.total_rotina_do_escrevente and not ck.rotina %}
+  <p class="small muted">Nada da rotina da gestão vence hoje nem está atrasado{% if ck.area %} em {{ areas[ck.area] }}{% endif %}.</p>
   {% elif ck.rotina_cadastrada == 0 %}
   <p class="small muted">Nenhuma rotina cadastrada ainda.{% if ck.abre_cadastro_rotina %} <a href="{{ url_for('rotina_cadastro') }}">Cadastrar a rotina da serventia</a>.{% endif %}</p>
   {% elif not ck.rotina %}
@@ -141,6 +145,7 @@
   {{ lista_da_rotina(lista, 'checklist', ck.area) }}
   {% endfor %}
   {% endif %}
+  {% if ck.total_rotina_do_escrevente %}<p class="small muted" id="rotina-do-escrevente">Fora desta lista: {{ ck.total_rotina_do_escrevente }} item(ns) da rotina do escrevente{% if ck.area %} em {{ areas[ck.area] }}{% endif %}, que ficam só em «Minha rotina» do responsável e do suplente{% if ck.rotina_volta_apos %}; volta para cá, marcado, o que chegar a {{ ck.rotina_volta_apos }} dia(s) útil(eis) de atraso{% endif %}.</p>{% endif %}
 </section>
 
 <section class="panel" id="achados">

@@ -14,6 +14,7 @@
   {% if r.responsavel %}<span>{{ r.responsavel }}</span>{% if r.responsavel_ativo == false %} <span class="badge alta">inativo</span>{% endif %}
   {% else %}<span class="badge alta" title="Ninguém responde por esta rotina: ela só aparece na Checklist do dia">sem responsável</span>{% endif %}
   {% if r.suplente %}<br><small class="muted">suplente: {{ r.suplente }}{% if r.suplente_ativo == false %} (inativo){% endif %}</small>{% endif %}
+  {% if r.destino == 'ESCREVENTE' %}<br><span class="badge" title="Não aparece na Checklist do dia da gestão: só em «Minha rotina» do responsável e do suplente">do escrevente</span>{% endif %}
 {% endmacro %}
 
 {% macro como_fazer(r) %}
@@ -52,6 +53,8 @@
   {% endif %}
   {% if r.referencia and r.prazo and r.referencia != r.prazo %}<br><small class="muted">vencimento de {{ dia(r.referencia) }}, que caiu em dia sem expediente</small>{% endif %}
   {% if r.n_sem_registro %}<br><span class="badge critica">{{ r.n_sem_registro }} sem registro desde {{ dia(r.sem_registro_desde) }}</span>{% endif %}
+  {% if r.volta_a_gestao == 'ATRASO' %}<br><span class="badge critica" title="Rotina do escrevente: voltou à Checklist do dia pelo atraso; continua em «Minha rotina» de quem responde">do escrevente — voltou à gestão: {{ r.dias_uteis_de_atraso }} dia(s) útil(eis) de atraso</span>
+  {% elif r.volta_a_gestao == 'SEM_NINGUEM' %}<br><span class="badge critica" title="Rotina do escrevente sem responsável nem suplente ativo: escolha outra pessoa no cadastro">do escrevente — sem ninguém ativo para fazer</span>{% endif %}
 {% endmacro %}
 
 {% macro feito(r, voltar, area) %}

@@ -68,6 +68,9 @@
      `[data-busca-ato]`, que hoje é a tela do protocolo do caixa; nas outras
      não faz nada. #}
   <script defer src="{{ url_for('static', filename='busca_ato.js') }}"></script>
+  {# «Uma linha com N» ou «N linhas de 1» no protocolo do caixa (T023): só
+     esconde a escolha enquanto a quantidade é 1. Só age onde há `[data-separar]`. #}
+  <script defer src="{{ url_for('static', filename='separar_linhas.js') }}?v={{ VERSION }}"></script>
   {# O sinal verde/vermelho do selo na tela do ato (P008): só age onde há `[data-selo-sinal]`. #}
   <script defer src="{{ url_for('static', filename='selo_sinal.js') }}?v={{ VERSION }}"></script>
   {# Navegacao progressiva: busca, acordeao e menu compacto no celular. O

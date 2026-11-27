@@ -2693,6 +2693,49 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
                 flash("A quantidade vezes o número de imóveis passa do que o "
                       "protocolo guarda. Confira os dois campos.", "danger")
                 return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
+            # «N LINHAS DE 1, UMA PARA CADA ATO» (T023, 27/11/2026). As regras
+            # de cima valem antes da divisão; com «uma linha com N», que é o
+            # padrão, nada abaixo muda. A divisão grava N linhas do item de
+            # quantidade 1 — e só quando a soma delas é a da linha com N,
+            # fundo a fundo, e nenhuma regra do item a contraria
+            # (`CXP.por_que_nao_dividir`). Recusada, nada se grava.
+            if request.form.get("separar") == "linhas" and quantidade > 1:
+                with db.connect() as con:
+                    de_um = EMOL.calcular_item(
+                        con, servico=numero_digitado(servico),
+                        tabela=numero_digitado(tabela),
+                        base=base, quantidade=1, imoveis=imoveis)
+                motivo = (CXP.por_que_nao_dividir(de_um, item, quantidade)
+                          if de_um else "o item de uma unidade não foi achado")
+                if motivo:
+                    flash(f"Não dividi o item {str(item.get('codigo_tj') or '').strip()} "
+                          f"em {quantidade} linhas: {motivo}. Lance uma linha com "
+                          f"{quantidade}. Nada foi acrescentado.", "danger")
+                    return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
+                with db.transaction() as con:
+                    bd = banco(con)
+                    for _ in range(quantidade):
+                        bd.escrever(
+                            """INSERT INTO cx_protocolo_atos
+                               (protocolo_id, descricao, codigo_ato, quantidade,
+                                valor_total, emolumentos, ferc, fadep, femp, ferrfis,
+                                servico_codigo, base_calculo, origem_valor)
+                               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                            (protocolo_id, de_um["descricao"], de_um["codigo_tj"],
+                             de_um["quantidade"], de_um["total"], de_um["emolumentos"],
+                             de_um["ferc"], de_um["fadep"], de_um["femp"],
+                             de_um["ferrfis"], de_um["servico_codigo"],
+                             de_um["base_calculo"], de_um["origem_valor"]))
+                    _atualizar_total(bd, protocolo_id)
+                audit("PROTOCOLO_ITEM_ACRESCENTADO", "PROTOCOLO", protocolo_id,
+                      {"codigo_tj": item["codigo_tj"], "total": item["total"],
+                       "imoveis": item.get("imoveis"),
+                       "base_do_negocio": item.get("base_do_negocio"),
+                       "separado_em": quantidade, "total_de_cada": de_um["total"]})
+                flash(f"Item {item['codigo_tj']} acrescentado em {quantidade} linhas "
+                      f"de 1, uma para cada ato — R$ {de_um['total']} cada, "
+                      f"R$ {item['total']} ao todo.", "success")
+                return redirect(url_for("caixa_protocolo", protocolo_id=protocolo_id))
             with db.transaction() as con:
                 bd = banco(con)
                 bd.escrever(

@@ -26,7 +26,6 @@ O PRAZO NÃO SE CALCULA AQUI
 from __future__ import annotations
 
 import re
-from datetime import date
 
 from flask import abort, flash, redirect, render_template, request, url_for
 
@@ -295,24 +294,12 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         return (archive_root() / "Registro de Imoveis" / "Retificacoes" /
                 safe_component(str(numero), f"Processo-{p['id']}"))
 
-    def _dias_uteis_ate(dias: int) -> str:
-        """A data-limite SUGERIDA, contada pelo mesmo lugar que a casa conta.
-
-        `ri_schema.soma_dias_uteis` é a função que a prenotação já usa, e é ela
-        que conhece os feriados desta comarca. Uma segunda contagem aqui
-        divergiria da do comprovante de prenotação e da do edital do usucapião —
-        e num prazo, divergir por um dia é recomeçar o prazo.
-
-        (Eu escrevi `import feriados` na primeira versão, achando que havia um
-         módulo com esse nome. Não há — a função mora no `ri_schema`, ao lado da
-         numeração. **Não achar o arquivo que procurei não prova que a função
-         não existe**, e este projeto já aprendeu isso cinco vezes.)
-
-        É SUGESTÃO, e a tela deixa editar: quem sabe a data de recebimento é
-        quem tem o AR na mão, e o prazo conta do recebimento (art. 599, § 2º).
-        """
-        from ri_schema import soma_dias_uteis
-        return soma_dias_uteis(date.today(), dias).isoformat()
+    #  A DATA-LIMITE SUGERIDA DA NOTIFICAÇÃO vem de `retificacao.prazo_ate`,
+    #  que pede ao núcleo (`ri_schema.soma_dias_uteis`) com os feriados locais
+    #  de Configurações e o relógio da casa (`db.now()`). Antes esta tela
+    #  contava com `date.today()` e sem os feriados locais — a mesma conta da
+    #  prenotação, mas com outro calendário. É SUGESTÃO, e a tela deixa
+    #  editar: o prazo conta do recebimento (art. 599, § 2º).
 
     # ------------------------------------------------------------- a lista
 
@@ -503,6 +490,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                 "andamento": RT.andamento(con, processo_id),
                 "falta_decidir": RT.o_que_falta_para_decidir(
                     con, processo_id, hoje=hoje()),
+                "impugnacoes": RT.impugnacoes(con, processo_id, hoje=hoje()),
+                "prazo_sugerido": RT.prazo_ate(con, hoje(), "IMPUGNAR"),
             }
             import atendimento_processo as AP
             import notificacao_selo as NS
@@ -519,8 +508,7 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             dados["codigo_do_selo"] = NS.CODIGO
         return render_template(
             "ri_retificacao.html", **dados, norma=NORMA, RT=RT,
-            prazo_sugerido=_dias_uteis_ate(15),
-            fases=RT.NOME_DA_FASE, especies=NORMA.NOME_DA_ESPECIE,
+            hoje=hoje(), fases=RT.NOME_DA_FASE, especies=NORMA.NOME_DA_ESPECIE,
             fundamentos=NORMA.NOME_DO_FUNDAMENTO,
             respostas=RT.NOME_DA_RESPOSTA, papeis=RT.NOME_DO_PAPEL)
 
@@ -881,6 +869,77 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         audit("RT_RESPOSTA", "rt_confrontantes",
               int(_campo("confrontante_id") or 0),
               {"resposta": _campo("resposta")})
+        return _voltar(processo_id)
+
+    # O QUE CADA BOTÃO DA IMPUGNAÇÃO CHAMA, e a regra fica toda no domínio:
+    # a tela oferece o botão da etapa, e quem recusa o que não cabe é
+    # `retificacao.py`.
+    def _acoes_da_impugnacao(con, processo_id: int, cid: int) -> dict:
+        comum = {"agora": agora(), "usuario": usuario_nome()}
+        return {
+            "rejeitar": lambda: RT.rejeitar_impugnacao(
+                con, processo_id, cid, hipotese=_campo("hipotese"),
+                fundamento=_campo("fundamento"),
+                intimado_em=_campo("intimado_em"), **comum),
+            "intimar_rejeicao": lambda: RT.intimar_da_rejeicao(
+                con, processo_id, cid, intimado_em=_campo("intimado_em"),
+                **comum),
+            "recurso": lambda: RT.registrar_recurso(
+                con, processo_id, cid, em=_campo("em"),
+                razoes=_campo("texto"), **comum),
+            "intimar_contrarrazoes": lambda: RT.intimar_para_contrarrazoes(
+                con, processo_id, cid, intimado_em=_campo("intimado_em"),
+                **comum),
+            "contrarrazoes": lambda: RT.registrar_contrarrazoes(
+                con, processo_id, cid, em=_campo("em"), texto=_campo("texto"),
+                **comum),
+            "prosseguir": lambda: RT.prosseguir_sem_recurso(
+                con, processo_id, cid, hoje=hoje(), **comum),
+            "transacao": lambda: RT.pedir_transacao(
+                con, processo_id, cid, quem_pediu=_campo("quem_pediu"),
+                em=_campo("em"), **comum),
+            "prorrogar": lambda: RT.prorrogar_transacao(
+                con, processo_id, cid, em=_campo("em"), **comum),
+            "acordo": lambda: RT.registrar_acordo(
+                con, processo_id, cid, texto=_campo("texto"), **comum),
+            "remeter": lambda: RT.remeter_ao_juiz(
+                con, processo_id, cid, informacoes=_campo("texto"),
+                hoje=hoje(), **comum),
+            "retorno": lambda: RT.registrar_retorno_do_juiz(
+                con, processo_id, cid, em=_campo("em"),
+                decisao=_campo("texto"), **comum),
+        }
+
+    @app.route("/registro-imoveis/retificacoes/<int:processo_id>/impugnacao",
+               methods=["POST"])
+    @login_required
+    @roles_required("ADMIN", "MANAGER", "USER", "REGISTRADOR", "ESCREVENTE")
+    def ri_retificacao_impugnacao(processo_id: int):
+        """O caminho da impugnação (art. 600). A DECISÃO É DO OFICIAL.
+
+        A rejeição de plano (§ 4º) grava o fundamento que ele escreveu e a
+        hipótese do § 6º que ele marcou; os prazos (recurso, contrarrazões,
+        transação) vêm do núcleo, por `retificacao.prazo_ate`.
+        """
+        acao = _campo("acao")
+        try:
+            cid = int(_campo("confrontante_id") or 0)
+        except ValueError:
+            cid = 0
+        try:
+            with db.transaction() as con:
+                fazer = _acoes_da_impugnacao(con, processo_id, cid).get(acao)
+                if not fazer:
+                    raise RT.RetificacaoError(
+                        "Essa ação não existe no caminho da impugnação.")
+                saida = fazer() or {}
+        except RT.RetificacaoError as erro:
+            flash(str(erro), "danger")
+            return _voltar(processo_id)
+        audit("RT_IMPUGNACAO", "rt_confrontantes", cid, {"acao": acao})
+        if saida.get("prenotacao"):
+            flash(saida["prenotacao"], "info")
+        flash("Impugnação: andamento registrado.", "success")
         return _voltar(processo_id)
 
     @app.route("/registro-imoveis/retificacoes/<int:processo_id>/decidir",

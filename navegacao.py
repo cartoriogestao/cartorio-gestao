@@ -594,6 +594,8 @@ PAI: dict[str, tuple[str, str]] = {
     "rcpn_certidao_previa": ("RCPN", "Certidões"),
     "rcpn_certidao_eletronica_nova": ("RCPN", "Certidões"),
     "rcpn_pedido": ("RCPN", "Certidões"),
+    # O saldo de repasse da CRC (F010) se abre pela materialização de outra serventia.
+    "rcpn_materializacao_repasses": ("RCPN", "Certidões"),
     "rcpn_anotacao_oficio": ("RCPN", "Comunicações"),
     "rcpn_crc_historico": ("RCPN", "Comunicações"),
     "rcpn_funai_oficio": ("RCPN", "Comunicações"),

@@ -27,11 +27,35 @@ O RISCO QUE GOVERNA O DESENHO
        selo não sobem — o primeiro e o segundo saem da fila como ANULADO, com
        o motivo; o terceiro espera o selo. É a mesma régua do RI: o ato que o
        selador recusou é suspenso, e «registrado» na Central seria mentira.
-    4. **ENVIAR É UM CLIQUE DE QUEM RESPONDE PELA CASA** e só funciona com o
-       envio LIGADO (`onr_acompanhamento_ligado`, desligado de fábrica). A
-       rotina automática é o encaixe na central de automação (PR #11, que
-       ainda não está no `main`): `enviar_pendentes` já é a função que ela
-       chama — ver `onr_acompanhamento_web`.
+    4. **SÓ COM O ENVIO LIGADO** (`onr_acompanhamento_ligado`, desligado de
+       fábrica). Quem manda é o botão da tela e, desde a A008 (26/11/2026), o
+       processo `RI_ONR_ACOMPANHAMENTO` da central de automação, que chama
+       `enviar_pendentes` POR DENTRO (e não pela rota: `selo_robo` veda as
+       rotas ao robô), e só com «pode agir».
+
+AS TRAVAS DO ENVIO, A008 (26/11/2026)
+    O ONR avisa o apresentante por e-mail ou SMS a cada andamento. Por isso,
+    antes de cada chamada, `avaliar` decide se o evento sobe, espera (e por
+    quê, com a frase na ficha do protocolo) ou sai da fila:
+    - **ATRASADO**: o que já estava na fila quando a rotina ganhou o poder de
+      enviar (`travar_atrasados`) não sai sozinho; espera o ADMIN liberar,
+      em lote ou por título (`liberar_atrasados`, auditado).
+    - **CARÊNCIA**: na rotina, só sobe o que está há mais de N horas na fila
+      (2 de fábrica), para a exclusão da nota pela tela ainda valer.
+    - **EXIGÊNCIA**: sobe o texto inteiro (decisão do oficial de 26/10) só
+      se REVISADA («revisada por … em …», `marcar_revisada`); a sem nenhuma
+      exigência no texto e a com frase de rascunho ficam BLOQUEADAS com o
+      motivo. O texto curto (`CHAVE_TEXTO_CURTO`) está pronto e DESLIGADO.
+    - **REGISTRADO REPETIDO**: um andamento por (protocolo, ato, matrícula);
+      o repetido sai como ANULADO, com o motivo. Ato desfeito ou cancelado
+      continua ANULADO pela conferência do fato.
+    - **CADASTRO**: nome do apresentante com e-mail dentro, prazo anterior à
+      data da nota ou da prenotação, falta de e-mail e de telefone: o evento
+      fica ESPERANDO DADO, com a frase de correção.
+    - **SEM «PRENOTADO»**: título que ainda não está no ONR e cuja fila não
+      tem a prenotação (os anteriores à fila) precisa de DECISÃO: nada dele
+      sobe. O evento retroativo (`anotar_prenotacao_retroativa`) está pronto
+      e DESLIGADO (`CHAVE_RETROATIVO`).
 
 DECISÕES DO OFICIAL, 26/10/2026
     - **O ambiente de fábrica é a PRODUÇÃO** («acho que podemos ir direto pra
@@ -63,18 +87,28 @@ O QUE NÃO SE ACOMPANHA, E POR QUÊ (declarado, e não esquecido)
     - **O acervo**: prenotação importada do E-Ofício não passou por gancho
       nenhum — e não deve: o E-Ofício já respondia (ou não) por ela.
 
-O QUE É A CONFERIR, E A PRIMEIRA CHAMADA EM HOMOLOGAÇÃO DIZ
-    - A ordem dos campos (do manual; o WSDL do serviço não está na casa).
+O CONTRATO, CONFERIDO EM 26/11/2026 (A008)
+    - A ordem dos campos de `InsertTituloAT` e `InsertStatusAT` (e dos outros
+      sete métodos) é a do manual 4.43, cap. 3.2, E a do WSDL de produção
+      (`acompanhamentotitulos.asmx?WSDL`, lido por GET nesse dia: os nove
+      `*_WSReq` batem campo a campo com `onr_wsoficio.CAMPOS`).
+    - O elemento de entrada é `oRequest` (WSDL: `InsertTituloAT/oRequest` do
+      tipo `InsertTituloAT_WSReq`), o mesmo dos outros serviços.
     - O formato da data: o manual escreve «aaaa-mm-ddhh:mm:ss» e diz
-      string(19). Dez da data mais oito da hora são dezoito: o décimo nono é o
-      espaço que a extração do PDF comeu. Vai `AAAA-MM-DD HH:MM:SS`.
-    - O nome do elemento de entrada (`oRequest`, o dos outros oito serviços).
+      string(19); o WSDL só diz `string`. Dez da data mais oito da hora são
+      dezoito: o décimo nono é o espaço que a extração do PDF comeu. Vai
+      `AAAA-MM-DD HH:MM:SS` — e é a CHAMADA DE PROVA que confirma.
+    - No WSDL, `ValorDeposito` e `ValorEmolumentos` são `decimal` com
+      minOccurs=1, embora o manual os diga opcionais; não vão (o .NET os lê
+      como zero). A prova confirma também isso.
 """
 from __future__ import annotations
 
 import json
 import logging
 import re
+import time
+import unicodedata
 from typing import Any, Callable
 
 import onr_wsoficio as WS
@@ -119,6 +153,17 @@ CREATE INDEX IF NOT EXISTS ix_onr_at_eventos_fila
     ON onr_at_eventos(situacao, protocolo_id, data_status, id);
 """
 
+#: As colunas que nasceram depois da tabela (A008, 26/11/2026) — só
+#: `ALTER TABLE ADD COLUMN`, como em `onr_certidoes_auto.MIGRACOES`.
+#:   atrasado      1 = já estava na fila quando a rotina ganhou o poder de
+#:                 enviar (`travar_atrasados`): só sai com a liberação.
+#:   liberado_*    quem liberou o atrasado, e quando (ADMIN, auditado).
+#:   revisado_*    quem revisou a exigência, e quando (ADMIN/MANAGER).
+#:   espera        por que o pendente não subiu na última rodada (`ESPERAS`).
+MIGRACOES = (("atrasado", "INTEGER NOT NULL DEFAULT 0"), ("liberado_em", "TEXT"),
+             ("liberado_por", "TEXT"), ("revisado_em", "TEXT"), ("revisado_por", "TEXT"),
+             ("espera", "TEXT"))
+
 #: O evento da casa → o tipo de status do manual (3.2.1). Só os que têm fato
 #: gravado que os sustente — ver o cabeçalho.
 EVENTOS = {
@@ -158,12 +203,52 @@ TAMANHO = {"ApresentanteNome": 120, "ApresentanteEmail": 120, "InteressadoNome":
            "NaturezaTitulo": 150}
 
 
+#: A008 (26/11/2026). O texto CURTO da exigência («Nota de exigência nº N, de
+#: dd/mm/aaaa. Prazo: dd/mm/aaaa.»), sem revisão — pronto e DESLIGADO: muda a
+#: decisão do oficial de 26/10 (publicar a nota inteira), e o titular ainda
+#: não decidiu.
+CHAVE_TEXTO_CURTO = "onr_acompanhamento_exigencia_texto_curto"
+#: A008. O evento retroativo de prenotação para o título que nasceu antes da
+#: fila — pronto e DESLIGADO, até o titular decidir.
+CHAVE_RETROATIVO = "onr_acompanhamento_prenotacao_retroativa"
+#: A008. Quando a rotina ganhou o poder de enviar (o marco dos atrasados).
+CHAVE_AUTO_DESDE = "onr_acompanhamento_auto_desde"
+
+#: Frases de rascunho que não podem chegar ao apresentante (A007, § 3). A
+#: comparação é sem acento e sem caixa, e pega as variantes que a fila de
+#: 26/11/2026 mostrou («não consta do acervo recebido», «deve ser conferida
+#: pelo oficial», «por não constarem das fontes»).
+FRASES_DE_RASCUNHO = ("a conferir pelo oficial", "a conferência fica a cargo do oficial",
+                      "não constam das fontes")
+_RASCUNHO = (re.compile(r"\ba conferir pelo oficial"),
+             re.compile(r"\bdeve(m)? ser conferid[ao]s? pelo oficial"),
+             re.compile(r"\bconferencia fica a cargo do oficial"),
+             re.compile(r"\bnao consta(m|rem)? d[ao]s? (fontes|acervo)"))
+
+#: Por que o pendente não subiu. As duas primeiras não se gravam na linha:
+#: a marca dela (`atrasado`, `criado_em`) já diz.
+ESPERAS = {
+    "ATRASADO": "atrasado, aguardando a liberação do titular",
+    "CARENCIA": "na carência (a nota ainda pode ser excluída pela tela)",
+    "SELO": "esperando o selo do ato",
+    "DECISAO": "precisa de decisão (o título não tem o «prenotado» na fila)",
+    "BLOQUEIO": "exigência bloqueada",
+    "REVISAO": "exigência aguardando revisão",
+    "DADO": "esperando dado do cadastro",
+    "RECUSA": "recusado pelo ONR",
+}
+
+
 class AcompanhamentoError(ValueError):
     """Recusa com a frase pronta para o balcão."""
 
 
 def init_schema(con) -> None:
-    banco(con).escrever(SCHEMA)
+    bd = banco(con)
+    bd.escrever(SCHEMA)
+    for coluna, tipo in MIGRACOES:
+        if not bd.tem_coluna("onr_at_eventos", coluna):
+            bd.escrever(f"ALTER TABLE onr_at_eventos ADD COLUMN {coluna} {tipo}")
 
 
 # ------------------------------------------------------------- as datas
@@ -201,7 +286,8 @@ def _nao_antes_do_protocolo(data_status: str, p: dict) -> str:
 
 
 def anotar_na_fila(con, *, protocolo_id: int, evento: str, chave: str, data_status: str,
-               descricao: str, origem_tabela: str, origem_id: int, agora: str) -> bool:
+               descricao: str, origem_tabela: str, origem_id: int, agora: str,
+               atrasado: bool = False) -> bool:
     """Anota UM fato na fila. Idempotente pela `chave`: devolve False quando
     o fato já estava anotado. Roda dentro da transação do fato."""
     if evento not in EVENTOS:
@@ -209,11 +295,12 @@ def anotar_na_fila(con, *, protocolo_id: int, evento: str, chave: str, data_stat
     init_schema(con)
     linhas = banco(con).escrever(
         """INSERT INTO onr_at_eventos (protocolo_id, chave, evento, id_tipo_status,
-               data_status, descricao, origem_tabela, origem_id, situacao, criado_em)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'PENDENTE',%s)
+               data_status, descricao, origem_tabela, origem_id, situacao, criado_em,
+               atrasado)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'PENDENTE',%s,%s)
            ON CONFLICT (chave) DO NOTHING RETURNING id""",
         (int(protocolo_id), chave, evento, EVENTOS[evento], data_status,
-         descricao.strip(), origem_tabela, int(origem_id), agora))
+         descricao.strip(), origem_tabela, int(origem_id), agora, 1 if atrasado else 0))
     return bool(linhas)
 
 
@@ -229,7 +316,7 @@ def _sem_derrubar(nome: str, faz: Callable[[Any], bool], con) -> bool:
         return False
 
 
-def anotar_prenotacao(con, protocolo_id: int, *, agora: str) -> bool:
+def anotar_prenotacao(con, protocolo_id: int, *, agora: str, atrasado: bool = False) -> bool:
     """«Título prenotado» (4). Chamado na transação que grava a prenotação."""
     def faz(bd):
         p = _protocolo(bd, protocolo_id)
@@ -244,8 +331,32 @@ def anotar_prenotacao(con, protocolo_id: int, *, agora: str) -> bool:
             descricao=(f"Título prenotado sob o nº {p['numero']} do Livro 1 "
                        f"(Protocolo) em {_data_br(p['data_prenotacao'])}"
                        f"{', às ' + str(p['hora'])[:5] if p.get('hora') else ''}.{limite}"),
-            origem_tabela="ri_protocolos", origem_id=p["id"], agora=agora)
+            origem_tabela="ri_protocolos", origem_id=p["id"], agora=agora, atrasado=atrasado)
     return _sem_derrubar("prenotacao", faz, con)
+
+
+def anotar_prenotacao_retroativa(con, protocolo_id: int, *, agora: str) -> bool:
+    """O «prenotado» do título que nasceu ANTES da fila (A008, 26/11/2026).
+
+    PRONTO E DESLIGADO: só anota com `CHAVE_RETROATIVO` = 1 (decisão do
+    titular). O fato é a prenotação de verdade, com a data dela — a mesma
+    chave do gancho, e não um evento novo. Nasce ATRASADO quando a rotina já
+    tem o marco: é andamento velho, e sai na liberação do título, junto com o
+    resto dele. Não derruba nada: quem chama é o botão do ADMIN."""
+    bd = banco(con)
+    if _setting(bd, CHAVE_RETROATIVO, "0") != "1":
+        raise AcompanhamentoError("O evento retroativo de prenotação está desligado. É decisão "
+                                  "do titular: ligue a opção nesta tela antes.")
+    init_schema(con)
+    p = _protocolo(bd, protocolo_id)
+    if not p:
+        raise AcompanhamentoError("Essa prenotação não existe neste banco.")
+    if bd.valor("SELECT COUNT(*) FROM onr_at_eventos WHERE protocolo_id=%s AND evento='PRENOTADO'",
+                (int(protocolo_id),)):
+        raise AcompanhamentoError("Este título já tem o «prenotado» na fila (ou ele foi "
+                                  "descartado): nada a anotar.")
+    marco = bool(_setting(bd, CHAVE_AUTO_DESDE, ""))
+    return anotar_prenotacao(con, int(protocolo_id), agora=agora, atrasado=marco)
 
 
 def _exigencias(texto: Any) -> list[str]:
@@ -521,11 +632,15 @@ def ambiente(get_setting) -> str:
     return valor if valor in WS.BASE else AMBIENTE_DE_FABRICA
 
 
-def _pendentes(con, limite: int) -> list[dict]:
+def _pendentes(con, protocolo_id: int | None = None) -> list[dict]:
+    """A fila INTEIRA dos pendentes, na ordem de cada título. Sem `LIMIT`: o
+    limite da rodada conta CHAMADAS ao ONR, e não linhas lidas — senão cem
+    atrasados no topo da fila calariam para sempre o evento novo de baixo."""
     init_schema(con)
+    filtro, args = ("AND protocolo_id=%s", (int(protocolo_id),)) if protocolo_id else ("", ())
     return banco(con).ler(
-        """SELECT * FROM onr_at_eventos WHERE situacao='PENDENTE'
-            ORDER BY protocolo_id, data_status, id LIMIT %s""", (int(limite),))
+        f"""SELECT * FROM onr_at_eventos WHERE situacao='PENDENTE' {filtro}
+             ORDER BY protocolo_id, data_status, id LIMIT 5000""", args)
 
 
 def _id_do_onr(r: dict, campo: str) -> int | None:
@@ -535,8 +650,206 @@ def _id_do_onr(r: dict, campo: str) -> int | None:
         return None
 
 
+# ------------------------------------------------- as travas (A008, 26/11/2026)
+
+def _setting(bd, chave: str, padrao: str = "") -> str:
+    """A configuração da casa, lida na conexão que já está aberta. Banco sem
+    a tabela (o de teste do domínio) é o padrão de fábrica."""
+    if not bd.tem_tabela("settings"):
+        return padrao
+    linha = bd.um("SELECT value FROM settings WHERE key=%s", (chave,))
+    return str(linha["value"]).strip() if linha and linha["value"] is not None else padrao
+
+
+def texto_curto_ligado(bd) -> bool:
+    return _setting(bd, CHAVE_TEXTO_CURTO, "0") == "1"
+
+
+def _sem_acento(texto: Any) -> str:
+    nfkd = unicodedata.normalize("NFKD", str(texto or ""))
+    return " ".join("".join(c for c in nfkd if not unicodedata.combining(c)).lower().split())
+
+
+def bloqueio_da_exigencia(descricao: Any) -> str:
+    """'' quando a exigência pode subir; senão, o motivo, para a tela.
+
+    Duas coisas não vão ao apresentante (A007, § 3): a «nota» sem nenhuma
+    exigência no texto (só o cabeçalho, ou uma frase solta sem número) e o
+    rascunho que ficou na nota («a conferir pelo oficial»...)."""
+    texto = str(descricao or "")
+    if not any(re.match(r"^\s*\d+\.\s+\S", linha) for linha in texto.splitlines()):
+        return ("a nota não tem nenhuma exigência no texto — corrija a nota (ou exclua-a e "
+                "emita de novo) ou descarte este andamento com o motivo")
+    plano = _sem_acento(texto)
+    for padrao in _RASCUNHO:
+        achado = padrao.search(plano)
+        if achado:
+            return (f"o texto tem frase de rascunho («{achado.group(0)}») — iria ao "
+                    "apresentante. Corrija a nota (ou exclua-a e emita de novo) antes de "
+                    "mandar ao ONR")
+    return ""
+
+
+def descricao_curta(descricao: Any) -> str:
+    """O texto CURTO da exigência, tirado do próprio texto da fila (a mesma
+    fonte do texto inteiro): «Nota de exigência nº N, de dd/mm/aaaa. Prazo:
+    dd/mm/aaaa.». Só vai com `CHAVE_TEXTO_CURTO` ligada."""
+    texto = str(descricao or "")
+    m = re.search(r"Nota de exigência nº\s*(\S+), de (\d{2}/\d{2}/\d{4})", texto)
+    if not m:
+        return texto.splitlines()[0].strip() if texto.strip() else ""
+    prazo = re.search(r"Prazo da prenotação:\s*(\d{2}/\d{2}/\d{4})", texto)
+    return (f"Nota de exigência nº {m.group(1)}, de {m.group(2)}."
+            + (f" Prazo: {prazo.group(1)}." if prazo else ""))
+
+
+def texto_que_sobe(ev: dict, *, texto_curto: bool) -> str:
+    """O `DescricaoStatus` que vai ao ONR — o da fila, ou o curto da exigência."""
+    if ev.get("evento") == "EXIGENCIA" and texto_curto:
+        return descricao_curta(ev.get("descricao"))
+    return str(ev.get("descricao") or "")
+
+
+_REGISTRO = re.compile(r"ato (\S+) na matrícula (\S+?),")
+
+
+def chave_do_registro(ev: dict) -> tuple | None:
+    """(protocolo, ato, matrícula) do «Título registrado», tirada do texto que
+    o gancho escreveu (`anotar_registro`) — que fica certo mesmo quando o ato
+    foi desfeito e não existe mais no livro."""
+    if ev.get("evento") != "REGISTRADO":
+        return None
+    m = _REGISTRO.search(str(ev.get("descricao") or ""))
+    return (int(ev["protocolo_id"]), m.group(1), m.group(2)) if m else None
+
+
+def _registro_repetido(bd, ev: dict) -> str:
+    """O motivo, quando o mesmo (protocolo, ato, matrícula) já foi ENVIADO."""
+    chave = chave_do_registro(ev)
+    if not chave:
+        return ""
+    for outro in bd.ler("""SELECT id, protocolo_id, evento, descricao FROM onr_at_eventos
+                            WHERE protocolo_id=%s AND evento='REGISTRADO' AND situacao='ENVIADO'
+                              AND id<>%s""", (int(ev["protocolo_id"]), int(ev["id"]))):
+        if chave_do_registro(outro) == chave:
+            return (f"repete o andamento já enviado (ato {chave[1]} na matrícula {chave[2]}): "
+                    "um «registrado» por ato e matrícula")
+    return ""
+
+
+def _tem_prenotado(bd, protocolo_id: int) -> bool:
+    return bool(bd.valor("""SELECT COUNT(*) FROM onr_at_eventos WHERE protocolo_id=%s
+                             AND evento='PRENOTADO' AND situacao IN ('PENDENTE','ENVIADO')""",
+                         (int(protocolo_id),)))
+
+
+_EMAIL_NO_TEXTO = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_DATA_BR = r"(\d{2})/(\d{2})/(\d{4})"
+
+
+def _iso_de_br(m) -> str:
+    return f"{m.group(3)}-{m.group(2)}-{m.group(1)}"
+
+
+SEM_MEIO_DE_AVISAR = ("Sem e-mail nem telefone (com DDD) do apresentante: o ONR exige um meio "
+                      "de avisá-lo (erros 19 a 21). Corrija na ficha do protocolo.")
+
+
+def pendencias_do_cadastro(p: dict, ev: dict, *, titulo_no_onr: bool) -> list[str]:
+    """As frases de correção do que o cadastro tem de errado PARA ESTE envio.
+
+    Só o que o ONR não recusaria e que ficaria errado na Central (o nome com
+    o e-mail dentro, a data incoerente) ou que ele recusaria com um número
+    (sem meio de avisar). O título já cadastrado no ONR não manda o nome de
+    novo: aí só conta o texto do próprio andamento."""
+    frases = []
+    if not titulo_no_onr:
+        if _EMAIL_NO_TEXTO.search(str(p.get("apresentante") or "")):
+            frases.append("O nome do apresentante tem um e-mail dentro: tire o e-mail do nome "
+                          "na ficha do protocolo (o e-mail vai no campo próprio).")
+        if not str(p.get("email") or "").strip() and not telefone_do_onr(p.get("telefone")):
+            frases.append(SEM_MEIO_DE_AVISAR)
+        limite, inicio = str(p.get("data_limite") or "")[:10], str(p.get("data_prenotacao") or "")[:10]
+        if limite and inicio and limite < inicio:
+            frases.append(f"O prazo da prenotação ({_data_br(limite)}) é anterior à própria "
+                          f"prenotação ({_data_br(inicio)}): corrija o prazo na ficha do protocolo.")
+    if ev.get("evento") == "EXIGENCIA":
+        texto = str(ev.get("descricao") or "")
+        de = re.search(r"Nota de exigência nº\s*\S+, de " + _DATA_BR, texto)
+        prazo = re.search(r"Prazo da prenotação:\s*" + _DATA_BR, texto)
+        if de and prazo and _iso_de_br(prazo) < _iso_de_br(de):
+            frases.append(f"A nota diz prazo da prenotação {prazo.group(0).split(':')[-1].strip()}, "
+                          f"anterior à data da própria nota ({de.group(0).rsplit(' ', 1)[-1]}): "
+                          "exclua a nota e emita de novo com o prazo certo, ou descarte este "
+                          "andamento com o motivo.")
+    return frases
+
+
+def avaliar(bd, ev: dict, *, titulo: dict | None, p: dict | None = None,
+            texto_curto: bool = False, criado_ate: str | None = None,
+            forcar: bool = False, tem_prenotado: bool | None = None) -> dict:
+    """O que fazer com UM pendente agora. Só LÊ.
+
+    Devolve {acao: SOBE|ESPERA|ANULA, espera: chave de `ESPERAS`, frase,
+    texto (o que sobe), campos (do `InsertTituloAT`, se o título é novo)}.
+    `forcar` é a chamada de prova: o ADMIN escolheu este título, viu o que
+    sobe e confirmou — vale como a liberação do atrasado e dispensa a
+    carência; as outras travas continuam."""
+    def espera(chave: str, frase: str = "") -> dict:
+        return {"acao": "ESPERA", "espera": chave, "frase": frase or ESPERAS[chave],
+                "texto": "", "campos": None}
+
+    if int(ev.get("atrasado") or 0) and not ev.get("liberado_em") and not forcar:
+        return espera("ATRASADO")
+    if criado_ate and str(ev.get("criado_em") or "") > criado_ate and not forcar:
+        return espera("CARENCIA")
+    veredito, motivo = conferir_o_fato(bd, ev)
+    if veredito == "ANULA":
+        return {"acao": "ANULA", "espera": "", "frase": motivo, "texto": "", "campos": None}
+    if veredito == "ESPERA":
+        return espera("SELO", motivo)
+    repetido = _registro_repetido(bd, ev)
+    if repetido:
+        return {"acao": "ANULA", "espera": "", "frase": repetido, "texto": "", "campos": None}
+    pid = int(ev["protocolo_id"])
+    p = p if p is not None else _protocolo(bd, pid)
+    if titulo is None and ev["evento"] != "PRENOTADO":
+        if not (tem_prenotado if tem_prenotado is not None else _tem_prenotado(bd, pid)):
+            return espera("DECISAO", "Precisa de decisão: o título ainda não está no ONR e a "
+                                     "fila não tem o «prenotado» dele (a prenotação é anterior "
+                                     "à fila). Nada dele sobe até o titular decidir.")
+    if ev["evento"] == "EXIGENCIA":
+        bloqueio = bloqueio_da_exigencia(ev.get("descricao"))
+        if bloqueio:
+            return espera("BLOQUEIO", f"Exigência bloqueada: {bloqueio}.")
+        if not texto_curto and not ev.get("revisado_em"):
+            return espera("REVISAO", "Exigência aguardando revisão: o texto inteiro vai ao "
+                                     "apresentante, e só sobe depois de alguém marcar "
+                                     "«revisada».")
+    frases = pendencias_do_cadastro(p or {}, ev, titulo_no_onr=titulo is not None)
+    if frases:
+        return espera("DADO", "Esperando dado: " + " ".join(frases))
+    texto = texto_que_sobe(ev, texto_curto=texto_curto)
+    campos = None
+    if titulo is None:
+        try:
+            campos = campos_do_titulo(p, dict(ev, descricao=texto))
+        except AcompanhamentoError as erro:
+            return espera("DADO", f"Esperando dado: {erro}")
+    return {"acao": "SOBE", "espera": "", "frase": "", "texto": texto, "campos": campos}
+
+
+def _feito() -> dict:
+    return {"enviados": 0, "esperando": 0, "recusados": 0, "anulados": 0, "titulos_novos": 0,
+            "parou": "", "atrasados": 0, "em_carencia": 0, "por_espera": {},
+            "recusas": [], "no_limite": False, "tempo_esgotado": False}
+
+
 def enviar_pendentes(db, sessao_de: Callable[[], Any], *, amb: str, quem: str,
-                     agora: Callable[[], str], limite: int = 100) -> dict:
+                     agora: Callable[[], str], limite: int = 100,
+                     criado_ate: str | None = None, prazo_s: float | None = None,
+                     so_protocolo: int | None = None, forcar: bool = False,
+                     relogio: Callable[[], float] = time.monotonic) -> dict:
     """Manda a fila ao ONR, um evento por chamada, NA ORDEM de cada título.
 
     A REDE NUNCA DENTRO DE TRANSAÇÃO: lê a fila, chama o ONR, e só então abre
@@ -547,52 +860,65 @@ def enviar_pendentes(db, sessao_de: Callable[[], Any], *, amb: str, quem: str,
     Evento de um título que espera ou é recusado SEGURA os seguintes daquele
     título (o andamento sobe em ordem); os outros títulos seguem. Falha de
     transporte ou de login (que não é recusa do ONR sobre o evento) para a
-    rodada inteira: é da ligação, e não do evento."""
+    rodada inteira: é da ligação, e não do evento.
+
+    A008 (26/11/2026): cada evento passa por `avaliar` (as travas). `limite`
+    conta CHAMADAS ao ONR; `prazo_s` para a rodada antes do `timeout_s` do
+    processo; `criado_ate` é a carência (só a rotina a usa); `so_protocolo`
+    com `forcar` é a chamada de prova de um título."""
     with db.connect() as con:
-        fila = _pendentes(con, limite)
-    feito = {"enviados": 0, "esperando": 0, "recusados": 0, "anulados": 0,
-             "titulos_novos": 0, "parou": ""}
+        fila = _pendentes(con, so_protocolo)
+        curto = texto_curto_ligado(banco(con))
+    feito = _feito()
     if not fila:
         return feito
     sessao = None
     travados: set[int] = set()
+    inicio, tentados = relogio(), 0
     for ev in fila:
         pid = int(ev["protocolo_id"])
         if pid in travados:
             continue
+        if tentados >= limite:
+            feito["no_limite"] = True
+            break
+        if prazo_s is not None and relogio() - inicio > prazo_s:
+            feito["tempo_esgotado"] = True
+            break
         with db.connect() as con:
             bd = banco(con)
-            veredito, motivo = conferir_o_fato(bd, ev)
             p = _protocolo(bd, pid)
             titulo = bd.um("SELECT * FROM onr_at_titulos WHERE ambiente=%s AND protocolo_id=%s",
                            (amb, pid))
-        if veredito == "ANULA":
+            v = avaliar(bd, ev, titulo=titulo, p=p, texto_curto=curto, criado_ate=criado_ate,
+                        forcar=forcar)
+        if v["acao"] == "ANULA":
             with db.transaction() as con:
                 banco(con).escrever(
-                    """UPDATE onr_at_eventos SET situacao='ANULADO', motivo_fim=%s,
+                    """UPDATE onr_at_eventos SET situacao='ANULADO', motivo_fim=%s, espera=NULL,
                            ultima_tentativa_em=%s WHERE id=%s AND situacao='PENDENTE'""",
-                    (motivo, agora(), ev["id"]))
+                    (v["frase"], agora(), ev["id"]))
             feito["anulados"] += 1
             continue
-        if veredito == "ESPERA":
-            _anotar_erro(db, ev, motivo, agora(), conta=False)
-            feito["esperando"] += 1
+        if v["acao"] == "ESPERA":
+            chave = v["espera"]
+            feito["por_espera"][chave] = feito["por_espera"].get(chave, 0) + 1
+            if chave == "ATRASADO":
+                feito["atrasados"] += 1
+            elif chave == "CARENCIA":
+                feito["em_carencia"] += 1
+            else:
+                feito["esperando"] += 1
+                _anotar_erro(db, ev, v["frase"], agora(), conta=False, espera=chave)
             travados.add(pid)
             continue
-        try:
-            if titulo is None:
-                campos = campos_do_titulo(p, ev)
-        except AcompanhamentoError as erro:
-            _anotar_erro(db, ev, str(erro), agora(), conta=False)
-            feito["esperando"] += 1
-            travados.add(pid)
-            continue
+        tentados += 1
         try:
             if sessao is None:
                 sessao = sessao_de()
             if titulo is None:
                 try:
-                    r = sessao.cadastrar_titulo_no_acompanhamento(campos)
+                    r = sessao.cadastrar_titulo_no_acompanhamento(v["campos"])
                     id_titulo, como = _id_do_onr(r, "IDTitulo"), "CADASTRADO"
                     id_status = _id_do_onr(r, "IDStatus")
                 except WS.WSOficioRecusou as e:
@@ -613,36 +939,40 @@ def enviar_pendentes(db, sessao_de: Callable[[], Any], *, amb: str, quem: str,
                         (amb, pid, str(p["numero"]), id_titulo, como, agora(), quem))
                 feito["titulos_novos"] += 1
                 if como == "JA_EXISTIA":
-                    id_status = _mandar_status(sessao, id_titulo, ev)
+                    id_status = _mandar_status(sessao, id_titulo, ev, v["texto"])
             else:
-                id_status = _mandar_status(sessao, int(titulo["id_titulo_onr"]), ev)
+                id_status = _mandar_status(sessao, int(titulo["id_titulo_onr"]), ev, v["texto"])
         except WS.WSOficioRecusou as e:
-            _anotar_erro(db, ev, str(e), agora(), conta=True)
+            _anotar_erro(db, ev, str(e), agora(), conta=True, espera="RECUSA")
             feito["recusados"] += 1
+            feito["recusas"].append({"evento_id": ev["id"], "protocolo_id": pid,
+                                     "protocolo_numero": str((p or {}).get("numero") or ""),
+                                     "evento": ev["evento"], "codigo": str(e.codigo),
+                                     "texto": str(e.descricao or "")[:200]})
             travados.add(pid)
             continue
         except WS.WSOficioError as e:
-            _anotar_erro(db, ev, str(e), agora(), conta=True)
+            _anotar_erro(db, ev, str(e), agora(), conta=True, espera=None)
             feito["parou"] = str(e)
             break
         with db.transaction() as con:
             banco(con).escrever(
                 """UPDATE onr_at_eventos SET situacao='ENVIADO', ambiente=%s, id_status_onr=%s,
                        enviado_em=%s, enviado_por=%s, tentativas=tentativas+1,
-                       ultima_tentativa_em=%s, ultimo_erro=NULL
+                       ultima_tentativa_em=%s, ultimo_erro=NULL, espera=NULL
                     WHERE id=%s AND situacao='PENDENTE'""",
                 (amb, id_status, agora(), quem, agora(), ev["id"]))
         feito["enviados"] += 1
     return feito
 
 
-def _mandar_status(sessao, id_titulo: int, ev: dict) -> int | None:
+def _mandar_status(sessao, id_titulo: int, ev: dict, texto: str | None = None) -> int | None:
     """`InsertStatusAT`; o 501 («status já cadastrado») traz o IDStatus, e o
     evento conta como enviado — foi a rodada anterior que o mandou."""
     try:
         r = sessao.cadastrar_status_no_acompanhamento(
             id_titulo, tipo_status=int(ev["id_tipo_status"]),
-            data_status=ev["data_status"], descricao=ev["descricao"])
+            data_status=ev["data_status"], descricao=texto if texto is not None else ev["descricao"])
         return _id_do_onr(r, "IDStatus")
     except WS.WSOficioRecusou as e:
         if str(e.codigo) == "501" and _id_do_onr(e.resposta, "IDStatus"):
@@ -650,13 +980,232 @@ def _mandar_status(sessao, id_titulo: int, ev: dict) -> int | None:
         raise
 
 
-def _anotar_erro(db, ev: dict, erro: str, quando: str, *, conta: bool) -> None:
+def _anotar_erro(db, ev: dict, erro: str, quando: str, *, conta: bool,
+                 espera: str | None = None) -> None:
     with db.transaction() as con:
+        init_schema(con)
         banco(con).escrever(
-            f"""UPDATE onr_at_eventos SET ultimo_erro=%s, ultima_tentativa_em=%s
+            f"""UPDATE onr_at_eventos SET ultimo_erro=%s, ultima_tentativa_em=%s, espera=%s
                    {', tentativas=tentativas+1' if conta else ''}
                  WHERE id=%s AND situacao='PENDENTE'""",
-            (erro[:1000], quando, ev["id"]))
+            (erro[:1000], quando, espera, ev["id"]))
+
+
+# ------------------------------------------- a rotina e as decisões (A008)
+
+def travar_atrasados(db, *, agora: str) -> int:
+    """O MARCO DOS ATRASADOS — uma vez só, na primeira rodada em que a rotina
+    pode enviar: tudo o que já está PENDENTE vira ATRASADO e espera a
+    liberação do titular. Devolve quantos marcou (0 quando o marco já existe).
+
+    Não «ao ligar o processo» na tela, porque ligar sem «pode agir» só mede:
+    o que importa é o primeiro momento em que a rotina pode mandar sozinha."""
+    with db.transaction() as con:
+        init_schema(con)
+        bd = banco(con)
+        if _setting(bd, CHAVE_AUTO_DESDE, ""):
+            return 0
+        bd.escrever("""UPDATE onr_at_eventos SET atrasado=1
+                        WHERE situacao='PENDENTE' AND COALESCE(atrasado,0)=0""")
+        n = max(0, int(bd.linhas_afetadas or 0))
+        bd.escrever("""INSERT INTO settings(key, value) VALUES (%s, %s)
+                       ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
+                    (CHAVE_AUTO_DESDE, agora))
+    return n
+
+
+def liberar_atrasados(con, *, quem: str, agora: str, protocolo_id: int | None = None) -> int:
+    """O titular libera os atrasados — todos, ou os de um título. Quem chama
+    audita. Liberado não é enviado: a rotina o leva, com as outras travas."""
+    init_schema(con)
+    filtro, args = ("AND protocolo_id=%s", (int(protocolo_id),)) if protocolo_id else ("", ())
+    bd = banco(con)
+    bd.escrever(f"""UPDATE onr_at_eventos SET liberado_em=%s, liberado_por=%s
+                     WHERE situacao='PENDENTE' AND atrasado=1 AND liberado_em IS NULL {filtro}""",
+                (agora, quem, *args))
+    return max(0, int(bd.linhas_afetadas or 0))
+
+
+def marcar_revisada(con, evento_id: int, *, quem: str, agora: str) -> dict:
+    """«Revisada por … em …» — a exigência de texto inteiro pode subir.
+    Recusa a bloqueada: o rascunho e a nota vazia se corrigem na nota."""
+    init_schema(con)
+    bd = banco(con)
+    ev = bd.um("SELECT * FROM onr_at_eventos WHERE id=%s", (int(evento_id),))
+    if not ev or ev["evento"] != "EXIGENCIA":
+        raise AcompanhamentoError("Só a nota de exigência se marca como revisada.")
+    if ev["situacao"] != "PENDENTE":
+        raise AcompanhamentoError(f"Essa exigência já está {ev['situacao'].lower()}.")
+    if ev.get("revisado_em"):
+        raise AcompanhamentoError(f"Essa exigência já foi revisada por {ev.get('revisado_por')}.")
+    bloqueio = bloqueio_da_exigencia(ev["descricao"])
+    if bloqueio:
+        raise AcompanhamentoError(f"Não dá para marcar como revisada: {bloqueio}.")
+    if not (quem or "").strip():
+        raise AcompanhamentoError("Quem revisou precisa estar identificado.")
+    bd.escrever("""UPDATE onr_at_eventos SET revisado_em=%s, revisado_por=%s
+                    WHERE id=%s AND situacao='PENDENTE'""", (agora, quem.strip(), int(evento_id)))
+    return dict(ev)
+
+
+def precisam_de_decisao(con, *, amb: str) -> list[dict]:
+    """Os títulos com andamento pendente que ainda não estão no ONR e não têm
+    o «prenotado» na fila — os anteriores à fila. Nada deles sobe."""
+    init_schema(con)
+    return banco(con).ler(
+        """SELECT e.protocolo_id, p.numero AS protocolo_numero, p.data_prenotacao,
+                  COUNT(*) AS pendentes
+             FROM onr_at_eventos e LEFT JOIN ri_protocolos p ON p.id = e.protocolo_id
+            WHERE e.situacao='PENDENTE'
+              AND NOT EXISTS (SELECT 1 FROM onr_at_titulos t
+                               WHERE t.protocolo_id=e.protocolo_id AND t.ambiente=%s)
+              AND NOT EXISTS (SELECT 1 FROM onr_at_eventos x
+                               WHERE x.protocolo_id=e.protocolo_id AND x.evento='PRENOTADO'
+                                 AND x.situacao IN ('PENDENTE','ENVIADO'))
+            GROUP BY e.protocolo_id, p.numero, p.data_prenotacao
+            ORDER BY p.numero""", (amb,))
+
+
+def registros_repetidos(con) -> dict:
+    """Quantos «registrado» (pendentes e enviados) repetem (protocolo, ato,
+    matrícula) — a medida que a A007 pediu. Os que a conferência anularia
+    (ato desfeito ou cancelado) contam à parte: esses saem pela conferência,
+    e não pela regra da repetição."""
+    init_schema(con)
+    bd = banco(con)
+    linhas = bd.ler("""SELECT * FROM onr_at_eventos WHERE evento='REGISTRADO'
+                        AND situacao IN ('PENDENTE','ENVIADO') ORDER BY protocolo_id, data_status, id""")
+    vistos: set = set()
+    total, repetidos, anulariam = len(linhas), 0, 0
+    for ev in linhas:
+        if conferir_o_fato(bd, ev)[0] == "ANULA":
+            anulariam += 1
+            continue
+        chave = chave_do_registro(ev)
+        if chave in vistos:
+            repetidos += 1
+        elif chave:
+            vistos.add(chave)
+    return {"registrados": total, "repetidos": repetidos, "anulariam": anulariam,
+            "unicos": len(vistos)}
+
+
+def medir(con, *, amb: str, criado_ate: str | None = None,
+          acumulado_antes_de: str | None = None) -> dict:
+    """A fotografia da fila para a rotina e para a tela. Só LÊ.
+
+    Cada pendente passa por `avaliar` (sem o encadeamento por título da
+    rodada): quantos subiriam, quantos esperam e por quê, quantos estão na
+    fila desde antes de `acumulado_antes_de` (1 dia útil), as recusas que o
+    ONR deu e não foram resolvidas."""
+    init_schema(con)
+    bd = banco(con)
+    curto = texto_curto_ligado(bd)
+    protocolos: dict[int, dict | None] = {}
+    titulos: dict[int, dict | None] = {}
+    prenotados: dict[int, bool] = {}
+    out = {"pendentes": 0, "subiriam": 0, "por_espera": {}, "acumulando": 0,
+           "mais_antigo": None, "recusas": [], "esperando_dado": [], "texto_curto": curto}
+    for ev in _pendentes(con):
+        pid = int(ev["protocolo_id"])
+        if pid not in protocolos:
+            protocolos[pid] = _protocolo(bd, pid)
+            titulos[pid] = bd.um("SELECT * FROM onr_at_titulos WHERE ambiente=%s AND protocolo_id=%s",
+                                 (amb, pid))
+            prenotados[pid] = _tem_prenotado(bd, pid)
+        out["pendentes"] += 1
+        v = avaliar(bd, ev, titulo=titulos[pid], p=protocolos[pid], texto_curto=curto,
+                    criado_ate=criado_ate, tem_prenotado=prenotados[pid])
+        numero = str((protocolos[pid] or {}).get("numero") or pid)
+        if v["acao"] == "SOBE":
+            out["subiriam"] += 1
+        elif v["acao"] == "ESPERA":
+            out["por_espera"][v["espera"]] = out["por_espera"].get(v["espera"], 0) + 1
+            if v["espera"] == "DADO":
+                out["esperando_dado"].append({"protocolo_id": pid, "protocolo_numero": numero,
+                                              "evento": ev["evento"], "frase": v["frase"]})
+        if ev.get("espera") == "RECUSA":
+            out["recusas"].append({"protocolo_id": pid, "protocolo_numero": numero,
+                                   "evento": ev["evento"], "erro": str(ev.get("ultimo_erro") or "")})
+        atrasado = int(ev.get("atrasado") or 0) and not ev.get("liberado_em")
+        if (acumulado_antes_de and not atrasado and v["acao"] != "ANULA"
+                and str(ev.get("criado_em") or "") < acumulado_antes_de):
+            out["acumulando"] += 1
+        criado = str(ev.get("criado_em") or "")
+        if criado and (out["mais_antigo"] is None or criado < out["mais_antigo"]):
+            out["mais_antigo"] = criado
+    out["precisam_de_decisao"] = precisam_de_decisao(con, amb=amb)
+    return out
+
+
+def previa_da_prova(con, protocolo_id: int, *, amb: str) -> dict:
+    """A CHAMADA DE PROVA DE 1 TÍTULO — o que vai subir, exatamente. Só LÊ.
+
+    Percorre os pendentes do título na ordem em que subiriam, como a rodada
+    faria com `forcar` (o ADMIN escolheu o título: vale como liberação e
+    dispensa a carência). O primeiro que SOBE é o que a prova manda; um que
+    ESPERA antes dele segura a prova, com a frase. O que seria ANULADO sai
+    pela conferência, e a tela diz isso antes."""
+    init_schema(con)
+    bd = banco(con)
+    p = _protocolo(bd, protocolo_id)
+    if not p:
+        raise AcompanhamentoError("Essa prenotação não existe neste banco.")
+    titulo = bd.um("SELECT * FROM onr_at_titulos WHERE ambiente=%s AND protocolo_id=%s",
+                   (amb, int(protocolo_id)))
+    curto = texto_curto_ligado(bd)
+    anulados, vai, segura = [], None, None
+    for ev in _pendentes(con, protocolo_id):
+        v = avaliar(bd, ev, titulo=titulo, p=p, texto_curto=curto, forcar=True)
+        if v["acao"] == "ANULA":
+            anulados.append({"evento": ev, "motivo": v["frase"]})
+            continue
+        if v["acao"] == "ESPERA":
+            segura = {"evento": ev, "frase": v["frase"], "espera": v["espera"]}
+            break
+        metodo = "InsertTituloAT" if titulo is None else "InsertStatusAT"
+        if titulo is None:
+            campos = dict(v["campos"])
+        else:
+            campos = {"IDTitulo": int(titulo["id_titulo_onr"]),
+                      "IDTipoStatus": int(ev["id_tipo_status"]),
+                      "DataStatus": ev["data_status"], "DescricaoStatus": v["texto"]}
+        ordem = [c for c in WS.CAMPOS[metodo] if c != "Hash"]
+        vai = {"evento": ev, "metodo": metodo, "rotulo": rotulo_do_status(ev["id_tipo_status"]),
+               "campos": [(c, campos[c]) for c in ordem if campos.get(c) is not None],
+               "envelope": WS.envelope(metodo, dict(campos, Hash="(calculado na hora)"))
+                             .decode("utf-8")}
+        break
+    return {"protocolo": p, "titulo": titulo, "ambiente": amb, "vai": vai, "segura": segura,
+            "anulados": anulados, "texto_curto": curto}
+
+
+def enviar_prova(db, sessao_de: Callable[[], Any], *, amb: str, quem: str,
+                 agora: Callable[[], str], protocolo_id: int, evento_id: int) -> dict:
+    """Manda a chamada de prova: UM evento, o que a prévia mostrou. Se a fila
+    mudou entre a prévia e o clique (outro evento seria o primeiro), recusa."""
+    with db.connect() as con:
+        previa = previa_da_prova(con, protocolo_id, amb=amb)
+    if not previa["vai"]:
+        raise AcompanhamentoError(previa["segura"]["frase"] if previa["segura"]
+                                  else "Este título não tem nada a subir.")
+    if int(previa["vai"]["evento"]["id"]) != int(evento_id):
+        raise AcompanhamentoError("A fila deste título mudou desde a prévia: confira de novo o "
+                                  "que vai subir antes de confirmar. Nada foi enviado.")
+    feito = enviar_pendentes(db, sessao_de, amb=amb, quem=quem, agora=agora, limite=1,
+                             so_protocolo=int(protocolo_id), forcar=True)
+    feito["evento_id"] = int(evento_id)
+    return feito
+
+
+def opcao(con, chave: str, ligar: bool) -> None:
+    """As duas opções que o titular ainda não decidiu (texto curto da
+    exigência, prenotação retroativa). Quem chama é a tela do ADMIN, e audita."""
+    if chave not in (CHAVE_TEXTO_CURTO, CHAVE_RETROATIVO):
+        raise AcompanhamentoError("Essa opção não é do acompanhamento.")
+    banco(con).escrever("""INSERT INTO settings(key, value) VALUES (%s, %s)
+                           ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
+                        (chave, "1" if ligar else "0"))
 
 
 def descartar(con, evento_id: int, *, motivo: str, quem: str, agora: str) -> dict:
@@ -689,10 +1238,51 @@ def rotulo_do_status(id_tipo_status: Any) -> str:
         return str(id_tipo_status or "")
 
 
-def da_prenotacao(con, protocolo_id: int) -> dict:
+def _anotar_avaliacao(bd, eventos: list[dict], *, amb: str) -> None:
+    """Põe em cada PENDENTE o que a próxima rodada faria com ele, e por quê
+    (`avaliacao`: acao, espera, frase). Só LÊ; protocolo e título uma vez
+    por título."""
+    curto = texto_curto_ligado(bd)
+    cache: dict[int, tuple] = {}
+    for ev in eventos:
+        if ev.get("situacao") != "PENDENTE":
+            ev["avaliacao"] = None
+            continue
+        pid = int(ev["protocolo_id"])
+        if pid not in cache:
+            cache[pid] = (_protocolo(bd, pid),
+                          bd.um("SELECT * FROM onr_at_titulos WHERE ambiente=%s AND protocolo_id=%s",
+                                (amb, pid)),
+                          _tem_prenotado(bd, pid))
+        p, titulo, prenotado = cache[pid]
+        v = avaliar(bd, ev, titulo=titulo, p=p, texto_curto=curto, tem_prenotado=prenotado)
+        ev["avaliacao"] = {"acao": v["acao"], "espera": v["espera"], "frase": v["frase"],
+                           "rotulo": ESPERAS.get(v["espera"], "")}
+        ev["bloqueio"] = (bloqueio_da_exigencia(ev["descricao"])
+                          if ev["evento"] == "EXIGENCIA" else "")
+
+
+def _avaliar_sem_derrubar(bd, eventos: list[dict], *, amb: str) -> None:
+    """A trava na tela é informação: se a conta quebrar, a ficha e a fila abrem
+    sem ela (o SAVEPOINT segura a transação no PostgreSQL)."""
+    try:
+        with bd.ponto_de_retorno("onr_avaliacao") as b:
+            _anotar_avaliacao(b, eventos, amb=amb)
+    except Exception:                                   # noqa: BLE001
+        LOG.exception("Acompanhamento do ONR: não deu para avaliar a fila na tela")
+        for ev in eventos:
+            ev["avaliacao"], ev["bloqueio"] = None, ""
+
+
+def _amb_do_banco(bd) -> str:
+    return ambiente(lambda chave, padrao=None: _setting(bd, chave, padrao or ""))
+
+
+def da_prenotacao(con, protocolo_id: int, *, amb: str | None = None) -> dict:
     """O que foi (e o que vai ser) mandado ao ONR sobre UMA prenotação, e a
     marca dos enviados cujo fato deixou de existir — esses estão na Central
-    e não deviam: corrigir lá é decisão de quem responde pela casa."""
+    e não deviam: corrigir lá é decisão de quem responde pela casa. Desde a
+    A008, cada pendente traz a trava que o segura, com a frase de correção."""
     init_schema(con)
     bd = banco(con)
     eventos = bd.ler("""SELECT * FROM onr_at_eventos WHERE protocolo_id=%s
@@ -703,15 +1293,18 @@ def da_prenotacao(con, protocolo_id: int) -> dict:
         if ev["situacao"] == "ENVIADO":
             veredito, motivo = conferir_o_fato(bd, ev)
             ev["fato_sumiu"] = motivo if veredito == "ANULA" else ""
+    _avaliar_sem_derrubar(bd, eventos, amb=amb or _amb_do_banco(bd))
     titulos = bd.ler("SELECT * FROM onr_at_titulos WHERE protocolo_id=%s ORDER BY id",
                      (int(protocolo_id),))
     return {"eventos": eventos, "titulos": titulos}
 
 
-def painel(con, *, todos: bool = False, limite: int = 300) -> dict:
-    """A fila: pendentes primeiro; com `todos`, também o que já foi."""
+def painel(con, *, todos: bool = False, limite: int = 300, amb: str | None = None) -> dict:
+    """A fila: pendentes primeiro; com `todos`, também o que já foi. Desde a
+    A008, cada pendente traz a trava que o segura (`avaliacao`)."""
     init_schema(con)
     bd = banco(con)
+    amb = amb or _amb_do_banco(bd)
     filtro = "" if todos else "WHERE e.situacao='PENDENTE'"
     eventos = bd.ler(
         f"""SELECT e.*, p.numero AS protocolo_numero, p.apresentante
@@ -722,7 +1315,21 @@ def painel(con, *, todos: bool = False, limite: int = 300) -> dict:
              LIMIT %s""", (int(limite),))
     for ev in eventos:
         ev["rotulo"] = rotulo_do_status(ev["id_tipo_status"])
+    _avaliar_sem_derrubar(bd, eventos, amb=amb)
     contagem = {s: 0 for s in SITUACOES}
     for linha in bd.ler("SELECT situacao, COUNT(*) AS n FROM onr_at_eventos GROUP BY situacao"):
         contagem[linha["situacao"]] = int(linha["n"])
-    return {"eventos": eventos, "contagem": contagem}
+    atrasados = int(bd.valor("""SELECT COUNT(*) FROM onr_at_eventos WHERE situacao='PENDENTE'
+                                 AND atrasado=1 AND liberado_em IS NULL""") or 0)
+    try:
+        with bd.ponto_de_retorno("onr_repetidos"):
+            repetidos = registros_repetidos(con)
+    except Exception:                                   # noqa: BLE001 — medida da tela
+        LOG.exception("Acompanhamento do ONR: não deu para medir os registros repetidos")
+        repetidos = None
+    return {"eventos": eventos, "contagem": contagem, "atrasados": atrasados,
+            "repetidos": repetidos,
+            "auto_desde": _setting(bd, CHAVE_AUTO_DESDE, ""),
+            "texto_curto": texto_curto_ligado(bd),
+            "retroativo": _setting(bd, CHAVE_RETROATIVO, "0") == "1",
+            "precisam_de_decisao": precisam_de_decisao(con, amb=amb)}

@@ -575,7 +575,9 @@
           <td class="small" style="white-space:pre-line">{{ e.descricao }}</td>
           <td class="small">{{ e.situacao|lower }}{% if e.ambiente %} ({{ e.ambiente|lower }}){% endif %}</td>
           <td class="small">{% if e.fato_sumiu %}<strong class="danger">Enviado, mas {{ e.fato_sumiu }}: corrija no ONR.</strong>
-            {% else %}{{ e.ultimo_erro or e.motivo_fim or '' }}{% endif %}</td></tr>
+            {% elif e.avaliacao and e.avaliacao.acao != 'SOBE' %}<strong{% if e.avaliacao.espera in ('DADO', 'BLOQUEIO', 'DECISAO') %} class="danger"{% endif %} data-trava="{{ e.avaliacao.espera or 'ANULA' }}">{{ e.avaliacao.frase }}</strong>
+            {% else %}{{ e.ultimo_erro or e.motivo_fim or '' }}{% endif %}
+            {% if e.revisado_em %}<div class="muted">revisada por {{ e.revisado_por }} em {{ e.revisado_em[:16]|replace('T', ' ') }}</div>{% endif %}</td></tr>
     {% endfor %}
     </tbody>
   </table></div>

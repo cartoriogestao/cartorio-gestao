@@ -586,6 +586,7 @@ PAI: dict[str, tuple[str, str]] = {
     "onr_certidao_ficha": ("RI", "Certidões"),
     "onr_eprotocolo_ficha": ("RI", "Protocolo"),
     "onr_certidoes_certificado": ("RI", "Certidões"),
+    "onr_acompanhamento_prova": ("RI", "Certidões"),
     "ri_retificacao": ("RI", "Processos longos"),
     "ri_intimacao": ("RI", "Processos longos"),
     "ri_intimacao_nova": ("RI", "Processos longos"),

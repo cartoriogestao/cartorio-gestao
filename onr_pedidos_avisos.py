@@ -30,10 +30,12 @@ DE ONDE VÊM OS PEDIDOS, E O QUE É «SEM ANDAMENTO»
                 da casa (`onr_saec.ESPERAM_A_CASA`: em aberto, reaberto,
                 respondido pelo solicitante). Sem a credencial da API REST do
                 ONR, o SAEC fica «não medido», e o relato diz isso.
-    INTIMACAO   a e-Intimação do WSOfício: o transporte está na PR #531 (RI013
-                B0), e nenhuma leitura grava as intimações ainda. A fonte está
-                declarada (`FONTES`) e fica «não medida» até existir a tabela —
-                a casa não vê «zero» onde ninguém olhou.
+    INTIMACAO   a e-Intimação do WSOfício (`onr_intimacoes`, 27/11/2026, sobre o
+                transporte da PR #531). Parado: o pedido num status em que a vez
+                é da casa — a tabela de status só o ONR tem, e quem diz quais
+                contam é o titular, na tela da e-Intimação (até lá, a sugestão
+                pelo nome). Sem leitura boa recente, ou sem a tabela de status,
+                a fonte fica «não medida»: a casa não vê «zero» onde ninguém olhou.
 
 A ESCALA, POR PEDIDO, EM DIAS ÚTEIS
     O dia em que o pedido parou (ou o dia útil seguinte, se ele chegou no fim
@@ -368,10 +370,27 @@ def ler_saec(*, pasta=None, buscar: Callable[..., Any] | None = None) -> list[di
     return saec_da_resposta(paginas)
 
 
-def intimacoes_paradas(con) -> list[dict] | None:
-    """A e-Intimação. Nenhuma leitura grava as intimações ainda (o transporte
-    está na PR #531): a fonte fica «não medida» até a tabela existir."""
-    return None
+def intimacoes_paradas(con, leitor: Callable[[str, str], Any] | None = None, *,
+                       agora: datetime | None = None) -> list[dict] | None:
+    """Os pedidos de e-Intimação em que a vez é da casa (`onr_intimacoes`). Só LÊ.
+
+    None (não medida) sem leitura boa recente, ou sem saber quais status contam —
+    a regra mora em `onr_intimacoes.regra_dos_parados`."""
+    import onr_intimacoes as IN
+    if leitor is None or not banco(con).tem_tabela("onr_in_pedidos"):
+        return None
+    lista = IN.parados(con, IN.ambiente(leitor), leitor, agora=agora or datetime.now())
+    if lista is None:
+        return None
+    saida = []
+    for p in lista:
+        desde = _dia(p["desde"])
+        if desde is None:
+            continue
+        saida.append(_parado(INTIMACAO, p["id"], p["protocolo"] or p["id_pedido"],
+                             f"intimação — {str(p['nome_status']).lower()}",
+                             "onr_intimacao_ficha", desde))
+    return saida
 
 
 # ------------------------------------------------------------------ a rodada
@@ -465,10 +484,12 @@ def verificar_os_pedidos(db, *, agora: datetime, origem: str = ORIGEM_ROBO, past
         amb_ep = EP.ambiente(db.get_setting)
         for fonte, ler in ((CERTIDAO, lambda: certidoes_paradas(con, amb_cert)),
                            (EPROTOCOLO, lambda: eprotocolo_parados(con, amb_ep)),
-                           (INTIMACAO, lambda: intimacoes_paradas(con))):
+                           (INTIMACAO, lambda: intimacoes_paradas(con, db.get_setting,
+                                                                  agora=agora))):
             lista = ler()
             if lista is None:
-                nao_medidas[fonte] = ("a leitura das intimações ainda não existe (PR #531)"
+                nao_medidas[fonte] = ("sem leitura boa da e-Intimação nas últimas horas, ou sem "
+                                      "os status que contam como parados"
                                       if fonte == INTIMACAO else "a tabela da fonte não existe")
             else:
                 parados += lista
@@ -504,18 +525,31 @@ def relato(r: dict) -> str:
     return texto
 
 
+_DESCRICAO_DE_26_11 = (
+    "A cada 30 minutos nos dias úteis, das 8h às 18h: confere os pedidos de "
+    "certidão do ONR, os títulos do e-Protocolo e os atendimentos do SAEC sem "
+    "andamento e avisa a responsável (Configurações → Responsável pelos pedidos "
+    "do ONR; vazio, o ADMIN). No 1º dia útil, aviso simples na tela; do 2º em "
+    "diante, faixa vermelha em toda tela até o pedido andar. NÃO manda nada ao "
+    "ONR e não mexe no pedido; escreve só os avisos.")
+_DESCRICAO_DA_A005 = (
+    "A cada 30 minutos nos dias úteis, das 8h às 18h: confere os pedidos de "
+    "certidão do ONR, os títulos do e-Protocolo, os atendimentos do SAEC e os pedidos de "
+    "e-Intimação sem andamento e avisa a responsável (Configurações → Responsável pelos "
+    "pedidos do ONR; vazio, o ADMIN). No 1º dia útil, aviso simples na tela; do 2º em "
+    "diante, faixa vermelha em toda tela até o pedido andar. NÃO manda nada ao "
+    "ONR e não mexe no pedido; escreve só os avisos.")
+
 #: O processo da central de automação (`automacao_processos.MODULOS_COM_PROCESSOS`).
 CATALOGO = (
     {"codigo": CODIGO_DO_PROCESSO, "nome": "ONR — avisos dos pedidos parados (escrevente do RI)",
      "setor": "RI", "funcao": "onr_pedidos_avisos.rodada_dos_avisos", "robo_oficial": "RI",
      "timeout_s": 300,
      "agenda": {"dias": [0, 1, 2, 3, 4], "intervalo_min": 30, "janela": ["08:00", "18:00"]},
-     "descricao": "A cada 30 minutos nos dias úteis, das 8h às 18h: confere os pedidos de "
-                  "certidão do ONR, os títulos do e-Protocolo e os atendimentos do SAEC sem "
-                  "andamento e avisa a responsável (Configurações → Responsável pelos pedidos "
-                  "do ONR; vazio, o ADMIN). No 1º dia útil, aviso simples na tela; do 2º em "
-                  "diante, faixa vermelha em toda tela até o pedido andar. NÃO manda nada ao "
-                  "ONR e não mexe no pedido; escreve só os avisos."},
+     "descricao": _DESCRICAO_DA_A005,
+     # A descrição de 26/11 (sem a e-Intimação): `automacao.semear` troca só onde o
+     # cadastro ainda está com ela — o que o oficial escreveu fica.
+     "descricoes_antigas": (_DESCRICAO_DE_26_11,)},
 )
 
 

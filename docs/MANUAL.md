@@ -1872,6 +1872,13 @@ A prática de atos e o trabalho do balcão não entram: vão para as tarefas.
 - **Trabalho → Minha rotina** (todos, também o escrevente): o que a pessoa tem para hoje
   e o atrasado, como responsável ou suplente, com o mesmo **Como fazer** e o mesmo
   **Feito**, e embaixo toda a rotina dela com o próximo vencimento.
+- **Onde aparece** (no formulário do item): **Gestão** (o padrão) leva o item à
+  Checklist do dia e a «Minha rotina»; **Escrevente** tira o item da Checklist do dia e
+  o deixa só em «Minha rotina» do responsável e do suplente — por isso pede o
+  responsável. A Checklist diz quantos itens do escrevente ficaram fora dela. Se o
+  responsável e o suplente ficarem inativos, o item volta à Checklist, marcado «sem
+  ninguém ativo para fazer». A volta do item do escrevente muito atrasado à Checklist
+  existe, mas vem **desligada**.
 - Toda escrita vai à **Auditoria**: ROTINA_CRIADA, ROTINA_ALTERADA, ROTINA_DESATIVADA,
   ROTINA_REATIVADA e ROTINA_FEITA, com o código do item; a prova anexada vai como
   ROTINA_PROVA_ANEXADA, e o arquivo que não se guardou, como ROTINA_PROVA_FALHOU (o

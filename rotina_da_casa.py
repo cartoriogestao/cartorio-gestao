@@ -78,6 +78,27 @@ A CARGA EM LOTE (`importar`, `importar_e_auditar`)
     suplente chegam como LOGIN. Ou entra tudo, ou nada. `importar_e_auditar`
     abre a transação e grava a auditoria de cada item.
 
+PARA QUEM O ITEM APARECE — O DESTINO (A011, 27/11/2026)
+    «estes itens [...] aparecem na Checklist do dia da gestão, mas são
+    trabalho de escrevente» — o titular. Cada item tem um `destino`, no
+    espírito de `gestor_destino`, com os mesmos códigos:
+    TI_ADMIN    (o padrão, e o de todo item que já existia) aparece na
+                Checklist do dia da gestão e em «Minha rotina» de quem responde.
+    ESCREVENTE  aparece SÓ em «Minha rotina» do responsável e do suplente. Por
+                isso pede responsável: sem ele, ninguém o veria.
+    O destino é um campo do cadastro, e não o papel do responsável: fica à
+    vista e se edita na tela, não muda calado quando alguém troca de papel, e
+    vale também para o item cujo responsável é o gerente. Quem separa é
+    `na_checklist_da_gestao`, que só calcula: o item do escrevente que ficou
+    sem ninguém ativo para fazê-lo (responsável e suplente inativos) volta à
+    checklist, porque sumir com ele seria esconder o que ninguém faz.
+
+A VOLTA À GESTÃO DO MUITO ATRASADO (proposta, DESLIGADA)
+    `VOLTA_A_GESTAO_DIAS_UTEIS` (None: desligada). Ligada com N, o item do
+    escrevente cujo vencimento mais antigo sem registro passou há N dias úteis
+    ou mais volta à Checklist do dia, marcado «voltou à gestão». Ele continua
+    em «Minha rotina»: a volta é um aviso à gestão, e não uma troca de dono.
+
 SÓ DOMÍNIO
     Nada aqui conhece o Flask: a rota (`rotina_da_casa_web`) liga os fios e
     grava a auditoria. Erro de regra é `RotinaError`, com a frase pronta.
@@ -89,6 +110,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any, Collection, Iterable, Mapping
 
 import conformidade as CF
+import gestor_destino as GDS
 from bd_nativo import banco
 from ri_schema import eh_dia_util, ler_feriados_locais
 
@@ -149,6 +171,19 @@ JANELA_DIAS = 400
 #: Até quantos dias atrás se contam (e se marcam) os vencimentos sem registro.
 JANELA_DAS_FALTAS = 30
 
+#: PARA QUEM O ITEM APARECE (A011, 27/11/2026). Os códigos são os de
+#: `gestor_destino`: a mesma palavra quer dizer o mesmo lugar nas duas listas.
+TI_ADMIN, ESCREVENTE = GDS.TI_ADMIN, GDS.ESCREVENTE
+DESTINOS: tuple[tuple[str, str], ...] = (
+    (TI_ADMIN, "Gestão — Checklist do dia (TI e administração) e «Minha rotina»"),
+    (ESCREVENTE, "Escrevente — só em «Minha rotina» do responsável e do suplente"))
+ROTULO_DO_DESTINO = dict(DESTINOS)
+#: A VOLTA À GESTÃO (proposta, desligada): com N, o item do escrevente atrasado
+#: há N dias úteis ou mais volta à Checklist do dia. None (ou 0) desliga.
+VOLTA_A_GESTAO_DIAS_UTEIS: int | None = None
+#: Por que o item do escrevente voltou à checklist.
+VOLTOU_POR_ATRASO, VOLTOU_SEM_NINGUEM = "ATRASO", "SEM_NINGUEM"
+
 MOTIVO_MINIMO, MOTIVO_MAXIMO = 3, 300
 OBSERVACAO_MINIMA, OBSERVACAO_MAXIMA = 3, 1000
 TITULO_MAXIMO, TEXTO_MAXIMO = 200, 8000
@@ -163,7 +198,7 @@ _ATE_HORA = re.compile(r"^até (\d{1,2}):(\d{2})$", re.IGNORECASE)
 CAMPOS = ("codigo", "area", "titulo", "para_que", "como_fazer", "pronto_quando",
           "se_der_errado", "prova", "onde_endpoint", "onde_url", "base_legal",
           "periodicidade", "dias_semana", "dias_mes", "dia_util", "meses", "horario",
-          "responsavel_id", "suplente_id", "prioridade", "ordem")
+          "destino", "responsavel_id", "suplente_id", "prioridade", "ordem")
 #: O que a carga em lote aceita: os mesmos, com a pessoa pelo LOGIN.
 CAMPOS_DA_CARGA = tuple(c for c in CAMPOS if c not in ("responsavel_id", "suplente_id")) + (
     "responsavel", "suplente")
@@ -171,7 +206,8 @@ _TEXTOS_LIVRES = ("para_que", "pronto_quando", "se_der_errado", "prova", "base_l
 _PADRAO = {"para_que": "", "pronto_quando": "", "se_der_errado": "", "prova": "",
            "base_legal": "", "onde_endpoint": None, "onde_url": None, "dias_semana": None,
            "dias_mes": None, "dia_util": None, "meses": None, "horario": None,
-           "responsavel_id": None, "suplente_id": None, "prioridade": 2, "ordem": 100}
+           "destino": TI_ADMIN, "responsavel_id": None, "suplente_id": None, "prioridade": 2,
+           "ordem": 100}
 
 
 class RotinaError(ValueError):
@@ -202,6 +238,19 @@ def _util_a_partir(dia: date, feriados: set[date]) -> date:
     while not eh_dia_util(dia, feriados):
         dia += timedelta(days=1)
     return dia
+
+
+def dias_uteis_depois(de: date, ate: date, feriados: set[date] | None = None) -> int:
+    """Quantos dias úteis há depois de `de` até `ate`, inclusive. Só calcula.
+
+    O prazo de segunda visto na quarta: 2 (terça e quarta). No próprio dia, 0.
+    """
+    feriados = feriados or set()
+    de, ate = _dia(de), _dia(ate)
+    if de is None or ate is None or ate <= de:
+        return 0
+    return sum(1 for n in range(1, (ate - de).days + 1)
+               if eh_dia_util(de + timedelta(days=n), feriados))
 
 
 def _ultimo_dia_do_mes(ano: int, mes: int) -> int:
@@ -564,6 +613,14 @@ def normalizar(dados: Mapping) -> dict:
                             else "suplente", problemas)
     if n["responsavel_id"] and n["responsavel_id"] == n["suplente_id"]:
         problemas.append("O suplente é outra pessoa: quem cobre o responsável na falta dele.")
+    # A011: o destino vazio é o de sempre (a gestão); o do escrevente pede o responsável.
+    n["destino"] = _uma_linha(dados.get("destino")).upper() or TI_ADMIN
+    if n["destino"] not in ROTULO_DO_DESTINO:
+        problemas.append("Escolha onde a rotina aparece: " + "; ".join(
+            ROTULO_DO_DESTINO.values()) + ".")
+    elif n["destino"] == ESCREVENTE and not n["responsavel_id"]:
+        problemas.append("A rotina do escrevente sai da Checklist do dia e fica só em «Minha "
+                         "rotina» de quem responde por ela: escolha o responsável.")
     n["prioridade"] = _inteiro(dados.get("prioridade"), "prioridade", problemas, 2)
     if n["prioridade"] not in ROTULO_DA_PRIORIDADE:
         problemas.append("A prioridade é 1 (alta), 2 (normal) ou 3 (baixa).")
@@ -883,7 +940,8 @@ def importar_e_auditar(db, itens: list[dict], *, por: str, agente: str, a_mando_
         for codigo, rid in resultado[chave]:
             linha = linhas.get(rid) or {}
             detalhes = {"origem": origem, "codigo": codigo, "titulo": linha.get("titulo"),
-                        "area": linha.get("area"), "periodicidade": linha.get("periodicidade")}
+                        "area": linha.get("area"), "periodicidade": linha.get("periodicidade"),
+                        "destino": linha.get("destino")}
             if acao == "ROTINA_ALTERADA":
                 detalhes["campos"] = resultado["campos"].get(codigo, [])
             db.log(None, por, acao, TABELA, rid, detalhes, agente=agente, a_mando_de=a_mando_de)
@@ -961,6 +1019,9 @@ def _para_tela(r: Mapping) -> dict:
         "periodicidade": r["periodicidade"],
         "periodicidade_rotulo": ROTULO_DA_PERIODICIDADE.get(r["periodicidade"], r["periodicidade"]),
         "quando": descrever_quando(r), "horario": r["horario"] or "",
+        "destino": r.get("destino") or TI_ADMIN,
+        "destino_rotulo": ROTULO_DO_DESTINO.get(r.get("destino") or TI_ADMIN,
+                                                r.get("destino") or ""),
         "responsavel_id": r["responsavel_id"], "suplente_id": r["suplente_id"],
         "responsavel": r.get("responsavel_nome"), "suplente": r.get("suplente_nome"),
         "responsavel_ativo": bool(r.get("responsavel_ativo")) if r["responsavel_id"] else None,
@@ -991,6 +1052,11 @@ def do_dia(con, hoje: date | str, *, area: str | None = None,
     «todos»). `agora` decide o «até HH:MM» do dia (padrão: o relógio, quando
     `hoje` é hoje). No banco em que a tabela ainda não existe, a lista vem
     vazia — e o GET não a cria.
+
+    Vem TODO item, de qualquer `destino` (A011): quem separa o que a
+    Checklist do dia mostra é `na_checklist_da_gestao`. Para isso cada item
+    traz `dias_uteis_de_atraso` (do prazo mais antigo ainda sem registro até
+    hoje; 0 em dia) e `volta_a_gestao` (None aqui).
     """
     hoje = _dia(hoje) or date.today()
     agora = agora or datetime.now()
@@ -1037,13 +1103,18 @@ def do_dia(con, hoje: date | str, *, area: str | None = None,
             situacao = ATRASADO
         else:
             situacao = HOJE
+        # A011: há quantos dias úteis passou o prazo mais antigo ainda sem registro.
+        prazo_da_falta = dict(janela)
+        abertos = ([] if feito else [prazo]) + [prazo_da_falta[nom] for nom in faltas]
+        atraso_uteis = dias_uteis_depois(min(abertos), hoje, feriados) if abertos else 0
         marcaveis = [] if feito else [(nominal.isoformat(), f"{_dd_mm(nominal)} (deste vencimento)")]
         marcaveis += [(d.isoformat(), f"{_dd_mm(d)} (sem registro)") for d in reversed(faltas)]
         item = _para_tela(r)
         item.update(referencia=nominal.isoformat(), prazo=prazo.isoformat(), situacao=situacao,
                     feito=feito, dias_de_atraso=(hoje - prazo).days if situacao == ATRASADO else 0,
                     limite_hora=f"{limite:%H:%M}" if limite else None,
-                    passou_da_hora=passou_da_hora,
+                    passou_da_hora=passou_da_hora, dias_uteis_de_atraso=atraso_uteis,
+                    volta_a_gestao=None,
                     faltas=[d.isoformat() for d in faltas], n_sem_registro=len(faltas),
                     sem_registro_desde=faltas[0].isoformat() if faltas else None,
                     referencias_marcaveis=marcaveis)
@@ -1059,6 +1130,39 @@ def por_area(itens: list[dict]) -> dict[str, list[dict]]:
     for x in itens:
         grupos.setdefault(x["area"], []).append(x)
     return {a: grupos[a] for a, _ in AREAS if a in grupos}
+
+
+def _alguem_ativo(item: Mapping) -> bool:
+    """O responsável ou o suplente existe e está ativo? Só calcula."""
+    return any(item.get(campo) and bool(item.get(ativo, True))
+               for campo, ativo in (("responsavel_id", "responsavel_ativo"),
+                                    ("suplente_id", "suplente_ativo")))
+
+
+def na_checklist_da_gestao(itens: list[dict], *, volta_apos: int | None = None
+                           ) -> tuple[list[dict], list[dict]]:
+    """Separa os itens do dia (`do_dia`): (os da Checklist do dia, os só do escrevente).
+
+    Só calcula (A011). Vai à checklist o item de destino TI_ADMIN — e o do
+    escrevente que voltou à gestão, com `volta_a_gestao` dizendo por quê:
+    VOLTOU_SEM_NINGUEM quando nem o responsável nem o suplente estão ativos
+    (ninguém o veria), e VOLTOU_POR_ATRASO quando `volta_apos` (dias úteis;
+    None ou 0 desliga) está ligado e o atraso chegou lá. O que fica de fora
+    continua em «Minha rotina» de quem responde.
+    """
+    gestao, escrevente = [], []
+    for x in itens:
+        if (x.get("destino") or TI_ADMIN) != ESCREVENTE:
+            gestao.append(x)
+        elif not _alguem_ativo(x):
+            x["volta_a_gestao"] = VOLTOU_SEM_NINGUEM
+            gestao.append(x)
+        elif volta_apos and int(x.get("dias_uteis_de_atraso") or 0) >= int(volta_apos):
+            x["volta_a_gestao"] = VOLTOU_POR_ATRASO
+            gestao.append(x)
+        else:
+            escrevente.append(x)
+    return gestao, escrevente
 
 
 def marcar_feito(con, rotina_id: int, referencia: str, *, resultado: str, observacao: str,

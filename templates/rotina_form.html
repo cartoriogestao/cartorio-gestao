@@ -84,6 +84,12 @@
 
   <fieldset>
     <legend>Quem faz</legend>
+    <label>Onde aparece <small class="muted">— a gestão (TI e administração) confere na Checklist do dia; o trabalho do escrevente fica só com quem responde por ele</small>
+      <select name="destino" required>
+        {% for cod, rot in destinos %}<option value="{{ cod }}" {% if (v.destino or destino_padrao) == cod %}selected{% endif %}>{{ rot }}</option>{% endfor %}
+      </select></label>
+    <p class="small muted">«Escrevente»: o item sai da Checklist do dia da gestão e aparece só em «Minha rotina» do responsável e do suplente — por isso pede o responsável.
+    Se os dois ficarem inativos, ele volta à Checklist do dia, para alguém escolher outra pessoa.</p>
     <label>Responsável <small class="muted">— quem faz; o item aparece em «Minha rotina» dele</small>
       <select name="responsavel_id">
         <option value="">— ninguém ainda (só aparece na Checklist do dia) —</option>

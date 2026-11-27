@@ -609,7 +609,7 @@ def test_importar_e_auditar_grava_a_trilha_de_cada_item(cg_casa):
     criada, _, alterada = (json.loads(x["details"]) for x in linhas)
     assert criada == {"origem": "carga de ensaio", "codigo": "A_1",
                       "titulo": "Conferir a cópia de segurança da noite", "area": "TI",
-                      "periodicidade": "DIARIA"}
+                      "periodicidade": "DIARIA", "destino": "TI_ADMIN"}
     assert alterada["campos"] == ["titulo"] and alterada["titulo"] == "Outro título"
 
 

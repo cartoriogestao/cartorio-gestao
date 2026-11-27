@@ -1001,13 +1001,21 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                          ORDER BY id""",
                     [protocolo] + marcados)
             else:
-                linhas = banco(con).ler(
-                    """SELECT id, codigo_ato, quantidade, servico_codigo FROM cx_protocolo_atos
-                        WHERE protocolo_id=%s AND usado_em IS NULL
-                          AND codigo_ato IS NOT NULL
-                          AND TRIM(codigo_ato) <> ''
-                        ORDER BY id""",
-                    (protocolo,))
+                # A LINHA DIVIDIDA VAI UMA DE CADA VEZ (27/11/2026): sem
+                # marcação, o ato leva uma só das «N linhas de 1» de uma
+                # divisão; as linhas de sempre vêm todas, como antes.
+                import caixa_protocolo as CXP
+                bd = banco(con)
+                divisao = (f", {CXP.COLUNA_DA_DIVISAO}" if bd.tem_coluna(
+                    "cx_protocolo_atos", CXP.COLUNA_DA_DIVISAO) else "")
+                linhas = CXP.uma_de_cada_divisao(bd.ler(
+                    f"""SELECT id, codigo_ato, quantidade, servico_codigo{divisao}
+                          FROM cx_protocolo_atos
+                         WHERE protocolo_id=%s AND usado_em IS NULL
+                           AND codigo_ato IS NOT NULL
+                           AND TRIM(codigo_ato) <> ''
+                         ORDER BY id""",
+                    (protocolo,)))
             # HOTFIX 17/11/2026 (provisório): o que o devido do título já cobre
             # não vira selo do cancelamento/desistência.
             linhas = _sem_o_que_o_devido_ja_cobre(con, protocolo, linhas)
@@ -4593,14 +4601,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
                                    or request.form.get("protocolo_id"))
             itens_do_protocolo = []
             if numero_digitado(protocolo_escolhido) is not None:
-                itens_do_protocolo = banco(con).ler(
+                import caixa_protocolo as CXP
+                # Da divisão em linhas, só a primeira vem marcada (27/11/2026).
+                itens_do_protocolo = CXP.pre_marcar_uma_de_cada_divisao(con, banco(con).ler(
                     """SELECT id, codigo_ato, descricao, quantidade,
                               valor_total, servico_codigo
                          FROM cx_protocolo_atos
                         WHERE protocolo_id=%s AND usado_em IS NULL
                           AND codigo_ato IS NOT NULL AND TRIM(codigo_ato) <> ''
                         ORDER BY id""",
-                    (numero_digitado(protocolo_escolhido),))
+                    (numero_digitado(protocolo_escolhido),)))
             else:
                 protocolo_escolhido = None
             # OS AVISOS SAO LISTA, e nao um so: 255 dos 1.361 titulos do
@@ -10790,14 +10800,16 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
             itens_do_protocolo = []
             # o «²» e os 5.000 dígitos passavam pelo `isdigit()` (LD13)
             if numero_digitado(protocolo_escolhido) is not None:
-                itens_do_protocolo = banco(con).ler(
+                import caixa_protocolo as CXP
+                # Da divisão em linhas, só a primeira vem marcada (27/11/2026).
+                itens_do_protocolo = CXP.pre_marcar_uma_de_cada_divisao(con, banco(con).ler(
                     """SELECT id, codigo_ato, descricao, quantidade,
                               valor_total, servico_codigo
                          FROM cx_protocolo_atos
                         WHERE protocolo_id=%s AND usado_em IS NULL
                           AND codigo_ato IS NOT NULL AND TRIM(codigo_ato) <> ''
                         ORDER BY id""",
-                    (numero_digitado(protocolo_escolhido),))
+                    (numero_digitado(protocolo_escolhido),)))
             # NO RCPJ/RTD A PESSOA E O REQUERENTE — quem pediu o registro.
             fraudes = _fraudes_de(con, [
                 {"nome": registro["requerente_nome"],
@@ -15098,7 +15110,11 @@ def registrar_rotas(app, db, login_required, roles_required, audit,
         ligados: list[tuple[int, str, int]] = []
         with db.transaction() as con:
             bd = banco(con)
-            for it in CXP.itens_disponiveis(bd, protocolo):
+            disponiveis = CXP.itens_disponiveis(bd, protocolo)
+            if not marcados:
+                # Sem marcação, uma linha de cada divisão (27/11/2026).
+                disponiveis = CXP.uma_de_cada_divisao(disponiveis)
+            for it in disponiveis:
                 codigo = str(it["codigo_ato"] or "").strip()
                 if marcados and int(it["id"]) not in marcados:
                     continue

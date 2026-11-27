@@ -869,7 +869,7 @@
           <tbody>
           {% for i in itens_do_protocolo_caixa %}
           <tr>
-            <td><input type="checkbox" name="protocolo_item_id" value="{{ i.id }}" checked></td>
+            <td><input type="checkbox" name="protocolo_item_id" value="{{ i.id }}"{% if i.marcado is not defined or i.marcado %} checked{% endif %}></td>
             <td>{{ i.codigo_ato }}</td>
             <td><small>{{ i.descricao or '—' }}</small></td>
             <td><strong>{{ i.saldo if i.saldo is defined else i.quantidade }}</strong>

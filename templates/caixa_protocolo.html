@@ -603,6 +603,20 @@
           um registro para cada (item 16.31). Garantia de outra natureza é
           outro item, pelo valor cheio.</span></label>
       <label>Quantidade <input name="quantidade" value="1" size="3"></label>
+      {# «UMA LINHA COM N» OU «N LINHAS DE 1» (T023, 27/11/2026). A quantidade
+         quer dizer coisas diferentes conforme a atribuição: nas de folhas, é UM
+         ato com N folhas; no RI, N unidades do saldo. Quem sabe se são N atos é
+         o balcão, item a item. «Uma linha com N» vem marcada, para ninguém
+         mudar de hábito sem perceber; sem JavaScript a escolha aparece sempre,
+         e `separar_linhas.js` só a esconde enquanto a quantidade é 1. #}
+      <fieldset class="span2" data-separar style="border:0;padding:0;margin:0">
+        <legend class="small">Quantidade maior que 1</legend>
+        <label><input type="radio" name="separar" value="linha" checked>
+          Uma linha com <span data-separar-n>N</span>
+          <span class="small muted">(folhas de um ato só, ou várias unidades no RI)</span></label>
+        <label><input type="radio" name="separar" value="linhas">
+          <span data-separar-n>N</span> linhas de 1, uma para cada ato</label>
+      </fieldset>
       <div style="align-self:end"><button class="primary" name="acao" value="acrescentar">
         Acrescentar pela faixa</button></div>
     </form>

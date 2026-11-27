@@ -38,6 +38,7 @@ from __future__ import annotations
 # POSTGRESQL NATIVO DESDE O PILOTO DE 16/10/2026: o SQL deste módulo é o do
 # PostgreSQL e vai pelo `bd_nativo`, sem tradução. O `con` que as funções
 # recebem continua sendo o da rota.
+import re
 from datetime import date
 
 from bd_nativo import Banco, banco
@@ -829,6 +830,10 @@ CREATE TABLE IF NOT EXISTS cx_atendimento (
 )
 """
 
+#: As N linhas de 1 de uma divisão guardam aqui o id da primeira delas
+#: (`caixa_web`, «N linhas de 1, uma para cada ato»).
+COLUNA_DA_DIVISAO = "dividido_de"
+
 # O diferimento é do ITEM, e não do protocolo: um protocolo do Protesto pode
 # ter a certidão paga no balcão e o protesto «a posteriori» no mesmo papel.
 COLUNAS_DO_DIFERIMENTO = ("diferido_quem", "diferido_quando",
@@ -848,6 +853,11 @@ def init_cobertura_schema(con) -> None:
     for coluna in COLUNAS_DO_DIFERIMENTO:
         if not bd.tem_coluna("cx_protocolo_atos", coluna):
             bd.escrever(f"ALTER TABLE cx_protocolo_atos ADD COLUMN {coluna} TEXT")
+    # A ORIGEM DA LINHA DIVIDIDA (27/11/2026): as N linhas de 1 de uma divisão
+    # guardam o id da primeira delas. Vazia nas linhas de sempre e nas de «uma
+    # linha com N», que seguem exatamente como antes.
+    if not bd.tem_coluna("cx_protocolo_atos", COLUNA_DA_DIVISAO):
+        bd.escrever(f"ALTER TABLE cx_protocolo_atos ADD COLUMN {COLUNA_DA_DIVISAO} bigint")
 
 
 def _anotar_item_do_ato(bd: Banco, item, *, tabela: str, ato_id: int,
@@ -1125,6 +1135,171 @@ def subitem_da_faixa(codigo) -> str | None:
     if pai in CODIGOS_TJ_DE_FAIXA and faixa.isdigit():
         return pai
     return None
+
+
+# «N LINHAS DE 1, UMA PARA CADA ATO» — T023, pedido da operadora em 27/11/2026.
+#
+# O mesmo «item × N» quer dizer coisas diferentes conforme a atribuição: no RI
+# são N atos, cada um gastando uma unidade do saldo; nas atribuições de folhas
+# (RTD, RCPJ, Protesto, certidões) é UM ato com N folhas, e o primeiro ato
+# marca a linha inteira; na autenticação de cópia são N selos. Uma linha de
+# quantidade 1 funciona igual em todas as telas de lavrar, e por isso o balcão
+# passa a escolher, ao acrescentar, se quer «uma linha com N» (como sempre) ou
+# «N linhas de 1». NENHUMA REGRA MUDA: a escolha só acrescenta linhas.
+#
+# A DIVISÃO É RECUSADA quando mudaria o total ou contrariaria uma regra que já
+# existe, mesmo com o total igual. Na dúvida, não se divide (decisão do
+# titular): a recusa diz o porquê e manda lançar «uma linha com N».
+
+#: O máximo de linhas de uma divisão (decisão do titular, 27/11/2026).
+LIMITE_DE_LINHAS_DA_DIVISAO = 50
+
+_FOLHA_ACRESCIDA = ("é folha acrescida: a quantidade são as folhas de UMA "
+                    "certidão, e cada linha iria para um ato")
+
+#: Os itens em que a quantidade tem regra própria, com a regra que a divisão
+#: contrariaria. A lista das folhas acrescidas é a de
+#: `ato_selado.ITEM_DA_FOLHA_ACRESCIDA_DO_RI`, `notas_certidao.
+#: ITEM_FOLHA_ACRESCIDA` e `emolumentos.CODIGOS_ALIAS_CERTIDAO_RCPN` (14.5.2);
+#: o teste confere que ela não se desencontra delas.
+ITENS_QUE_NAO_SE_DIVIDEM: dict[str, str] = {
+    # Correção do oficial de 11/09/2026 (`atribuicoes_web.
+    # CODIGO_TJ_AUTENTICACAO_COPIA`): na autenticação, N no item já são N selos.
+    "13.18": ("é autenticação de cópia: nela a quantidade já são selos "
+              "(«13.18 × N» sai em N selos)"),
+    # Decisão do oficial de 19/11/2026 (`ato_selado.TIPOS_DO_RI_COM_DOIS_SELOS`):
+    # a certidão de ônus leva dois 16.24.4 num papel só, e o segundo só se cobre
+    # com o seu próprio item.
+    "16.24.4": ("é a certidão do RI: a de ônus leva dois 16.24.4 num papel só, "
+                "e o segundo se cobre com o próprio item"),
+    "16.24.4.1": _FOLHA_ACRESCIDA,
+    "16.24.2": _FOLHA_ACRESCIDA,
+    "13.12.3": _FOLHA_ACRESCIDA,
+    "14.5.2": _FOLHA_ACRESCIDA,
+}
+
+#: Os itens com teto («limitado ao valor máximo»), que a tabela importada do
+#: E-Ofício traz com a descrição cortada e por isso não se acham pelo texto.
+#: O 16.5 é o do loteamento (o do vídeo da operadora). O 16.45 é o registro de
+#: garantia, com o teto do art. 37 (`emolumentos.ITENS_DE_GARANTIA_REAL`).
+ITENS_COM_TETO = frozenset({"16.5", "16.45"})
+
+#: O teto escrito na descrição, quando ela vem inteira (sem acento).
+_TEXTO_DE_TETO = re.compile(r"\b(limitad[oa]s?|valor maximo|teto)\b")
+
+
+def _sem_acento(texto) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", str(texto or "").lower())
+                   if unicodedata.category(c) != "Mn")
+
+
+def por_que_nao_dividir(de_um: dict, de_n: dict, quantas: int) -> str | None:
+    """Por que este item NÃO se divide em `quantas` linhas de 1 — ou None,
+    quando pode. Só calcula.
+
+    `de_um` e `de_n` são o mesmo item calculado por `emolumentos.calcular_item`
+    com quantidade 1 e com quantidade `quantas`. A frase que volta completa
+    «Não dá para dividir: …» e é a que a tela mostra.
+    """
+    from caixa_schema import centavos
+    quantas = int(quantas or 0)
+    if quantas > LIMITE_DE_LINHAS_DA_DIVISAO:
+        return (f"a divisão vai até {LIMITE_DE_LINHAS_DA_DIVISAO} linhas, e "
+                f"pediu-se {quantas}")
+    codigo = str(de_n.get("codigo_tj") or de_um.get("codigo_tj") or "").strip()
+    regra = ITENS_QUE_NAO_SE_DIVIDEM.get(codigo)
+    if regra:
+        return f"o item {codigo} {regra}"
+    # O 16.31: a quantidade já foi multiplicada pelos imóveis, e a linha «de 1»
+    # sairia com a quantidade dos imóveis.
+    if int(de_n.get("imoveis") or 1) > 1:
+        return ("o item tem a garantia em mais de um imóvel (16.31): a quantidade "
+                "já é a dos imóveis")
+    # O 16.22.4.1 e os irmãos (base pela metade na 16.9) e as faixas do tribunal
+    # (16.45.x, 17.1.x, 17.4.x), que viram o item no selo.
+    if str(de_n.get("origem_valor") or "") not in ("TABELA", "FAIXA"):
+        return "o preço do item sai de outra faixa, pela metade da base"
+    if subitem_da_faixa(codigo) or codigo in CODIGOS_TJ_DE_FAIXA:
+        return (f"o item {codigo} é faixa de um item do tribunal, e a faixa vira "
+                "o item no selo")
+    if (codigo in ITENS_COM_TETO or codigo.rpartition(".")[0] in ITENS_COM_TETO
+            or de_n.get("acima_do_teto") or de_um.get("acima_do_teto")
+            or _TEXTO_DE_TETO.search(_sem_acento(de_n.get("descricao")))):
+        return "este item tem teto: dividido em linhas, o total mudaria"
+    if int(de_um.get("quantidade") or 0) != 1:
+        return "o item calculado para uma unidade não saiu com quantidade 1"
+    # A CONTA TEM DE FECHAR, fundo a fundo: N linhas de 1 somam o mesmo que
+    # uma linha com N. Item por faixa ou com base que não feche cai aqui.
+    for campo in ("emolumentos", "ferc", "fadep", "femp", "ferrfis", "total"):
+        if centavos(de_um.get(campo)) * quantas != centavos(de_n.get(campo)):
+            return ("este item tem teto ou faixa: dividido em linhas, o total "
+                    "mudaria")
+    return None
+
+
+def divisao_da_linha(linha) -> int | None:
+    """De que divisão a linha do protocolo veio, ou None. Só lê a linha.
+
+    None nas linhas de sempre, nas de «uma linha com N» e na linha lida sem a
+    coluna (banco montado à mão, consulta que não a pediu).
+    """
+    try:
+        valor = linha[COLUNA_DA_DIVISAO]
+    except (KeyError, IndexError, TypeError):
+        return None
+    return int(valor) if valor not in (None, "") else None
+
+
+def uma_de_cada_divisao(linhas) -> list:
+    """As linhas, com UMA SÓ de cada divisão: a primeira livre. Só filtra.
+
+    Decisão do titular em 27/11/2026: lavrado sem marcar, o ato leva uma linha
+    da divisão, e não todas. As linhas que não vieram de divisão passam todas,
+    como sempre. `linhas` vem na ordem do id, como todas as leituras do
+    protocolo.
+    """
+    vistas: set[int] = set()
+    saida = []
+    for linha in linhas:
+        grupo = divisao_da_linha(linha)
+        if grupo is not None:
+            if grupo in vistas:
+                continue
+            vistas.add(grupo)
+        saida.append(linha)
+    return saida
+
+
+def pre_marcar_uma_de_cada_divisao(con, linhas) -> list:
+    """As linhas da tela de lavrar, com `marcado` falso nas linhas da divisão
+    além da primeira. Só LÊ.
+
+    A linha que não veio de divisão sai como entrou — sem `marcado` se não o
+    tinha —, e a tela a marca como sempre. A primeira de cada divisão guarda o
+    `marcado` que tinha. Linha lida sem a coluna da divisão é procurada pelo id.
+    """
+    linhas = [dict(linha) for linha in linhas]
+    if not linhas:
+        return linhas
+    if not any(COLUNA_DA_DIVISAO in linha for linha in linhas):
+        bd = banco(con)
+        if not bd.tem_coluna("cx_protocolo_atos", COLUNA_DA_DIVISAO):
+            return linhas
+        ids = [int(linha["id"]) for linha in linhas]
+        lugares = ",".join(["%s"] * len(ids))
+        grupos = {int(r["id"]): r[COLUNA_DA_DIVISAO] for r in bd.ler(
+            f"""SELECT id, {COLUNA_DA_DIVISAO} FROM cx_protocolo_atos
+                 WHERE id IN ({lugares}) AND {COLUNA_DA_DIVISAO} IS NOT NULL""", ids)}
+    else:
+        grupos = {int(linha["id"]): linha.get(COLUNA_DA_DIVISAO) for linha in linhas}
+    ficam = {int(linha["id"]) for linha in uma_de_cada_divisao(
+        [{"id": linha["id"], COLUNA_DA_DIVISAO: grupos.get(int(linha["id"]))}
+         for linha in linhas])}
+    for linha in linhas:
+        if int(linha["id"]) not in ficam:
+            linha["marcado"] = False
+    return linhas
 
 
 def itens_para_o_selo(con, protocolo_id, codigo: str | None) -> list[dict]:

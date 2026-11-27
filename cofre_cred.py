@@ -80,7 +80,13 @@ PORTAL = "portal.cred"
 # Arquivo próprio, e não «painel.cred»: esse é o da chave que assina o retrato
 # do painel do gestor (PR #28), e um regravaria o segredo do outro.
 SENHAS = "senhas.cred"
-ARQUIVOS = (ROBOS, WHATSAPP, BACKUP, AVISOS, BANCO_INTER, PAINEL, PORTAL, SENHAS)
+# A SENHA DE CONSULTA DO TÍTULO NO ONR (27/11/2026, `onr_acompanhamento`): a
+# chave que cifra o «código verificador» que o apresentante usa no
+# Acompanhamento Registral Online. Arquivo próprio, e não «portal.cred»: a
+# senha do ONR vai a um terceiro, e a do portal da casa não pode ir junto.
+ONR_ACOMPANHAMENTO = "onr_acompanhamento.cred"
+ARQUIVOS = (ROBOS, WHATSAPP, BACKUP, AVISOS, BANCO_INTER, PAINEL, PORTAL, SENHAS,
+            ONR_ACOMPANHAMENTO)
 
 FORMATO = "cg-cofre-1"
 CODIFICACAO = "utf-8-sig"

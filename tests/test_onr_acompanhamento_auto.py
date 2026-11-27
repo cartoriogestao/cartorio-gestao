@@ -25,7 +25,7 @@ import onr_acompanhamento as A                                     # noqa: E402
 import onr_wsoficio as W                                           # noqa: E402
 from bd_nativo import banco                                        # noqa: E402
 from test_onr_acompanhamento import (AGORA, CERT, ONRDeMentira, _Db,  # noqa: E402,F401
-                                     _eventos, _revisar_as_exigencias, _soap, _token,
+                                     _cofre, _eventos, _revisar_as_exigencias, _soap, _token,
                                      con, pasta)
 
 #: A sessão de verdade, antes de qualquer `monkeypatch` (o ONR é o de mentira).

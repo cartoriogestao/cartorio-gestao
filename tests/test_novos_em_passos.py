@@ -203,7 +203,11 @@ def test_ficha_de_acervo_nao_tem_o_passo_do_proprietario():
 def test_a_barra_avisa_de_quem_ficou_vazio_por_estar_em_outro_passo():
     """O botão está à vista desde o primeiro passo: o que não é obrigatório pode ficar para trás."""
     assert "O proprietário ainda está vazio" in _nova()
-    assert "#form-do-ato:has([name=proprietario_nome]:placeholder-shown)" in _nova()
+    # T022 (26/11/2026): a ficha acrescenta o dono até o selo, e a barra diz isso.
+    assert ("Sem ele, a abertura não sela. Dá para cadastrá-lo depois, na ficha "
+            "(Identificação → Selar a abertura), até o selo da abertura.") in _nova()
+    assert "o painel Partes não o acrescenta depois" not in _nova()
+    assert "#form-do-ato:has([data-dono-primeiro] [name=proprietario_nome]:placeholder-shown)" in _nova()
     assert 'placeholder="nome completo de quem figura como dono na abertura"' in _nova()
     assert "O apresentante ainda está vazio" in _protesto()
     assert "#form-do-ato:valid:has([name=apresentante_nome]:placeholder-shown)" in _protesto()

@@ -744,6 +744,10 @@ liberação, que é decisão do oficial, a qualificação é manual.
 - **Matrícula aberta a partir de outra**: a abertura e a ficha avisam os ônus
   da origem que faltam transportar, e há o modelo de averbação de **transporte
   de ônus**.
+- **Abertura com vários proprietários**: no passo **Proprietário** da Nova
+  matrícula, **+ Acrescentar proprietário** abre um bloco por dono, cada um com
+  a sua fração (50%, 1/4); até o selo da abertura, a ficha também acrescenta
+  outro proprietário, e depois do selo só **Corrigir**, com motivo escrito.
 - **Retificação e usucapião**: a notificação se sela, e a prenotação e o
   protocolo ficam gravados nela.
 

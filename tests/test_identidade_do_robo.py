@@ -134,19 +134,35 @@ def test_quem_grava_sem_usuario_pelo_db_log_diz_quem_e():
     `a_mando_de=` não se cobra aqui: o evento do servidor (login recusado) não
     tem mandante, de propósito; a rotina sem mandante aparece na conferência."""
     achados = []
+    vistos = 0
     for rel, texto in _fontes():
         try:
             arvore = ast.parse(texto)
         except SyntaxError:
             continue
+        # O RAMO `except TypeError` é o do `log` antigo, sem os dois campos
+        # (o dos testes de mesa): ele repete a chamada sem `agente=` de
+        # propósito, e só roda quando o `log` de verdade não está ali.
+        reserva = {id(n) for h in ast.walk(arvore)
+                   if isinstance(h, ast.ExceptHandler) and isinstance(h.type, ast.Name)
+                   and h.type.id == "TypeError"
+                   for corpo in h.body for n in ast.walk(corpo)}
         for no in ast.walk(arvore):
-            if (isinstance(no, ast.Call) and isinstance(no.func, ast.Attribute)
-                    and no.func.attr == "log" and no.args
+            # `db.log(None, ...)` e também o `log = getattr(db, "log")` chamado
+            # direto, `log(None, ...)` — por ali a cobrança automática gravou
+            # 150 linhas sem identidade em novembro/2026.
+            nome = (no.func.attr if isinstance(getattr(no, "func", None), ast.Attribute)
+                    else getattr(getattr(no, "func", None), "id", None))
+            if (isinstance(no, ast.Call) and nome == "log" and no.args
                     and isinstance(no.args[0], ast.Constant) and no.args[0].value is None):
+                vistos += 1
+                if id(no) in reserva:
+                    continue
                 nomes = {k.arg for k in no.keywords}
                 tem_desembrulho = any(k.arg is None for k in no.keywords)
                 if not ("agente" in nomes or tem_desembrulho):
                     achados.append(f"{rel}:{no.lineno}")
+    assert vistos >= 5, "o varredor parou de achar as rotinas que gravam sem usuário"
     assert not achados, "db.log(None, ...) sem agente=: " + ", ".join(achados)
 
 

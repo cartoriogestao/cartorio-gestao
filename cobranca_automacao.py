@@ -62,11 +62,25 @@ CATALOGO = (
 )
 
 
-def _auditar(contexto, acao: str, cobranca_id: int, detalhes: dict) -> None:
-    """A mudança feita pela rodada entra em `audit_logs`, fora de transação."""
+#: Quem a auditoria diz que agiu, por processo. Rotina agendada age a mando do
+#: «responsável pelas rotinas automáticas» (docs/IDENTIDADE_DOS_ROBOS.md).
+AGENTE = "automação — cobrança no banco"
+AGENTE_DA_MAQUINA = "automação — cobrança na maquininha (vigília)"
+
+
+def _auditar(contexto, acao: str, cobranca_id: int, detalhes: dict, *,
+             agente: str = AGENTE) -> None:
+    """A mudança feita pela rodada entra em `audit_logs`, fora de transação.
+
+    DIZ QUEM AGIU E A MANDO DE QUEM (ordem do oficial, 26/10/2026). Sem os
+    dois campos, cada boleto atualizado contava como «sem identificação» na
+    conferência do gestor — 150 linhas em novembro/2026 — e a etapa 2 as
+    recusaria."""
+    import identidade_do_robo as IDR
     log = getattr(contexto.db, "log", None)
     if log is not None:
-        log(None, "automação", acao, "cb_cobrancas", int(cobranca_id), detalhes)
+        log(None, "automação", acao, "cb_cobrancas", int(cobranca_id), detalhes,
+            agente=agente, a_mando_de=IDR.PELO_RESPONSAVEL)
 
 
 def _esperando_o_balcao(contexto) -> list[dict]:
@@ -245,7 +259,7 @@ def vigiar_maquina(contexto, *, pausa=time.sleep, limite_s: int = VIGILIA_S,
             if nova != c["situacao"]:
                 mudaram.append((int(c["id"]), nova))
                 _auditar(contexto, "COBRANCA_ATUALIZADA_PELO_BANCO", int(c["id"]),
-                         {"situacao": nova})
+                         {"situacao": nova}, agente=AGENTE_DA_MAQUINA)
         if not recentes or relogio() >= fim:
             break
         pausa(passo_s)

@@ -213,7 +213,8 @@ def _elos_do_constrijud(db, agora=AGORA):
 
 @pytest.fixture
 def cadeia(casa):
-    """As três rodando: e-Protocolo às 10:15, Constrijud às 10:30, WSOfício às 08:30."""
+    """Os da cadeia rodando: e-Protocolo às 10:15, Constrijud às 10:30 (e o WSOfício às
+    08:30, que já não é da cadeia)."""
     db = casa["db"]
     _ligar(db, "RI_CONSTRIJUD")
     _ligar(db, "RI_WSOFICIO")
@@ -259,9 +260,13 @@ def test_o_constrijud_que_nao_rodou_acende(cadeia):
     assert _elos_do_constrijud(db, datetime(2026, 11, 26, 14, 31)) >= {"PROCESSO_NAO_RODOU"}
 
 
-def test_a_penhora_online_com_erro_acende(cadeia):
+def test_a_penhora_online_saiu_da_cadeia(cadeia):
+    """Desde 25/08/2026 a Penhora Online não recebe pedido novo, e a casa não
+    tem pedido de penhora aberto nela (consulta de 27/11/2026). O WSOfício
+    segue pelos ofícios; o erro dele não acende a faixa do Constrijud."""
+    assert "RI_WSOFICIO" not in {c for c, _, _ in CA.PROCESSOS[CA.CONSTRIJUD]}
     _rodada(cadeia["db"], "RI_WSOFICIO", f"{HOJE}T08:31:00", "ERRO", "Não deu para medir.")
-    assert _elos_do_constrijud(cadeia["db"]) == {"PROCESSO_COM_ERRO"}
+    assert _elos_do_constrijud(cadeia["db"]) == set()
 
 
 def test_a_leitura_do_eprotocolo_desligada_depois_de_rodar_acende(cadeia):

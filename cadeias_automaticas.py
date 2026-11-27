@@ -29,10 +29,15 @@ O QUE É UMA CADEIA
             no portal) continua como achado do gestor (`CENSEC_AUTOMATICO`).
     CONSTRIJUD  a leitura do e-Protocolo do ONR (por onde as ordens do
             Constrijud chegam, desde 25/05/2026), a conferência do Constrijud
-            (`RI_CONSTRIJUD`: leitura boa nas últimas 2 horas, CNN 320-AB) e a
-            contagem da Penhora Online no WSOfício, que o ONR mantém na
-            transição. Ordem de constrição esperando prenotação é TRABALHO do
-            escrevente do RI (tarefa), e não rotina parada.
+            (`RI_CONSTRIJUD`: leitura boa nas últimas 2 horas, CNN 320-AB).
+            Ordem de constrição esperando prenotação é TRABALHO do escrevente
+            do RI (tarefa), e não rotina parada.
+            A PENHORA ONLINE SAIU DA CADEIA em 27/11/2026 (A009): não aceita
+            pedido novo desde 25/08/2026 (aviso na entrada da plataforma), e a
+            consulta desta casa no WSOfício, de 01/01/2025 a 27/11/2026, achou
+            só pedidos de pessoa, todos respondidos, nenhum de penhora e nenhum
+            aberto. O `RI_WSOFICIO` segue ligado pelos ofícios; erro dele avisa
+            pela central (painel e tarefa), e não com o rótulo do Constrijud.
 
 QUEM VÊ
     A TI, o gestor (MANAGER) e o administrador (`QUEM_VE`). O escrevente não:
@@ -92,8 +97,7 @@ ROTULO_DA_CADEIA = {CNIB: "CNIB (indisponibilidade de bens)",
 #: rotina das minutas e no envio da CENSEC, o AVISO é «não terminou como
 #: devia» ou «está desligado»: aí a cadeia parou. Na situação da CENSEC o
 #: AVISO é ato impedido, trabalho de quem lavrou. No Constrijud, o AVISO dos
-#: três é trabalho (título a prenotar, ordem a prenotar, ofício ou penhora
-#: nova); a rotina parada é o ERRO — no `RI_CONSTRIJUD`, inclusive a leitura do
+#: dois é trabalho (título a prenotar, ordem a prenotar); a rotina parada é o ERRO — no `RI_CONSTRIJUD`, inclusive a leitura do
 #: e-Protocolo desligada ou sem leitura boa nas últimas 2 horas.
 PROCESSOS: dict[str, tuple[tuple[str, str, bool], ...]] = {
     CNIB: (("RI_CNIB", "a conferência das ordens da CNIB", False),
@@ -101,8 +105,7 @@ PROCESSOS: dict[str, tuple[tuple[str, str, bool], ...]] = {
     CENSEC: (("ROTINA_CENSEC_ENVIO", "o envio da madrugada à CENSEC", True),
              ("CASA_CENSEC", "a conferência da situação da CENSEC", False)),
     CONSTRIJUD: (("RI_ONR_EPROTOCOLO", "a leitura do e-Protocolo do ONR", False),
-                 ("RI_CONSTRIJUD", "a conferência do Constrijud", False),
-                 ("RI_WSOFICIO", "a contagem da Penhora Online (WSOfício)", False)),
+                 ("RI_CONSTRIJUD", "a conferência do Constrijud", False)),
 }
 
 

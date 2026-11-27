@@ -99,8 +99,17 @@ de volta na fila assim que o executor sai do ar; ela roda do começo quando a ch
 **IA tem prioridade quando estiver em uso** (campo `prioridade_ia` do pedido): com um modelo
 carregado no Ollama (`GET 127.0.0.1:11434/api/ps` com `models` não vazio), a posição é IA —
 por cima da agenda e do «Suíte sempre»; só «Suíte agora, por…» (modo com prazo) fica valendo.
-O Ollama descarrega o modelo após 30 min parado, e a chave volta sozinha. Enquanto a suíte em
-andamento termina, a VM roda em segundo plano (`taskpolicy -b` e `renice 10`): cede CPU e
+O Ollama descarrega o modelo após 30 min parado, e a chave volta sozinha.
+
+Com a prioridade ligada, o **app interrompe sozinho** a suíte em andamento (cancela no GitHub e a
+devolve à fila depois que o executor sai do ar), com uma carência: uma suíte que roda no executor
+há **25 a 45 min** está para terminar e é poupada; antes de 25 min, ou depois de 45 (travada no
+swap), é interrompida. O app consulta o GitHub no máximo uma vez por minuto e registra o que fez
+em `~/Library/Logs/ChaveDaSuite.log`. Isso só acontece **com o app aberto** (ele tem o `gh` do
+proprietário; o controlador root não tem credencial do GitHub, de propósito) — com o app
+fechado, a chave espera a suíte terminar.
+
+Enquanto a suíte em andamento termina, a VM roda em segundo plano (`taskpolicy -b` e `renice 10`): cede CPU e
 disco, mas não memória — essa só volta quando a VM desliga. Motivo (medido em 27/11/2026): com
 a VM ligada e o Qwen 8B carregado, o Mac de 36 GB foi para o swap e o Qwen caiu de 39 para
 ~1 token/s.

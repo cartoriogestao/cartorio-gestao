@@ -144,6 +144,7 @@ final class Chave: ObservableObject {
     func atualizar() {
         estado = lerEstado()
         pedido = lerPedido()
+        interromperSeAIaTemPrioridade()
     }
 
     func contarFila() async {
@@ -183,7 +184,8 @@ final class Chave: ObservableObject {
 
     /// Cancela a suíte em andamento no GitHub e a põe de novo na fila: o executor fica
     /// livre, a chave desliga a VM, e a suíte roda quando a chave voltar para «suíte».
-    func interromperSuite() async {
+    /// `automatico`: chamada pela prioridade da IA; poupa a suíte que está para terminar.
+    func interromperSuite(automatico: Bool = false) async {
         interrompendo = true
         defer { interrompendo = false }
         let (codigo, saida) = await rodar([GH, "run", "list", "-R", REPO, "-w", "suite", "-s", "in_progress",
@@ -191,16 +193,23 @@ final class Chave: ObservableObject {
         guard codigo == 0, let dados = saida.data(using: .utf8),
               let rodadas = try? JSONSerialization.jsonObject(with: dados) as? [[String: Any]] else {
             mensagem = "Não consegui falar com o GitHub (gh). Nada foi interrompido."
+            registrarNoDiario(mensagem)
             return
         }
         var prs: [String] = []
         for r in rodadas {
             guard let id = r["databaseId"] as? Int else { continue }
-            _ = await rodar([GH, "run", "cancel", String(id), "-R", REPO])
-            if let titulo = r["displayTitle"] as? String, let n = titulo.split(separator: "#").last {
-                prs.append(String(n).trimmingCharacters(in: .whitespaces))
+            let titulo = r["displayTitle"] as? String ?? "suite #?"
+            let pr = titulo.split(separator: "#").last.map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
+            if automatico, let minutos = await minutosRodando(id), !Chave.deveInterromper(minutos: minutos) {
+                mensagem = "A suíte #\(pr) roda há \(Int(minutos)) min e está para terminar: a IA espera por ela."
+                continue
             }
+            _ = await rodar([GH, "run", "cancel", String(id), "-R", REPO])
+            registrarNoDiario("\(automatico ? "prioridade da IA" : "pedido no menu"): cancelada a \(titulo) (rodada \(id))")
+            if !pr.isEmpty { prs.append(pr) }
         }
+        guard !prs.isEmpty else { return }
         mensagem = "Suíte cancelada; esperando o executor sair do ar…"
         // Só devolve à fila depois que o executor saiu: senão ele pegaria a rodada de volta.
         for _ in 0..<90 {
@@ -208,11 +217,51 @@ final class Chave: ObservableObject {
             atualizar()
             if let e = estado, !e.executor_ligado { break }
         }
-        for pr in prs where !pr.isEmpty {
+        for pr in prs {
             _ = await rodar([GH, "workflow", "run", "suite.yml", "-R", REPO, "-f", "pr=\(pr)"])
+            registrarNoDiario("PR #\(pr) devolvido à fila da suíte")
         }
-        mensagem = prs.isEmpty ? "" : "PR #\(prs.joined(separator: ", #")) voltou para a fila."
+        mensagem = "PR #\(prs.joined(separator: ", #")) voltou para a fila\(automatico ? " (a IA tem prioridade)" : "")."
         await contarFila()
+    }
+
+    /// A carência: uma suíte leva ~33 min. Entre 25 e 45 min ela está para terminar, e
+    /// interromper jogaria fora quase tudo; antes disso, ou depois (travada no swap), interrompe.
+    static func deveInterromper(minutos: Double) -> Bool { minutos < 25 || minutos > 45 }
+
+    /// Há quantos minutos o job da rodada começou no executor (não conta o tempo na fila).
+    func minutosRodando(_ id: Int) async -> Double? {
+        let (codigo, saida) = await rodar([GH, "run", "view", String(id), "-R", REPO, "--json", "jobs",
+                                           "-q", ".jobs[0].startedAt"])
+        let texto = saida.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard codigo == 0, let inicio = ISO8601DateFormatter().date(from: texto) else { return nil }
+        return Date().timeIntervalSince(inicio) / 60
+    }
+
+    /// Com a prioridade ligada e a IA em uso, a chave espera a suíte em andamento: o app a
+    /// interrompe sozinho (no máximo uma consulta ao GitHub por minuto). Só vale com o app aberto.
+    private var ultimaConsultaAutomatica = Date.distantPast
+    func interromperSeAIaTemPrioridade() {
+        guard pedido.prioridade_ia == true, !interrompendo, !controladorParado,
+              let e = estado, e.momento == "esperando", e.motivo == "IA em uso (prioridade)",
+              Date().timeIntervalSince(ultimaConsultaAutomatica) > 60 else { return }
+        ultimaConsultaAutomatica = Date()
+        Task { await interromperSuite(automatico: true) }
+    }
+}
+
+/// O diário do app: ~/Library/Logs/ChaveDaSuite.log (o que ele cancelou e devolveu à fila).
+func registrarNoDiario(_ texto: String) {
+    let caminho = (NSHomeDirectory() as NSString).appendingPathComponent("Library/Logs/ChaveDaSuite.log")
+    let f = DateFormatter()
+    f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+    let linha = f.string(from: Date()) + " " + texto + "\n"
+    if let h = FileHandle(forWritingAtPath: caminho) {
+        h.seekToEndOfFile()
+        h.write(Data(linha.utf8))
+        h.closeFile()
+    } else {
+        try? linha.write(toFile: caminho, atomically: true, encoding: .utf8)
     }
 }
 
@@ -272,7 +321,7 @@ struct Menu_: View {
         Toggle("Automático (agenda)", isOn: modo("auto"))
         Toggle("Suíte sempre", isOn: modo("suite"))
         Toggle("IA sempre", isOn: modo("ia"))
-        Toggle("IA tem prioridade quando estiver em uso", isOn: Binding(
+        Toggle("IA tem prioridade quando estiver em uso (interrompe a suíte)", isOn: Binding(
             get: { chave.pedido.prioridade_ia == true },
             set: { chave.mudar(prioridade: $0) }))
         Menu("IA agora, por…") {

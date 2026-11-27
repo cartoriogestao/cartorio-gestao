@@ -16,7 +16,9 @@
   ficou pronto, o que fazer se der errado e a prova que se guarda.</p>
   <p class="small muted">O que vence hoje ou está atrasado aparece na <a href="{{ url_for('gestor_checklist') }}#rotina">Checklist do dia</a>,
   no alto da área, e em <a href="{{ url_for('rotina_minha') }}">Minha rotina</a> do responsável e do suplente.
-  A prática de atos e o trabalho do balcão não entram aqui: vão para as tarefas dos escreventes.</p>
+  A prática de atos e o trabalho do balcão não entram aqui: vão para as tarefas dos escreventes.
+  A rotina marcada <strong>do escrevente</strong> não vai à Checklist do dia: fica só em «Minha rotina» do
+  responsável e do suplente. O destino se troca em «Editar».</p>
   <form method="get" action="{{ url_for('rotina_cadastro') }}" class="filtros">
     <label class="small">Buscar <input type="search" name="q" value="{{ busca }}" maxlength="100" placeholder="código, título ou passo"></label>
     <label class="small">Área

@@ -607,6 +607,7 @@ PAI: dict[str, tuple[str, str]] = {
     "onr_cobranca_nova": ("RI", "Centrais e obrigações"),
     "onr_cobranca_gerar": ("RI", "Centrais e obrigações"),
     "onr_cobranca_ficha": ("RI", "Centrais e obrigações"),
+    "onr_pedidos_avisos": ("RI", "Centrais e obrigações"),     # A005: pedidos do ONR parados
     "ri_onr_endereco": ("RI", "Centrais e obrigações"),
     "ri_onr_indicador": ("RI", "Centrais e obrigações"),
     "onr_ir_conferir": ("RI", "Centrais e obrigações"),

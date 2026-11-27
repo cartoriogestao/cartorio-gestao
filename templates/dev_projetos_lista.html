@@ -3,40 +3,79 @@
 {% block content %}
 {# O QUE NÃO CABE À GESTÃO (25/11/2026, T019): o projeto retirado na ficha sai
    desta lista e vai para «Ver os retirados», com quem, quando e o motivo, e o
-   botão «Devolver à lista». Nada se apaga. #}
-<p class="muted">Andamento técnico de integrações e homologações — separado de Ajuda → Problemas.</p>
+   botão «Devolver à lista». Nada se apaga.
+   FASES (26/11/2026, S006): a lista mostra o progresso das fases, a próxima, o
+   responsável, o prazo e a área; filtra por área e situação. «Novo projeto» e a
+   carga em lote ficam no fim. #}
+<p class="muted">Andamento técnico de integrações e homologações — separado de Ajuda → Problemas.
+O projeto que ainda não tem o resultado pleno anda em fases; cada fase se conclui com comprovante.</p>
 {% if retirados %}<p class="small"><a href="{{ url_for('dev_projetos_lista', ver='retirados') }}#retirados">Ver os retirados ({{ retirados|length }})</a>
   <span class="muted">— projetos que não cabem à gestão; não entram nesta lista nem na contagem.</span></p>{% endif %}
 <section class="panel dev-projetos-panel">
-  <div class="panel-head"><span>Projetos ({{ projetos|length }})</span></div>
+  <div class="panel-head"><span>Projetos ({{ projetos|length }}){% if projetos|length != total_na_lista %} <small class="muted">de {{ total_na_lista }}, pelo filtro</small>{% endif %}</span>
+    <a class="small" href="#novo-projeto">Novo projeto</a></div>
+  <form method="get" action="{{ url_for('dev_projetos_lista') }}" class="dev-projetos-filtros">
+    <label>Área
+      <select name="area">
+        <option value="">Todas</option>
+        {% for a in areas %}<option value="{{ a }}"{% if a == filtro_area %} selected{% endif %}>{{ a }}</option>{% endfor %}
+      </select></label>
+    <label>Situação
+      <select name="situacao">
+        <option value="">Todas</option>
+        {% for cod, rot in filtros_situacao %}<option value="{{ cod }}"{% if cod == filtro_situacao %} selected{% endif %}>{{ rot }}</option>{% endfor %}
+      </select></label>
+    <button type="submit">Filtrar</button>
+    {% if filtro_area or filtro_situacao %}<a href="{{ url_for('dev_projetos_lista') }}">Limpar o filtro</a>{% endif %}
+  </form>
+  <div class="table-wrap">
   <table class="table dev-projetos-table">
     <thead>
       <tr>
         <th>Título</th>
-        <th>Pendência</th>
+        <th>Progresso</th>
+        <th>Próxima fase</th>
+        <th>Responsável</th>
+        <th>Prazo</th>
+        <th>Área</th>
         <th>Status</th>
         <th>Atualizado</th>
       </tr>
     </thead>
     <tbody>
       {% for p in projetos %}
+      {% set g = p.progresso %}
       <tr>
         <td class="dev-projetos-titulo-cel">
+          {% if p.codigo %}<span class="dev-projetos-codigo">{{ p.codigo }}</span>{% endif %}
           <a href="{{ url_for('dev_projetos_detalhe', projeto_id=p.id) }}">{{ p.titulo }}</a>
+          {% if p.proximo_passo %}<div class="dev-projetos-pendencia-cel muted">Pendência: {{ p.proximo_passo[:120] }}{% if p.proximo_passo|length > 120 %}…{% endif %}</div>{% endif %}
         </td>
-        <td class="dev-projetos-pendencia-cel muted">
-          {% if p.proximo_passo %}
-          {{ p.proximo_passo[:120] }}{% if p.proximo_passo|length > 120 %}…{% endif %}
+        <td class="dev-projetos-progresso-cel">
+          {% if g.total %}
+          <div class="dev-projetos-barra" role="progressbar" aria-valuemin="0" aria-valuemax="{{ g.total }}" aria-valuenow="{{ g.feitas }}" aria-label="{{ g.feitas }} de {{ g.total }} fases"><span style="width: {{ g.percentual }}%"></span></div>
+          <small>{{ g.feitas }} de {{ g.total }} fases</small>
+          {% else %}<small class="muted">sem fases</small>{% endif %}
+        </td>
+        <td>
+          {% if g.proxima %}{{ g.proxima.titulo }}
+            <small class="muted">({{ situacao_da_fase.get(g.proxima.situacao, g.proxima.situacao)|lower }})</small>
+            {% if g.atrasadas %}<span class="badge critica">{{ g.atrasadas }} atrasada(s)</span>{% endif %}
+          {% elif g.pleno %}<span class="badge ok">resultado pleno</span>
           {% else %}—{% endif %}
         </td>
+        <td>{{ p.responsavel or '—' }}</td>
+        <td class="dev-projetos-atualizado-cel">{{ p.prazo_exibicao or '—' }}{% if p.prazo_atrasado %} <span class="badge critica">vencido</span>{% endif %}</td>
+        <td>{{ p.area or '—' }}</td>
         <td><span class="dev-projeto-status dev-projeto-status-{{ p.status_geral|lower }}">{{ status_rotulo.get(p.status_geral, p.status_geral) }}</span></td>
         <td class="muted dev-projetos-atualizado-cel">{{ p.atualizado_em_exibicao or '—' }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="4" class="muted">{% if retirados %}Nenhum projeto na lista da gestão fora os retirados.{% else %}Nenhum projeto cadastrado.{% endif %}</td></tr>
+      <tr><td colspan="8" class="muted">{% if filtro_area or filtro_situacao %}Nenhum projeto neste filtro.{% elif retirados %}Nenhum projeto na lista da gestão fora os retirados.{% else %}Nenhum projeto cadastrado.{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </section>
 {% if ver_retirados %}
 <section class="panel dev-projetos-panel" id="retirados">
@@ -66,4 +105,45 @@
   </table>
 </section>
 {% endif %}
+
+<section class="panel dev-projetos-panel" id="novo-projeto">
+  <details><summary>Novo projeto</summary>
+  <p class="small muted">Para o que ainda não tem o resultado pleno. Depois de cadastrar, a ficha abre para as fases.</p>
+  <form method="post" action="{{ url_for('dev_projetos_novo') }}" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="span2">Título (obrigatório)
+      <input type="text" name="titulo" required maxlength="200" placeholder="Ex.: PRJ-24 — Homologação da Central"></label>
+    <label>Código
+      <input type="text" name="codigo" maxlength="40" placeholder="Ex.: PRJ-24"></label>
+    <label>Área
+      <input type="text" name="area" maxlength="80" placeholder="Ex.: Protesto, RI, TI"></label>
+    <label>Responsável
+      <input type="text" name="responsavel" maxlength="120" placeholder="Login ou função"></label>
+    <label>Prazo
+      <input type="date" name="prazo"></label>
+    <label>Origem
+      <input type="text" name="origem" maxlength="120" placeholder="Agente ou tarefa de onde veio"></label>
+    <label class="span2">Resultado pleno
+      <textarea name="resultado_pleno" rows="3" maxlength="4000" placeholder="O que precisa ser verdade para o projeto estar pronto?"></textarea></label>
+    <button type="submit" class="button primary">Cadastrar projeto</button>
+  </form>
+  </details>
+</section>
+
+<section class="panel dev-projetos-panel" id="carga-em-lote">
+  <details><summary>Carga em lote (JSON)</summary>
+  <p class="small muted">Um projeto ou uma lista: <code>{codigo, titulo, area, responsavel, origem, resultado_pleno, prazo,
+  status_geral, proximo_passo, fases: [{ordem, titulo, criterio, situacao, aguardando_o_que, responsavel, prazo,
+  iniciada_em, concluida_em, observacao, comprovantes: [{tipo, descricao, referencia}]}], andamento: [{texto, criado_em, autor}]}</code>.
+  Acha o projeto pelo código ou pelo título exato; rodar de novo não duplica. Tudo ou nada; até {{ carga_maxima }} projetos.</p>
+  <form method="post" action="{{ url_for('dev_projetos_importar') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="block">Colar o JSON
+      <textarea name="carga" rows="6" spellcheck="false"></textarea></label>
+    <label>Ou o arquivo .json
+      <input type="file" name="arquivo" accept=".json,application/json"></label>
+    <button type="submit" class="button">Ler a carga</button>
+  </form>
+  </details>
+</section>
 {% endblock %}

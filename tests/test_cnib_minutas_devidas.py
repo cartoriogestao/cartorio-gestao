@@ -172,7 +172,11 @@ def test_a_primeira_rodada_grava_a_base_e_nao_cobra_os_conhecidos(casa):
     # a rodada seguinte, com a base, também não cobra
     r2 = AP.verificar_cnib(_ctx(casa, 0, r["estado"]))
     assert r2["situacao"] == SCH.OK and "nenhum caso novo" in r2["relato"]
-    assert "estado" not in r2  # a base não é regravada
+    # a base não é regravada: os conhecidos e a data ficam os da primeira rodada.
+    # (A006: o estado volta com a conta da devida sem minuta, para a faixa das cadeias.)
+    assert r2["estado"]["conhecidos"] == r["estado"]["conhecidos"]
+    assert r2["estado"]["base_em"] == r["estado"]["base_em"]
+    assert r2["estado"]["devidas_sem_minuta"] == 1
 
 
 def _caso_novo(casa, *, documento="00077777777", nome="NOVA DEVEDORA", protocolo="NOVA-1", dona=True):

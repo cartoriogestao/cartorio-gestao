@@ -989,6 +989,8 @@ INSERTS_DE_ANEXO = {
     "rc_leitura_documentos.py": "rc_assento", "malote_agente.py": "EXPEDIENTE",
     "gratuidade_comprovante.py": "SELO_GRATUIDADE",
     "onr_conformidade.py": "ONR_PENDENCIA",
+    # o comprovante de uma fase dos Projetos (S006), na ficha `dev_projetos_detalhe`
+    "dev_projetos.py": "DEV_PROJETO_COMPROVANTE",
     "selo_portal.py": "SELO_GRATUIDADE_CERTIDAO",
     "protesto_imagens.py": "PT_TITULO", "onr_certidoes.py": "ONR_CERTIDAO",
     "database.py": None,

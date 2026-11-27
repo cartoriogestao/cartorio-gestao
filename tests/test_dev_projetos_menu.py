@@ -88,7 +88,14 @@ def _rotas(pid: int) -> list[tuple[str, str, dict]]:
             ("GET", f"{base}/{pid}", {}),
             ("POST", f"{base}/{pid}/status", {"status_geral": DP.STATUS_PAUSADO}),
             ("POST", f"{base}/{pid}/proximo-passo", {"proximo_passo": "Conferir com o oficial"}),
-            ("POST", f"{base}/{pid}/andamento", {"texto": "Andamento de teste"})]
+            ("POST", f"{base}/{pid}/andamento", {"texto": "Andamento de teste"}),
+            # S006: cadastro, edição, fases, comprovantes e a carga em lote
+            ("POST", f"{base}/novo", {"titulo": "Projeto novo de teste"}),
+            ("POST", f"{base}/importar", {"carga": '{"titulo": "Projeto da carga de teste"}'}),
+            ("POST", f"{base}/{pid}/editar", {"area": "Área de teste"}),
+            ("POST", f"{base}/{pid}/fases/nova", {"titulo": "Fase de teste"}),
+            ("POST", f"{base}/{pid}/comprovantes", {"tipo": "TEXTO", "descricao": "Prova de teste",
+                                                    "referencia": ""})]
 
 
 @pytest.mark.parametrize("papel", ENTRAM)
@@ -104,6 +111,12 @@ def test_admin_e_gerente_abrem_e_gravam(cg_casa, papel):
     assert projeto["status_geral"] == DP.STATUS_PAUSADO
     assert projeto["proximo_passo"] == "Conferir com o oficial"
     assert any(a["texto"] == "Andamento de teste" for a in andamentos)
+    with cg_casa["db"].transaction() as con:
+        assert projeto["area"] == "Área de teste"
+        assert [f["titulo"] for f in DP.listar_fases(con, pid)] == ["Fase de teste"]
+        assert [c["descricao"] for c in DP.listar_comprovantes(con, pid)] == ["Prova de teste"]
+        titulos = {p["titulo"] for p in DP.listar_projetos(con)}
+    assert {"Projeto novo de teste", "Projeto da carga de teste"} <= titulos
 
 
 @pytest.mark.parametrize("papel", NAO_ENTRAM)
@@ -115,3 +128,5 @@ def test_balcao_e_auditor_recebem_403(cg_casa, papel):
         assert r.status_code == 403, (papel, url, r.status_code)
     with cg_casa["db"].transaction() as con:
         assert not any(a["texto"] == "Andamento de teste" for a in DP.listar_andamento(con, pid))
+        assert DP.listar_fases(con, pid) == [] and DP.listar_comprovantes(con, pid) == []
+        assert "Projeto novo de teste" not in {p["titulo"] for p in DP.listar_projetos(con)}

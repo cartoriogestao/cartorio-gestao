@@ -12,7 +12,7 @@
     dia [...] sem lidar com debito passado, que cabe ao agente de compliance e
     tarefas aos escreventes» — o oficial, 25/11/2026 (G007, segunda ordem)
 
-OS TRÊS LUGARES
+OS QUATRO LUGARES
     TI_ADMIN    a Checklist do dia (`gestor_checklist`). O que a TI ou o
                 administrador resolvem em lote, por mudança no sistema, por IA
                 ou por rotina geral: as cargas das centrais em dia (SIRC, CRC,
@@ -30,6 +30,10 @@ OS TRÊS LUGARES
                 também não vai a Projetos (que só guarda o que destrava a
                 rotina). Até a segunda ordem do G007 este destino se chamava
                 PROJETO.
+    AVISO       a rotina que o sistema faz sozinho (A006, 26/11/2026: o CNIB).
+                O achado não entra na lista: a faixa das cadeias automáticas
+                (`cadeias_automaticas`) avisa a TI, o gestor e o administrador
+                quando um elo para, e com tudo funcionando ninguém confere à mão.
 
 UMA TABELA SÓ, E ELA NÃO MEXE NA COR
     `DESTINO` é o único lugar que diz o destino de uma regra. Ele muda o que a
@@ -60,11 +64,16 @@ from __future__ import annotations
 from bd_nativo import banco
 
 TI_ADMIN, ESCREVENTE, COMPLIANCE = "TI_ADMIN", "ESCREVENTE", "COMPLIANCE"
-DESTINOS = (TI_ADMIN, ESCREVENTE, COMPLIANCE)
+#: A006 (26/11/2026): a rotina que o sistema faz sozinho. O achado não entra na
+#: lista; quem avisa é a faixa das cadeias automáticas (`cadeias_automaticas`),
+#: e só quando um elo para.
+AVISO = "AVISO"
+DESTINOS = (TI_ADMIN, ESCREVENTE, COMPLIANCE, AVISO)
 ROTULO_DO_DESTINO = {
     TI_ADMIN: "TI e administração (checklist do dia)",
     ESCREVENTE: "Escreventes (tarefa no processo)",
     COMPLIANCE: "Débito passado (agente de compliance)",
+    AVISO: "Rotina automática (aviso na tela quando para)",
 }
 
 #: Os motivos que se repetem, para a tabela caber na tela.
@@ -79,6 +88,8 @@ _CAIXA = "dinheiro contado no balcão: quem fechou o caixa"
 _DIGI = "digitalização: só quem está no cartório (ordem de 25/11/2026)"
 _TEXTO = "texto do ato lavrado: retificação por quem qualifica"
 _PASSIVO = "débito passado (acervo de antes do corte ou carga inicial): agente de compliance"
+_AUTOMATICA = ("rotina automática: a faixa avisa a TI, o gestor e o administrador quando um "
+               "elo para (A006)")
 
 #: A TABELA: regra → (destino, motivo). Uma linha por regra do gestor.
 DESTINO: dict[str, tuple[str, str]] = {
@@ -116,7 +127,7 @@ DESTINO: dict[str, tuple[str, str]] = {
     "DISCO": (TI_ADMIN, _INFRA),
     "PASTA_DO_BANCO": (TI_ADMIN, _INFRA),
     "DADO_DE_TESTE": (TI_ADMIN, _INFRA),
-    "CNIB_PARADO": (TI_ADMIN, _INFRA),
+    "CNIB_PARADO": (AVISO, _AUTOMATICA),
     "CORRENTE_RI": (TI_ADMIN, _INFRA),
     "IDENTIDADE_DOS_ROBOS": (TI_ADMIN, _INFRA),
     "RCPN_AGENTE_PARADO": (TI_ADMIN, _INFRA),
@@ -257,7 +268,7 @@ def fora_da_checklist(achados: dict[str, list[dict]],
     """O que saiu da checklist, por destino e regra, com a tarefa que o leva. Só calcula.
 
     `achados` é o de `gestor_checklist.achados_por_area` (cada achado com
-    `destino`). Devolve `{ESCREVENTE: [...], COMPLIANCE: [...]}`, uma linha por
+    `destino`). Devolve `{ESCREVENTE: [...], COMPLIANCE: [...], AVISO: [...]}`, uma linha por
     regra e área: quantos, quantos fazem a cor, e as tarefas abertas da regra
     (`tarefas=None` quer dizer «não deu para ler as tarefas», e a linha diz
     isso em vez de «sem tarefa»).
@@ -277,7 +288,7 @@ def fora_da_checklist(achados: dict[str, list[dict]],
                 "tarefas": None if tarefas is None else tarefas.get(a["regra"], [])})
             linha["n"] += 1
             linha["fazem_a_cor"] += 1 if a.get("faz_a_cor") else 0
-    saida: dict[str, list[dict]] = {ESCREVENTE: [], COMPLIANCE: []}
+    saida: dict[str, list[dict]] = {ESCREVENTE: [], COMPLIANCE: [], AVISO: []}
     for (d, _, _), linha in sorted(linhas.items(), key=lambda kv: (kv[0][0], -kv[1]["n"],
                                                                      kv[0][1], kv[0][2])):
         saida[d].append(linha)

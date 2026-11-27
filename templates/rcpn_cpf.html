@@ -126,6 +126,9 @@
   .cg-cpf-lista-topo>h2{margin:10px 0 4px}
   details[id^=cpf-assento-] form>p{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px 12px}
   details[id^=cpf-assento-] form>p>label{flex:0 1 22rem}
+  /* O número longo (a matrícula tem 32 dígitos sem espaço) quebra dentro da célula: com a letra a 150%
+     na tela larga, em duas colunas, ele passava da área e empurrava a página (26/11/2026). */
+  .cg-cpf-dados code{overflow-wrap:anywhere}
   @media(min-width:1600px){
     .cg-cpf-dados tbody{display:block;column-count:2;column-gap:28px}
     .cg-cpf-dados tr{display:grid;grid-template-columns:13rem minmax(0,1fr) 6rem;break-inside:avoid}

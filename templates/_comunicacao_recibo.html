@@ -1,0 +1,13 @@
+{#- O «vista» da minha última mensagem (✓ enviada, ✓✓ vista). Trocado pelo script a cada 4 s. -#}
+{%- if recibo -%}
+<p class="cm-recibo{% if recibo.viram %} cm-vista{% endif %}" data-para="{{ recibo.mensagem_id }}"
+   {% if recibo.nomes %}title="Vista por: {{ recibo.nomes|join(', ') }}"{% endif %}>
+  {%- if recibo.direta -%}
+    {%- if recibo.viram %}✓✓ Vista{% if recibo.quando %} às {{ cm_hora(recibo.quando) }}{% endif %}{% else %}✓ Enviada{% endif -%}
+  {%- else -%}
+    {%- if recibo.total and recibo.viram == recibo.total %}✓✓ Vista por todos
+    {%- elif recibo.viram %}✓✓ Vista por {{ recibo.viram }} de {{ recibo.total }}
+    {%- else %}✓ Enviada{% endif -%}
+  {%- endif -%}
+</p>
+{%- endif -%}

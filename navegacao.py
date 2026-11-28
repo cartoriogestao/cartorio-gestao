@@ -104,6 +104,14 @@ MODULOS_DA_BARRA: tuple[dict, ...] = (
          # o escrevente. Porta única: o cadastro mora em Gestão.
          ("Minha rotina", (
              _i("Minha rotina", "rotina_minha", termos="rotina tarefa manutencao do dia feito"),)),
+         # A COMUNICAÇÃO (T028, 28/11/2026): as conversas de todos e os avisos da
+         # gerência que insistem até «estou fazendo». A porta de todo dia é o botão
+         # da coluna da direita; aqui ficam a tela cheia e o acompanhamento.
+         ("Comunicação", (
+             _i("Comunicação", "comunicacao_inicio",
+                termos="mensagem conversa chat conversar grupo equipe recado"),
+             _i("Avisos da gerência", "comunicacao_avisos", AMA,
+                termos="aviso insistente estou fazendo comunicado ordem"),)),
      )},
     {"chave": "NOTAS", "curto": "Notas", "nome": "Tabelionato de Notas", "cor": "NOTAS",
      "icone": "pena", "lavra": True, "secoes": (
@@ -765,6 +773,11 @@ PAI: dict[str, tuple[str, str]] = {
     "ri_qualificacao_ia_configuracao": ("GESTAO", "Configurações"),
     "asset_detail": ("GESTAO", "Configurações"),
     "dev_projetos_detalhe": ("TRABALHO", "Projetos"),
+    "comunicacao_buscar": ("TRABALHO", "Comunicação"),
+    "comunicacao_grupo": ("TRABALHO", "Comunicação"),
+    "comunicacao_grupo_novo": ("TRABALHO", "Comunicação"),
+    "comunicacao_aviso_novo": ("TRABALHO", "Comunicação"),
+    "comunicacao_aviso_detalhe": ("TRABALHO", "Comunicação"),
     "centrais_status": ("GESTAO", "Envios às Centrais"),
     "correcoes_de_oficio_ficha": ("GESTAO", "Erros e correções"),
     "correcoes_de_oficio_propor": ("GESTAO", "Erros e correções"),

@@ -1,0 +1,29 @@
+{% extends '_comunicacao_embutida.html' if embutido else 'base.html' %}
+{# A BUSCA NAS CONVERSAS (T028): só nas conversas de quem procura, sem diferença
+   de acento nem de maiúscula. Cada achado abre a conversa. #}
+{% block title %}Procurar nas mensagens{% endblock %}
+{% block heading %}<h1>Procurar nas mensagens</h1>{% endblock %}
+{% block content %}
+<section class="panel cm-pagina">
+  <p><a href="{{ url_app() }}">‹ Conversas</a></p>
+  <form method="get" action="{{ url_for('comunicacao_buscar') }}" role="search" class="cm-procurar">
+    {% if embutido %}<input type="hidden" name="embutido" value="1">{% endif %}
+    <input type="search" name="q" value="{{ termo }}" placeholder="Procurar nas mensagens" aria-label="Procurar nas mensagens" autofocus>
+    <button class="button cm-b" type="submit">Procurar</button>
+  </form>
+  {% if termo|length < 2 %}
+  <p class="muted small">Digite ao menos duas letras.</p>
+  {% elif not achados %}
+  <p class="muted">Nada encontrado para «{{ termo }}».</p>
+  {% else %}
+  <ul class="cm-achados">
+    {% for m in achados %}
+    <li><a href="{{ url_app(c=m.conversa_id) }}#cm-m-{{ m.id }}">
+      <strong>{{ m.nome if m.tipo == 'GRUPO' else m.autor }}</strong>
+      <span class="small muted">{{ dia(m.criada_em) }} {{ cm_hora(m.criada_em) }}{% if m.tipo == 'GRUPO' %} · {{ m.autor }}{% endif %}</span>
+      <span class="cm-achado-texto">{{ m.texto[:200] }}</span></a></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endblock %}

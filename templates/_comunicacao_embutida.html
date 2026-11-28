@@ -1,0 +1,21 @@
+{# A MOLDURA DA GAVETA (T028): a página que a coluna da direita abre num quadro.
+   Sem menu e sem barra: só a comunicação, com os estilos da casa. Links para as
+   telas do sistema abrem na janela de trabalho (`target="_top"`). #}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Comunicação{% endblock %} - {{ APP_NAME }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ VERSION }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='comunicacao.css') }}?v={{ VERSION }}">
+  <script defer src="{{ url_for('static', filename='comunicacao.js') }}?v={{ VERSION }}"></script>
+  <base target="_self">
+</head>
+<body class="cm-corpo-embutido">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</body>
+</html>

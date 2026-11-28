@@ -1001,6 +1001,11 @@ class Database:
         # `sd_selos` e `attachments`, que nasceram lá em cima.
         init_selo_portal_schema(con)
         init_nu_avisos_schema(con)
+        # A COMUNICAÇÃO DA CASA (T028, 28/11/2026): conversas entre todos e os
+        # avisos da gerência que insistem até «estou fazendo». Só acréscimo;
+        # aponta para `users`, que nasceu lá em cima.
+        import comunicacao
+        comunicacao.init_comunicacao_schema(con)
         # A SESSAO QUE FICOU ABERTA PORQUE O PROGRAMA PAROU NO MEIO VIRA
         # INTERROMPIDA, e volta a poder ser continuada: `responder` recusa sessao
         # aberta — «alguem esta rodando agora» —, e e essa recusa que impede duas

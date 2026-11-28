@@ -1,0 +1,40 @@
+{#
+  A COMUNICAÇÃO NA COLUNA DA DIREITA (T028, 28/11/2026) — «de facil acesso na
+  coluna da direita», o titular.
+
+  No layout novo, entra na coluna de apoio (`cg-apoio`), acima do WhatsApp; no
+  antigo, na pilha de botões flutuantes da direita. O clique abre a GAVETA ao
+  lado do conteúdo, como a Ajuda e a Produtividade: a tela de trabalho continua
+  à vista e digitável. A gaveta é a tela `/comunicacao/painel` num quadro da
+  própria casa, carregada só no primeiro clique (nenhum custo para quem não abre).
+
+  O GRAU 1 («sinal») É ESTE BOTÃO: contador e cor âmbar quando há aviso esperando
+  «estou fazendo»; azul quando só há mensagem não lida. Alt+M abre e fecha.
+#}
+{% if user and cm %}
+{% set _esperando = cm.insistencia.esperando %}
+{% set _conta = _esperando + cm.nao_lidas %}
+<div class="cm-atalho-caixa" data-cm-atalho-caixa>
+  <button type="button" class="cm-atalho{% if _esperando %} cm-com-aviso{% elif cm.nao_lidas %} cm-com-mensagem{% endif %}"
+          data-cm-abrir aria-expanded="false" aria-controls="cm-gaveta"
+          title="Comunicação: conversas e avisos (Alt+M)">
+    <svg class="cm-atalho-icone" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+         stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+      <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4A2.5 2.5 0 0 1 4 13.5Z"/>
+      <path d="M8.5 8.5h7M8.5 11.5h4.5"/>
+    </svg>
+    <span class="cm-atalho-rotulo">Comuni&shy;cação</span>
+    <span class="cm-conta" data-cm-conta{% if not _conta %} hidden{% endif %}
+          aria-label="{{ _esperando }} aviso(s) esperando você e {{ cm.nao_lidas }} mensagem(ns) não lida(s)">{{ _conta }}</span>
+  </button>
+  <section class="cm-gaveta" id="cm-gaveta" data-cm-gaveta hidden aria-label="Comunicação">
+    <header class="cm-gaveta-topo">
+      <strong>Comunicação</strong>
+      <a class="small" href="{{ url_for('comunicacao_inicio') }}" data-cm-tela-cheia>Abrir em tela cheia</a>
+      <button type="button" class="cm-gaveta-fechar" data-cm-fechar aria-label="Fechar a comunicação">×</button>
+    </header>
+    <iframe class="cm-gaveta-quadro" title="Conversas e avisos" data-cm-quadro
+            data-src="{{ url_for('comunicacao_painel') }}"></iframe>
+  </section>
+</div>
+{% endif %}

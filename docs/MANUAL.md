@@ -1604,7 +1604,7 @@ nada, e dá para voltar a qualquer hora.
 | Atendimento | o protocolo que você está atendendo |
 | **Novo** | abrir ou lavrar qualquer coisa, sem navegar (seção 23.3) |
 | Sino | os avisos da casa, e o formulário do recolhimento do mês |
-| Coluna de apoio, à direita | WhatsApp, Produtividade, Ajuda e Agente, em toda tela, abrindo ao lado do conteúdo |
+| Coluna de apoio, à direita | Comunicação, WhatsApp, Produtividade, Ajuda e Agente, em toda tela, abrindo ao lado do conteúdo |
 
 **Continuam à vista, fora do sino:** selo sem trava, comprovante da gratuidade,
 ficha sem digitalização, selo cancelado e o aviso do caixa. O recolhimento do mês
@@ -1631,7 +1631,7 @@ Cada pessoa só vê o que o seu perfil alcança, como no menu de sempre.
 | P | Procuração pública | | N | Nascimento |
 | E | Escritura pública | | G | Protocolo geral |
 
-Outras teclas: **F1** abre a Ajuda, **Alt+P** a Produtividade, **Alt+W** o WhatsApp
+Outras teclas: **F1** abre a Ajuda, **Alt+P** a Produtividade, **Alt+M** a Comunicação, **Alt+W** o WhatsApp
 e **Esc** fecha o que estiver aberto.
 
 ### 23.4 As fichas divididas
@@ -1878,6 +1878,60 @@ A prática de atos e o trabalho do balcão não entram: vão para as tarefas.
   ROTINA_REATIVADA e ROTINA_FEITA, com o código do item; a prova anexada vai como
   ROTINA_PROVA_ANEXADA, e o arquivo que não se guardou, como ROTINA_PROVA_FALHOU (o
   feito fica registrado, e a tela avisa).
+
+**Comunicação: conversas e avisos da gerência**
+
+O botão **Comunicação** fica na coluna da direita, acima do WhatsApp. No layout antigo, é
+o botão redondo acima do WhatsApp. Ele abre uma gaveta ao lado da tela de trabalho: o ato
+continua à vista e digitável. **Alt+M** abre e fecha a gaveta, e **Esc** fecha. A mesma
+tela, maior, fica em **Trabalho → Comunicação**.
+
+- **Conversas (todos).** Qualquer pessoa conversa com qualquer outra (**Nova conversa**)
+  ou num grupo. Qualquer pessoa cria um grupo; para um grupo por atribuição, comece a
+  digitar o nome: Notas, Protesto, Registro de Imóveis…
+  - **Enter** envia, e **Shift+Enter** quebra a linha.
+  - As mensagens chegam sozinhas, sem recarregar a tela. O rascunho fica guardado em
+    cada conversa.
+  - **Responder** cita a mensagem.
+  - **Editar** e **Apagar** valem só para a própria mensagem e só nos primeiros
+    15 minutos. O texto de antes fica guardado.
+  - O 📎 anexa um arquivo de até 10 MB: PDF, imagem, texto, planilha, documento ou ZIP.
+    Na gaveta, o 🔗 põe na mensagem o endereço da tela que você está vendo.
+  - **✓ Enviada** vira **✓✓ Vista** quando a outra pessoa lê. No grupo, aparece «vista
+    por N de M».
+  - **Procurar nas mensagens** busca nas suas conversas, sem diferença de acento.
+  - O botão mostra quantas mensagens você não leu. A mensagem nova aparece num aviso
+    discreto no canto da tela, sem som.
+- **Avisos da gerência (administrador, gerente e TI mandam).** O aviso vai para toda a
+  equipe, para um grupo ou para uma pessoa.
+  - Ele **insiste até a pessoa marcar «Estou fazendo»**, em três graus:
+    1. **Sinal:** o botão da coluna fica âmbar, com o número.
+    2. **Faixa:** uma linha no alto da tela, sem botão de fechar.
+    3. **Cartão:** o aviso inteiro no canto superior direito.
+  - Os tempos dependem da urgência escolhida:
+    - **Normal:** faixa aos 15 minutos e cartão aos 60;
+    - **Urgente:** faixa na hora e cartão aos 10 minutos;
+    - **Imediata:** cartão na hora.
+  - O cartão **não trava a tela**: não é janela modal, não escurece o fundo e não tira o
+    cursor de onde você está digitando.
+  - **Recolher por 5 min** desce o cartão a faixa para você terminar o ato. Ele volta
+    sozinho, e cada recolhida fica registrada.
+  - Não há som nem pisca-pisca. A borda do cartão «respira» devagar a cada 45 segundos,
+    e fica parada para quem pediu menos movimento no sistema operacional.
+  - **Feito** é opcional e fica no acompanhamento. **Perguntar a …** abre a conversa com
+    quem mandou.
+- **Acompanhar** (em **Avisos da gerência**: administrador, gerente e TI; o auditor só
+  confere) mostra, por pessoa:
+  - quando viu e quando marcou «estou fazendo» e «feito»;
+  - até que grau a tela chegou;
+  - quantas vezes recolheu.
+- **Encerrar** tira o aviso da tela de todos e guarda o histórico. Quem mandou encerra o
+  seu aviso; o administrador encerra qualquer um.
+- Na **Auditoria** ficam COMUNICACAO_AVISO_ENVIADO, COMUNICACAO_AVISO_FAZENDO,
+  COMUNICACAO_AVISO_FEITO, COMUNICACAO_AVISO_ENCERRADO e as mudanças de grupo
+  (COMUNICACAO_GRUPO_…).
+- A trilha de cada aviso guarda quem criou, quem viu, cada subida de grau, cada recolhida
+  e quem marcou «estou fazendo». Ela só recebe linhas, nunca as apaga.
 
 **Controles do oficial**
 

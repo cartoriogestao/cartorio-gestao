@@ -1,0 +1,71 @@
+{#
+  A INSISTÊNCIA DOS AVISOS DA GERÊNCIA (T028) — graus 2 e 3. O grau 1 é o botão
+  da coluna da direita (`_comunicacao_atalho.html`).
+
+  GRAU 2, FAIXA: uma linha no alto da área de trabalho. Sem botão de fechar.
+  GRAU 3, CARTÃO: o aviso inteiro, fixo no canto superior direito.
+
+  O CARTÃO NÃO TRAVA O TRABALHO («ate permita a continuidade do trabalho»):
+    não é modal (sem `aria-modal`, sem fundo escuro, sem `inert` na página), não
+    toma o foco de quem digita e só ocupa o próprio retângulo — o resto da tela
+    continua clicável. «Recolher por 5 min» desce a faixa para terminar o ato.
+  E INSISTE SEM AGREDIR (o «harmonicamente»): sem som, sem piscar; uma borda que
+  «respira» devagar a cada 45 s, parada para quem pediu menos movimento
+  (`prefers-reduced-motion`, em `comunicacao.css`).
+
+  Acessibilidade (GOV.UK, *notification banner*): `role="region"` com título, e
+  um `aria-live="polite"` que já existe na página e só anuncia a chegada.
+
+  Os botões são FORMULÁRIOS de verdade (funcionam sem script); o script os manda
+  por trás e redesenha este pedaço sem recarregar a tela.
+#}
+<div class="cm-insistencia" data-cm-insistencia>
+  <p class="cm-anuncio" aria-live="polite" data-cm-anuncio></p>
+  {% if cm and cm.insistencia %}
+  {% set ins = cm.insistencia %}
+  {% set _volta = request.full_path if request.method == 'GET' else url_for('dashboard') %}
+  {% if ins.faixa %}
+  {% set f = ins.faixa %}
+  <section class="cm-faixa" role="region" aria-labelledby="cm-faixa-t-{{ f.id }}" data-cm-aviso="{{ f.id }}" data-cm-grau="2">
+    <svg class="cm-faixa-ic" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" focusable="false"><path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.5 2h-15Z"/><path d="M10 21h4"/></svg>
+    <span class="cm-faixa-txt">
+      <strong id="cm-faixa-t-{{ f.id }}">{{ f.titulo }}</strong>
+      <span class="cm-faixa-de">— {{ f.criado_por_nome }} · {{ cm_hora(f.criado_em) }}{% if f.recolhido %} · recolhido até {{ cm_hora(f.recolhido_ate) }}{% elif f.sobe_em %} · vira cartão às {{ cm_hora(f.sobe_em) }}{% endif %}</span>
+      {% if ins.faixas > 1 %}<span class="cm-mais">+{{ ins.faixas - 1 }}</span>{% endif %}
+    </span>
+    <a class="button cm-b" href="{{ url_for('comunicacao_inicio', aba='avisos', aviso=f.id) }}" data-cm-ver-aviso="{{ f.id }}">Ler</a>
+    <form method="post" action="{{ url_for('comunicacao_aviso_fazendo', aviso_id=f.id) }}" data-cm-acao>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="next" value="{{ _volta }}">
+      <button class="button primary cm-b" type="submit">Estou fazendo</button>
+    </form>
+  </section>
+  {% endif %}
+  {% if ins.cartao %}
+  {% set a = ins.cartao %}
+  <section class="cm-cartao{% if a.urgencia == 'IMEDIATA' %} cm-imediata{% endif %}" role="region"
+           aria-labelledby="cm-cartao-t" data-cm-aviso="{{ a.id }}" data-cm-grau="3">
+    <header class="cm-cartao-topo">
+      <span>Aviso da gerência{% if a.urgencia != 'NORMAL' %} · <b>{{ CM_URGENCIA[a.urgencia] }}</b>{% endif %}</span>
+      {% if ins.cartoes > 1 %}<span class="cm-mais">1 de {{ ins.cartoes }}</span>{% endif %}
+    </header>
+    <h2 class="cm-cartao-t" id="cm-cartao-t">{{ a.titulo }}</h2>
+    <p class="cm-cartao-de">De <strong>{{ a.criado_por_nome }}</strong> · enviado às {{ cm_hora(a.criado_em) }}{% if a.criado_em[:10] != (cm.agora or '')[:10] %} de {{ a.criado_em[8:10] }}/{{ a.criado_em[5:7] }}{% endif %} · para {{ a.destino_rotulo }}</p>
+    {% if a.texto %}<div class="cm-cartao-texto">{{ a.texto|cm_texto }}</div>{% endif %}
+    <div class="cm-cartao-acoes">
+      <form method="post" action="{{ url_for('comunicacao_aviso_fazendo', aviso_id=a.id) }}" data-cm-acao>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next" value="{{ _volta }}">
+        <button class="button primary" type="submit">Estou fazendo</button>
+      </form>
+      <form method="post" action="{{ url_for('comunicacao_aviso_recolher', aviso_id=a.id) }}" data-cm-acao>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next" value="{{ _volta }}">
+        <button class="button" type="submit" title="O aviso vira faixa por 5 minutos e volta sozinho">Recolher por 5 min</button>
+      </form>
+      <a class="small" href="{{ url_for('comunicacao_inicio', para=a.criado_por) }}" data-cm-ver-aviso="{{ a.id }}">Perguntar a {{ cm_primeiro_nome(a.criado_por_nome) }}</a>
+    </div>
+  </section>
+  {% endif %}
+  {% endif %}
+</div>

@@ -587,25 +587,12 @@ def montar_capa(textos: dict[str, Any], *,
     y_selo = A4_H - 8 - altura_selo
     colou_primeira_folha = False
     if primeira_folha is not None and y_selo - y > 80:
-        src = primeira_folha.convert("RGB")
-        # A interna tem o dobro dos pontos (300 dpi). A comparação é pelo
-        # tamanho no papel, não pela quantidade de pixels de cada folha.
-        e = _resolucao_da_folha(src)
-        desenho = ImageDraw.Draw(Image.new("RGB", (A4_W * e, 1), "white"))
-        topo = _cabecalho_da_folha_interna(
-            desenho, textos, pagina=1, total_paginas=1, escala=e,
-            emolumentos=emolumentos, com_emolumentos=com_emolumentos,
-            desenhar=False)
-        escala_interna = TEOR._escala_que_cabe(
-            src, topo, A4_H * e - 4 * e, largura=A4_W * e,
-            margem=8 * e, folga=1.0, respiro=2 * e) / e
-        escala_capa = TEOR._escala_que_cabe(
-            src, y + 2, y_selo - 2, margem=margem, folga=1.0, respiro=2)
-        if escala_capa >= escala_interna * 0.98:
-            TEOR._colar_imagem(im, src, y + 2, y_selo - 2,
-                               margem=margem, folga=1.0, respiro=2,
-                               escala=escala_interna)
-            colou_primeira_folha = True
+        # A primeira folha do documento fica nesta página, no maior tamanho
+        # que cabe entre o texto e o selo. Não se exige a escala da folha
+        # interna: essa comparação deixava a capa sem a imagem.
+        TEOR._colar_imagem(im, primeira_folha.convert("RGB"), y + 2, y_selo - 2,
+                           margem=margem, folga=1.0, respiro=2)
+        colou_primeira_folha = True
     _desenhar_area_selo(im, y_selo, selo=selo, rotulos=textos.get("moldura"))
     return im, colou_primeira_folha
 

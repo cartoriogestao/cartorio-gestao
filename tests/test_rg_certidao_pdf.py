@@ -71,10 +71,10 @@ def test_gerar_pdf_capa_e_paginas():
         cns="000000",
     )
     assert pdf.startswith(b"%PDF")
-    # **A 1ª FOLHA SÓ ENTRA NA CAPA SE NÃO ENCOLHER** (16/11/2026). Uma
-    # página em retrato não cabe no que sobra da capa na escala das folhas
-    # internas: sai em folha própria, do mesmo tamanho das outras — capa + 2.
-    assert pdf.count(b"/Type /Page /Parent") == 3
+    # **A 1ª FOLHA FICA NA CAPA** (conserto da produção de 18/11/2026). A
+    # 1ª página do documento sai na capa, entre o texto e o selo, e a outra
+    # vem numa folha interna: capa + 1.
+    assert pdf.count(b"/Type /Page /Parent") == 2
 
     # OCR leve: renderizar capa e procurar CNS / CERTIFICO / atribuição
     import pypdfium2 as pdfium
@@ -84,8 +84,8 @@ def test_gerar_pdf_capa_e_paginas():
         pil = doc[0].render(scale=72 / 72).to_pil()
         # Não temos OCR fácil; confere tamanho A4-ish e que gerou
         assert pil.size[0] > 500 and pil.size[1] > 700
-        # Capa + as duas folhas internas.
-        assert len(doc) == 3
+        # A capa (com a 1ª folha) e a folha interna da 2ª.
+        assert len(doc) == 2
     finally:
         doc.close()
 
@@ -398,8 +398,8 @@ def test_primeira_folha_entra_na_capa_quando_ha_espaco():
 
     página dos atos já na primeira folha da certidão». Com capa curta,
     sobra espaço abaixo do quadro de emolumentos — a 1ª folha do documento
-    entra ali, em vez de abrir uma página só para ela. Desde 16/11/2026, só
-    a que cabe ali SEM ENCOLHER (página deitada, curta): ver o teste abaixo.
+    entra ali, em vez de abrir uma página só para ela. A página em retrato
+    também: ver o teste abaixo.
     """
     textos = CERT.textos_prontos(
         numero=148, lavrante_nome="MARIO", lavrante_funcao="Oficial",
@@ -419,42 +419,44 @@ def test_primeira_folha_entra_na_capa_quando_ha_espaco():
     assert achou_escuro, "a imagem da 1ª folha não apareceu de verdade na capa"
 
 
-def test_primeira_folha_em_retrato_nao_encolhe_na_capa():
-    """16/11/2026: colada no que sobrava da capa, a 1ª página A4 saía com
-    ~13 cm de largura (18,6 cm nas outras) — ilegível. A regra é a da
-    reprográfica do RI (of-0151): o documento não encolhe por causa do texto;
-    a página vai para a folha interna, na mesma escala de todas."""
+def test_primeira_folha_em_retrato_sai_na_capa_com_a_imagem():
+    """Conserto da produção (18/11/2026): a capa da certidão saía sem a
+    imagem da 1ª folha. A comparação com a escala da folha interna (#442)
+    recusava a página em retrato, que ia para uma folha à parte. A 1ª folha
+    volta para a capa, no maior tamanho que cabe entre o texto e o selo."""
+    import numpy as np
+    import pypdfium2 as pdfium
+
     textos = CERT.textos_prontos(
         numero=148, lavrante_nome="MARIO", lavrante_funcao="Oficial",
         denominacao="CAIXA", natureza="Ata", paginas=1, serie="PJ_A")
-    a4 = _folha((50, 50, 50), size=(1240, 1754))
+    cinza = (50, 50, 50)
+    a4 = _folha(cinza, size=(1240, 1754))
     capa, colou = CERT.montar_capa(textos, primeira_folha=a4)
-    assert colou is False
-    # o cinza da folha não aparece em ponto nenhum da capa
-    assert not any(capa.getpixel((x, y)) == (50, 50, 50)
-                   for x in range(0, CERT.A4_W, 40)
-                   for y in range(0, CERT.A4_H, 20))
+    assert colou is True, "a 1ª folha em retrato tinha de ficar na capa"
 
-    # E a folha interna dá a ela a mesma largura das outras páginas.
-    larguras = []
-    orig = CERT.TEOR._colar_imagem
+    linhas, _ = np.where(np.all(np.asarray(capa) == cinza, axis=2))
+    assert linhas.size, "a capa saiu sem a imagem da 1ª folha"
+    # Inteira acima do selo, que fica no pé da capa (160 px + 8 de margem).
+    assert linhas.max() < CERT.A4_H - 8 - 160
+    # E no maior tamanho que cabe, não uma miniatura.
+    assert linhas.max() - linhas.min() + 1 > CERT.A4_H // 3
 
-    def espiar(im, src, top, bottom, **kw):
-        escala = CERT.TEOR._escala_que_cabe(src, top, bottom)
-        if kw.get("escala") is not None:
-            escala = min(escala, kw["escala"])
-        larguras.append(int(src.size[0] * escala))
-        return orig(im, src, top, bottom, **kw)
-
-    CERT.TEOR._colar_imagem = espiar
+    # No PDF, a 1ª página do documento está na capa e as outras duas vêm
+    # depois: capa + 2 folhas internas.
+    pdf = CERT.gerar_pdf(numero=148, imagens=[a4, _folha(size=(1240, 1754)),
+                                              _folha(size=(1240, 1754))],
+                         lavrante_nome="MARIO", lavrante_funcao="Oficial",
+                         denominacao="CAIXA", natureza="Ata", serie="PJ_A")
+    doc = pdfium.PdfDocument(pdf)
     try:
-        CERT.gerar_pdf(numero=148, imagens=[a4, _folha(size=(1240, 1754)),
-                                            _folha(size=(1240, 1754))],
-                       lavrante_nome="MARIO", lavrante_funcao="Oficial",
-                       denominacao="CAIXA", natureza="Ata", serie="PJ_A")
+        assert len(doc) == 3
+        pagina = np.asarray(
+            doc[0].render(scale=1).to_pil().convert("RGB")).astype(int)
+        escuro = np.all(np.abs(pagina - np.array(cinza)) <= 12, axis=2)
+        assert escuro.mean() > 0.05, "a capa do PDF saiu sem a imagem"
     finally:
-        CERT.TEOR._colar_imagem = orig
-    assert len(larguras) == 3 and len(set(larguras)) == 1, larguras
+        doc.close()
 
 
 def test_primeira_folha_nao_colada_sem_espaco_suficiente():

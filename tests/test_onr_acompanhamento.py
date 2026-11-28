@@ -149,6 +149,17 @@ class _Db:
             raise
 
 
+@pytest.fixture(autouse=True)
+def _cofre(tmp_path, monkeypatch):
+    """A senha de consulta (27/11/2026) mora cifrada, com a chave no cofre da
+    casa. A conexão de teste do domínio não tem pasta de dados: o cofre fica
+    numa pasta descartável."""
+    pasta = tmp_path / "cofre"
+    pasta.mkdir()
+    monkeypatch.setattr(A, "_pasta_do_cofre", lambda con: pasta)
+    return pasta
+
+
 @pytest.fixture()
 def con():
     c = conexao_de_teste()

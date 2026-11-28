@@ -16,6 +16,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ titulo_aba or unit_name }}{% endblock %} - {{ APP_NAME }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ VERSION }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='comunicacao.css') }}?v={{ VERSION }}">
   {#
     AS CORES DOS MODULOS — relato #32 do oficial, 30/08/2026.
 
@@ -94,6 +95,8 @@
   {% if user and user.papel_real == 'TI' %}<script defer src="{{ url_for('static', filename='ti_nao_sela.js') }}?v={{ VERSION }}"></script>{% endif %}
   {# Modal de avisos gerenciáveis (nu_avisos): fecha ao ir para /avisos ou /admin/avisos. #}
   <script defer src="{{ url_for('static', filename='nu_avisos_modal.js') }}?v={{ VERSION }}"></script>
+  {# A COMUNICAÇÃO (T028): conversas e avisos da gerência, nas duas molduras. #}
+  <script defer src="{{ url_for('static', filename='comunicacao.js') }}?v={{ VERSION }}"></script>
   <script defer src="{{ url_for('static', filename='produtividade_rapida.js') }}?v={{ VERSION }}"></script>
   {#
     ACRESCENTAR PARTE NO ATO — relato #86, de 18/09/2026.
@@ -886,6 +889,9 @@
         <a href="{{ url_for('at_meu_trabalho') }}">Meu trabalho</a>
         {# MINHA ROTINA (26/11/2026): a rotina da serventia de quem está logado. #}
         <a href="{{ url_for('rotina_minha') }}">Minha rotina</a>
+        {# A COMUNICAÇÃO (T028): conversas de todos e os avisos da gerência. #}
+        <a href="{{ url_for('comunicacao_inicio') }}">Comunicação</a>
+        {% if user.role in ['ADMIN','MANAGER','AUDITOR'] %}<a href="{{ url_for('comunicacao_avisos') }}">Avisos da gerência</a>{% endif %}
         <a href="{{ url_for('at_lista') }}" title="Atendimentos - protocolo geral">Atendimentos</a>
         <a href="{{ url_for('tr_inicio') }}">Treinamento</a>
         <a href="{{ url_for('tr_trilha',trilha='primeiro-dia') }}">Primeiro dia</a>
@@ -1095,6 +1101,9 @@
     {% include '_onr_pedidos_aviso.html' %}
     {% include '_selo_cancelamento_aviso.html' %}
     {% include '_cadeias_aviso.html' %}
+    {# OS AVISOS DA GERÊNCIA QUE INSISTEM (T028): a faixa (grau 2) aqui no alto, e o
+       cartão (grau 3) fixo no canto superior direito, sem travar a tela. #}
+    {% include '_comunicacao_insistencia.html' %}
     <div class="main-compact-banners" data-main-compact-banners{% if nu_avisos_modal %} hidden{% endif %}>
       {% include '_faixas_compactas.html' %}
     </div>
@@ -1132,6 +1141,7 @@
   {% include '_nu_avisos_modal.html' %}
   {% include '_produtividade_rapida.html' %}
   {% include '_whatsapp_atalho.html' %}
+  {% include '_comunicacao_atalho.html' %}
 </div>
 {% else %}
 <div class="auth-wrap">

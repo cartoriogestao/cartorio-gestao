@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{# ACOMPANHAR OS AVISOS DA GERÊNCIA (T028): ADMIN, MANAGER e TI mandam e conferem;
+   o AUDITOR só confere. Quantos viram, quantos estão fazendo, quantos fizeram. #}
+{% block title %}Avisos da gerência{% endblock %}
+{% block heading %}<h1>Avisos da gerência</h1>{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head"><h2>Avisos enviados ({{ avisos|length }})</h2>
+    {% if pode_avisar %}<a class="button primary" href="{{ url_for('comunicacao_aviso_novo') }}">Novo aviso</a>{% endif %}</div>
+  {% if not avisos %}
+  <p class="muted">Nenhum aviso enviado ainda.</p>
+  {% else %}
+  <div class="table-wrap">
+  <table>
+    <tr><th>Aviso</th><th>Para</th><th>Urgência</th><th>Enviado</th><th>Viram</th><th>Esperando</th><th>Fazendo</th><th>Feito</th></tr>
+    {% for a in avisos %}
+    <tr{% if a.encerrado_em %} class="muted"{% endif %}>
+      <td><a href="{{ url_for('comunicacao_aviso_detalhe', aviso_id=a.id) }}"><strong>{{ a.titulo }}</strong></a>
+        <div class="small muted">{{ a.criado_por_nome }}{% if a.encerrado_em %} · encerrado{% endif %}</div></td>
+      <td class="small">{{ a.destino_rotulo }}</td>
+      <td class="small">{{ CM_URGENCIA[a.urgencia] }}</td>
+      <td class="small">{{ a.criado_em[8:10] }}/{{ a.criado_em[5:7] }} {{ cm_hora(a.criado_em) }}</td>
+      <td>{{ a.viram }}/{{ a.total }}</td>
+      <td>{% if a.esperando and not a.encerrado_em %}<strong>{{ a.esperando }}</strong>{% else %}{{ a.esperando }}{% endif %}</td>
+      <td>{{ a.fazendo }}</td>
+      <td>{{ a.feitos }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

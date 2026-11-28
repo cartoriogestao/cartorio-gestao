@@ -1,0 +1,193 @@
+{#
+  O MENSAGEIRO E OS AVISOS — o mesmo pedaço na gaveta da coluna da direita
+  (`comunicacao_painel.html`) e na tela cheia (`comunicacao.html`).
+  Funciona sem script (links e formulários); `comunicacao.js` dá a fluidez:
+  mensagens chegando sem recarregar, Enter para enviar, rascunho, «vista».
+#}
+{% set _aberta = conversa or para %}
+<div class="cm-app{% if _aberta %} cm-com-conversa{% endif %}{% if embutido %} cm-embutido{% endif %}"
+     data-cm-app data-eu="{{ eu }}" data-agora="{{ agora }}">
+
+  <nav class="cm-abas" aria-label="Comunicação">
+    {% set _nl = conversas|sum(attribute='nao_lidas') %}
+    <a class="cm-aba{% if aba != 'avisos' %} atual{% endif %}" href="{{ url_app() }}"{% if aba != 'avisos' %} aria-current="page"{% endif %}>
+      Conversas{% if _nl %} <span class="cm-conta">{{ _nl }}</span>{% endif %}</a>
+    {% set _esp = avisos.ESPERANDO|length %}
+    <a class="cm-aba{% if aba == 'avisos' %} atual{% endif %}" href="{{ url_app(aba='avisos') }}"{% if aba == 'avisos' %} aria-current="page"{% endif %}>
+      Avisos{% if _esp %} <span class="cm-conta cm-conta-aviso">{{ _esp }}</span>{% endif %}</a>
+  </nav>
+
+  {% if aba == 'avisos' %}
+  {# ------------------------------------------------------------ AVISOS #}
+  <section class="cm-avisos" aria-label="Avisos da gerência para você">
+    {% if pode_avisar or pode_acompanhar %}
+    <p class="cm-gestao">
+      {% if pode_avisar %}<a class="button primary cm-b" href="{{ url_for('comunicacao_aviso_novo') }}" target="_top">Novo aviso</a>{% endif %}
+      {% if pode_acompanhar %}<a class="button cm-b" href="{{ url_for('comunicacao_avisos') }}" target="_top">Acompanhar os avisos</a>{% endif %}
+    </p>
+    {% endif %}
+    {% set _aviso_aberto = request.args.get('aviso', '') %}
+    {% for titulo, chave in [('Esperando você', 'ESPERANDO'), ('Fazendo', 'FAZENDO'), ('Feitos nos últimos 7 dias', 'FEITO')] %}
+    {% set lista = avisos[chave] %}
+    {% if lista or chave == 'ESPERANDO' %}
+    <h3 class="cm-sub">{{ titulo }} ({{ lista|length }})</h3>
+    {% if not lista %}<p class="muted small">Nenhum aviso esperando você.</p>{% endif %}
+    <ul class="cm-lista-avisos">
+      {% for a in lista %}
+      <li class="cm-aviso-item cm-grau-{{ a.grau }}">
+        <details{% if _aviso_aberto == a.id|string or (chave == 'ESPERANDO' and loop.first) %} open{% endif %} data-cm-aviso-detalhe="{{ a.id }}"{% if chave == 'ESPERANDO' and not a.visto_em %} data-url-abri="{{ url_for('comunicacao_aviso_abri', aviso_id=a.id) }}"{% endif %}>
+          <summary>
+            <strong>{{ a.titulo }}</strong>
+            <span class="small muted">{{ a.criado_por_nome }} · {{ a.criado_em[8:10] }}/{{ a.criado_em[5:7] }} {{ cm_hora(a.criado_em) }}
+              {% if chave == 'ESPERANDO' %}· {{ CM_GRAU[a.grau] }}{% elif chave == 'FAZENDO' %}· desde {{ cm_hora(a.fazendo_em) }}{% else %}· feito {{ cm_hora(a.feito_em) }}{% endif %}</span>
+          </summary>
+          {% if a.texto %}<div class="cm-aviso-texto">{{ a.texto|cm_texto }}</div>{% endif %}
+          <p class="small muted">Para {{ a.destino_rotulo }} · urgência {{ CM_URGENCIA[a.urgencia]|lower }}</p>
+          <div class="cm-aviso-acoes">
+            {% if chave == 'ESPERANDO' %}
+            <form method="post" action="{{ url_for('comunicacao_aviso_fazendo', aviso_id=a.id) }}" data-cm-acao>
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="next" value="{{ url_app(aba='avisos') }}">
+              <button class="button primary cm-b" type="submit">Estou fazendo</button>
+            </form>
+            {% endif %}
+            {% if chave != 'FEITO' %}
+            <form method="post" action="{{ url_for('comunicacao_aviso_feito', aviso_id=a.id) }}" data-cm-acao>
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="next" value="{{ url_app(aba='avisos') }}">
+              <button class="button cm-b" type="submit">Feito</button>
+            </form>
+            {% endif %}
+            {% if a.criado_por != eu %}<a class="small" href="{{ url_app(para=a.criado_por) }}">Perguntar a {{ cm_primeiro_nome(a.criado_por_nome) }}</a>{% endif %}
+          </div>
+        </details>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% endfor %}
+  </section>
+
+  {% else %}
+  {# ------------------------------------------------------------ CONVERSAS #}
+  <aside class="cm-lista" aria-label="Suas conversas">
+    <form class="cm-procurar" method="get" action="{{ url_for('comunicacao_buscar') }}" role="search">
+      {% if embutido %}<input type="hidden" name="embutido" value="1">{% endif %}
+      <input type="search" name="q" placeholder="Procurar nas mensagens" aria-label="Procurar nas mensagens">
+    </form>
+    <details class="cm-nova"{% if not conversas %} open{% endif %}>
+      <summary class="button cm-b">Nova conversa</summary>
+      <form method="get" action="{{ url_app() }}" class="cm-nova-form">
+        <label class="small" for="cm-para">Com quem</label>
+        <select id="cm-para" name="para" required data-cm-filtrar-pessoas>
+          <option value="">Escolha a pessoa…</option>
+          {% for p in pessoas %}<option value="{{ p.id }}">{{ p.nome }}</option>{% endfor %}
+        </select>
+        <button class="button primary cm-b" type="submit">Abrir</button>
+      </form>
+      <p class="small"><a href="{{ url_for('comunicacao_grupo_novo', embutido='1' if embutido else None) }}">Criar um grupo</a>
+        <span class="muted">— de uma atribuição, de um setor, de quem você quiser.</span></p>
+    </details>
+    {% if conversas %}
+    <ul class="cm-conversas">
+      {% for c in conversas %}
+      {% set _nome = c.nome if c.tipo == 'GRUPO' else c.outro_nome %}
+      <li>
+        <a class="cm-item{% if conversa and conversa.id == c.id %} atual{% endif %}{% if c.nao_lidas %} cm-nao-lida{% endif %}"
+           href="{{ url_app(c=c.id) }}"{% if conversa and conversa.id == c.id %} aria-current="true"{% endif %}>
+          <span class="cm-avatar{% if c.tipo == 'GRUPO' %} cm-avatar-grupo{% endif %}" aria-hidden="true">{{ (_nome or '?')[:1]|upper }}</span>
+          <span class="cm-item-corpo">
+            <span class="cm-item-nome">{{ _nome }}{% if c.tipo == 'DIRETA' and not c.outro_ativo %} <span class="muted small">(inativo)</span>{% endif %}</span>
+            <span class="cm-item-previa">
+              {%- if c.ult_apagada %}<em>Mensagem apagada</em>
+              {%- elif c.ult_autor_id %}{% if c.ult_autor_id == eu %}Você: {% elif c.tipo == 'GRUPO' %}{{ cm_primeiro_nome(c.ult_autor) }}: {% endif %}{% if c.ult_anexo and not c.ult_texto %}📎 Anexo{% else %}{{ (c.ult_texto or '')[:70] }}{% endif %}
+              {%- else %}<span class="muted">Grupo novo — diga oi</span>{% endif -%}
+            </span>
+          </span>
+          <span class="cm-item-lado">
+            <span class="cm-item-hora">{{ dia(c.quando) if dia(c.quando) != 'Hoje' else cm_hora(c.quando) }}</span>
+            {% if c.nao_lidas %}<span class="cm-conta" aria-label="{{ c.nao_lidas }} não lida(s)">{{ c.nao_lidas }}</span>{% endif %}
+          </span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted small cm-vazio">Nenhuma conversa ainda. Escolha uma pessoa em <strong>Nova conversa</strong>.</p>
+    {% endif %}
+  </aside>
+
+  <section class="cm-conversa" aria-label="Conversa">
+    {% if _aberta %}
+    <header class="cm-conversa-topo">
+      <a class="cm-voltar" href="{{ url_app() }}" aria-label="Voltar às conversas">‹</a>
+      {% if conversa %}
+      <div class="cm-conversa-nome">
+        <strong>{{ conversa.titulo }}</strong>
+        {% if conversa.tipo == 'GRUPO' %}<a class="small" href="{{ url_for('comunicacao_grupo', conversa_id=conversa.id, embutido='1' if embutido else None) }}">{{ conversa.membros|length }} pessoas</a>{% endif %}
+      </div>
+      {% else %}
+      <div class="cm-conversa-nome"><strong>{{ para.nome }}</strong><span class="small muted">conversa nova</span></div>
+      {% endif %}
+    </header>
+
+    <ol class="cm-mensagens" data-cm-mensagens
+        {% if conversa %}data-conversa="{{ conversa.id }}"
+        data-url-novas="{{ url_for('comunicacao_novas', conversa_id=conversa.id) }}"
+        data-url-anteriores="{{ url_for('comunicacao_anteriores', conversa_id=conversa.id) }}"
+        data-url-lida="{{ url_for('comunicacao_lida', conversa_id=conversa.id) }}"
+        data-ultimo="{{ (mensagens|last).id if mensagens else 0 }}"
+        data-primeiro="{{ (mensagens|first).id if mensagens else 0 }}"{% endif %}
+        aria-live="polite" aria-relevant="additions">
+      {% if tem_anteriores %}<li class="cm-anteriores"><button type="button" class="button cm-b" data-cm-anteriores>Mensagens anteriores</button></li>{% endif %}
+      {% if mensagens %}
+      {% include '_comunicacao_mensagens.html' %}
+      {% else %}
+      <li class="cm-vazio muted small">{% if conversa and conversa.tipo == 'GRUPO' %}Nenhuma mensagem no grupo ainda.{% else %}Escreva a primeira mensagem.{% endif %}</li>
+      {% endif %}
+    </ol>
+    <div class="cm-recibo-caixa" data-cm-recibo>{% include '_comunicacao_recibo.html' %}</div>
+
+    {% if conversa and conversa.tipo == 'DIRETA' and not conversa.outro_ativo %}
+    <p class="notice small">Esta pessoa não está mais ativa no sistema. A conversa fica guardada, mas não recebe mensagens.</p>
+    {% else %}
+    <form class="cm-compor" method="post" enctype="multipart/form-data" data-cm-compor
+          data-rascunho="{{ 'c' ~ conversa.id if conversa else 'p' ~ para.id }}"
+          action="{{ url_for('comunicacao_enviar', conversa_id=conversa.id) if conversa else url_for('comunicacao_enviar_para', pessoa_id=para.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="token" value="" data-cm-token>
+      {% if embutido %}<input type="hidden" name="embutido" value="1">{% endif %}
+      <input type="hidden" name="resposta_a" value="" data-cm-resposta-id>
+      <div class="cm-compor-citacao" data-cm-citacao hidden>
+        <span data-cm-citacao-texto></span>
+        <button type="button" class="cm-x" data-cm-citacao-tirar aria-label="Não responder a esta mensagem">×</button>
+      </div>
+      <div class="cm-compor-editando" data-cm-editando hidden>
+        <span>Editando a mensagem</span>
+        <button type="button" class="cm-x" data-cm-editar-cancelar aria-label="Cancelar a edição">×</button>
+      </div>
+      <div class="cm-compor-anexo" data-cm-anexo-nome hidden></div>
+      <label class="cm-rotulo-oculto" for="cm-texto">Mensagem</label>
+      <textarea id="cm-texto" name="texto" rows="1" maxlength="4000" placeholder="Escreva a mensagem" data-cm-texto
+                aria-describedby="cm-dica"></textarea>
+      <div class="cm-compor-linha">
+        <label class="cm-icone-botao" title="Anexar arquivo (até 10 MB)">
+          <input type="file" name="anexo" data-cm-arquivo hidden
+                 accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.txt,.csv,.doc,.docx,.odt,.xls,.xlsx,.ods,.zip">
+          <span aria-hidden="true">📎</span><span class="cm-rotulo-oculto">Anexar arquivo</span>
+        </label>
+        {% if embutido %}<button type="button" class="cm-icone-botao" data-cm-link-da-tela title="Pôr na mensagem o endereço da tela que você está vendo">🔗<span class="cm-rotulo-oculto">Enviar link desta tela</span></button>{% endif %}
+        <span id="cm-dica" class="cm-dica small muted">Enter envia · Shift+Enter quebra a linha</span>
+        <button class="button primary cm-b" type="submit" data-cm-enviar>Enviar</button>
+      </div>
+      <p class="cm-erro small" role="alert" data-cm-erro hidden></p>
+    </form>
+    {% endif %}
+    {% else %}
+    <div class="cm-nada muted">
+      <p>Escolha uma conversa ao lado, ou comece uma em <strong>Nova conversa</strong>.</p>
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
+</div>

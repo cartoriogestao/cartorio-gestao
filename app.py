@@ -4036,6 +4036,13 @@ def _montar_app(test_config: dict | None = None) -> Flask:
         app, db, login_required, roles_required, audit, fmt_date
     )
 
+    # A COMUNICAÇÃO (T028, 28/11/2026): o mensageiro de todos e os avisos da
+    # gerência, pela coluna da direita. A regra em `comunicacao`/`comunicacao_avisos`.
+    import comunicacao_web
+    comunicacao_web.registrar_rotas(
+        app, db, login_required, roles_required, audit, fmt_date
+    )
+
     # O AGENTE DO SISTEMA — o console de quem responde pela serventia.
     #
     # VEM AO LADO DA AJUDA porque e a mesma familia: ele le o codigo desta

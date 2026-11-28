@@ -1,0 +1,56 @@
+{#
+  As mensagens de uma conversa — o pedaço que a tela desenha ao abrir e que o
+  servidor devolve ao script quando chegam novas (`comunicacao_novas`). O texto
+  passa SÓ pelo filtro `cm_texto`, que escapa e liga os links.
+  O separador de dia sai com `data-dia`: o script tira o repetido ao juntar.
+#}
+{%- for m in mensagens %}
+{%- set _minha = m.autor_id == eu %}
+{%- set _ant = loop.previtem %}
+{%- if not _ant or _ant.criada_em[:10] != m.criada_em[:10] %}
+<li class="cm-dia" data-dia="{{ m.criada_em[:10] }}"><span>{{ dia(m.criada_em) }}</span></li>
+{%- endif %}
+{%- if primeira_nova and m.id == primeira_nova %}
+<li class="cm-linha-nova" data-cm-linha-nova><span>Novas mensagens</span></li>
+{%- endif %}
+{%- set _seguida = _ant and _ant.autor_id == m.autor_id and _ant.criada_em[:13] == m.criada_em[:13] and not m.resposta_a %}
+<li class="cm-msg{% if _minha %} cm-minha{% endif %}{% if m.apagada_em %} cm-apagada{% endif %}{% if _seguida %} cm-seguida{% endif %}"
+    id="cm-m-{{ m.id }}" data-cm-msg="{{ m.id }}" data-autor="{{ m.autor_id }}">
+  <div class="cm-balao">
+    {% if not _minha and conversa.tipo == 'GRUPO' and not _seguida %}<span class="cm-autor">{{ m.autor }}</span>{% endif %}
+    {% if m.apagada_em %}
+    <em class="cm-texto muted">Mensagem apagada</em>
+    {% else %}
+    {% if m.resposta_a %}
+    <a class="cm-citacao" href="#cm-m-{{ m.resposta_a }}">
+      <b>{{ m.resposta_autor }}</b>
+      <span>{% if m.resposta_apagada %}Mensagem apagada{% else %}{{ (m.resposta_texto or 'Anexo')[:140] }}{% endif %}</span>
+    </a>
+    {% endif %}
+    {% if m.anexo_id %}
+    {% set _url = url_for('comunicacao_anexo', anexo_id=m.anexo_id) %}
+    {% if (m.anexo_tipo or '').startswith('image/') %}
+    <a class="cm-imagem" href="{{ _url }}" target="_blank" rel="noopener"><img src="{{ _url }}" alt="{{ m.anexo_nome }}" loading="lazy"></a>
+    {% else %}
+    <a class="cm-arquivo" href="{{ _url }}" download><span aria-hidden="true">📄</span> {{ m.anexo_nome }} <span class="muted small">{{ cm_tamanho(m.anexo_tamanho) }}</span></a>
+    {% endif %}
+    {% endif %}
+    {% if m.texto %}<div class="cm-texto" data-cm-texto-original="{{ m.texto }}">{{ m.texto|cm_texto }}</div>{% endif %}
+    {% endif %}
+    <span class="cm-meta"><time datetime="{{ m.criada_em }}">{{ cm_hora(m.criada_em) }}</time>{% if m.editada_em and not m.apagada_em %} · editada{% endif %}</span>
+  </div>
+  {% if not m.apagada_em %}
+  <div class="cm-acoes-msg">
+    <button type="button" class="cm-acao" data-cm-responder data-autor-nome="{{ m.autor }}"
+            data-trecho="{{ (m.texto or 'Anexo')[:140] }}">Responder</button>
+    {% if pode_mudar(m) %}
+    <button type="button" class="cm-acao" data-cm-editar data-url="{{ url_for('comunicacao_editar', mensagem_id=m.id) }}">Editar</button>
+    <form method="post" action="{{ url_for('comunicacao_apagar', mensagem_id=m.id) }}" data-cm-apagar>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="cm-acao">Apagar</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+</li>
+{%- endfor %}

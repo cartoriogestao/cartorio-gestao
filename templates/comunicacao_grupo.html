@@ -1,0 +1,85 @@
+{% extends '_comunicacao_embutida.html' if embutido else 'base.html' %}
+{# OS GRUPOS DA COMUNICAÇÃO (T028): qualquer pessoa cria um grupo e conversa nele;
+   o grupo é também destino dos avisos da gerência («grupo por atribuição»).
+   Quem criou, o administrador e o gerente mudam o nome e quem está nele;
+   qualquer membro sai quando quiser. #}
+{% block title %}{{ grupo.titulo if grupo else 'Novo grupo' }}{% endblock %}
+{% block heading %}<h1>{{ grupo.titulo if grupo else 'Novo grupo' }}</h1>{% endblock %}
+{% block content %}
+<section class="panel cm-pagina">
+  <p><a href="{{ url_app(c=grupo.id) if grupo else url_app() }}">‹ {{ 'Voltar ao grupo' if grupo else 'Conversas' }}</a></p>
+  {% if not grupo %}
+  <form method="post" action="{{ url_for('comunicacao_grupo_novo', embutido='1' if embutido else None) }}" class="cm-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="cm-g-nome">Nome do grupo</label>
+    <input id="cm-g-nome" name="nome" maxlength="60" required list="cm-g-sugestoes" value="{{ form.get('nome', '') }}"
+           placeholder="Ex.: Registro de Imóveis, Balcão, Caixa">
+    <datalist id="cm-g-sugestoes">{% for n in nomes_de_atribuicao %}<option value="{{ n }}">{% endfor %}</datalist>
+    <p class="small muted">Para um grupo por atribuição, comece a digitar: Notas, Protesto, Registro de Imóveis…</p>
+    <label for="cm-g-desc">Para que serve <span class="muted small">(opcional)</span></label>
+    <input id="cm-g-desc" name="descricao" maxlength="300" value="{{ form.get('descricao', '') }}">
+    <fieldset class="cm-pessoas">
+      <legend>Quem entra <span class="muted small">(você entra junto)</span></legend>
+      <input type="search" class="cm-filtro" placeholder="Filtrar nomes" aria-label="Filtrar nomes" data-cm-filtro>
+      {% set _marcados = form.getlist('membros') if form.getlist is defined else [] %}
+      {% for p in pessoas %}
+      <label class="cm-pessoa" data-cm-nome="{{ p.nome|lower }}"><input type="checkbox" name="membros" value="{{ p.id }}"{% if p.id|string in _marcados %} checked{% endif %}> {{ p.nome }}</label>
+      {% endfor %}
+    </fieldset>
+    <button class="button primary" type="submit">Criar o grupo</button>
+  </form>
+  {% else %}
+  {% if grupo.descricao %}<p>{{ grupo.descricao }}</p>{% endif %}
+  <h2 class="cm-sub">Membros ({{ grupo.membros|length }})</h2>
+  <ul class="cm-membros">
+    {% for m in grupo.membros %}<li>{{ m.nome }}{% if m.id == grupo.criada_por %} <span class="muted small">· criou o grupo</span>{% endif %}</li>{% endfor %}
+  </ul>
+  {% if pode_gerir %}
+  <details class="cm-gerir">
+    <summary class="button cm-b">Mudar o grupo</summary>
+    <form method="post" class="cm-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="renomear">
+      <label for="cm-g-renome">Nome</label>
+      <input id="cm-g-renome" name="nome" maxlength="60" required value="{{ grupo.nome }}" list="cm-g-sugestoes">
+      <datalist id="cm-g-sugestoes">{% for n in nomes_de_atribuicao %}<option value="{{ n }}">{% endfor %}</datalist>
+      <button class="button cm-b" type="submit">Renomear</button>
+    </form>
+    <form method="post" class="cm-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="adicionar">
+      <fieldset class="cm-pessoas"><legend>Pôr no grupo</legend>
+        <input type="search" class="cm-filtro" placeholder="Filtrar nomes" aria-label="Filtrar nomes" data-cm-filtro>
+        {% for p in pessoas if p.id not in membros_ids %}
+        <label class="cm-pessoa" data-cm-nome="{{ p.nome|lower }}"><input type="checkbox" name="membros" value="{{ p.id }}"> {{ p.nome }}</label>
+        {% endfor %}
+      </fieldset>
+      <button class="button cm-b" type="submit">Pôr no grupo</button>
+    </form>
+    <form method="post" class="cm-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="remover">
+      <fieldset class="cm-pessoas"><legend>Tirar do grupo</legend>
+        {% for m in grupo.membros %}
+        <label class="cm-pessoa"><input type="checkbox" name="membros" value="{{ m.id }}"> {{ m.nome }}</label>
+        {% endfor %}
+      </fieldset>
+      <button class="button cm-b" type="submit">Tirar do grupo</button>
+    </form>
+    <form method="post" class="cm-form" onsubmit="return confirm('Arquivar o grupo? As mensagens ficam guardadas, mas ninguém mais conversa nele.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="acao" value="arquivar">
+      <button class="button danger cm-b" type="submit">Arquivar o grupo</button>
+    </form>
+  </details>
+  {% endif %}
+  {% if grupo.membros|selectattr('id', 'equalto', user.id)|list %}
+  <form method="post" class="cm-form" onsubmit="return confirm('Sair do grupo?')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="acao" value="sair">
+    <button class="button cm-b" type="submit">Sair do grupo</button>
+  </form>
+  {% endif %}
+  {% endif %}
+</section>
+{% endblock %}

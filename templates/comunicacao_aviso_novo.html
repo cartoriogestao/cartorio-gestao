@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{# NOVO AVISO DA GERÊNCIA (T028): só ADMIN, MANAGER e TI. O aviso insiste na tela
+   de quem recebe — sinal, faixa, cartão — até a pessoa marcar «estou fazendo». #}
+{% block title %}Novo aviso{% endblock %}
+{% block heading %}<h1>Novo aviso da gerência</h1>{% endblock %}
+{% block content %}
+<section class="panel cm-pagina">
+  <p class="small"><a href="{{ url_for('comunicacao_avisos') }}">‹ Acompanhar os avisos</a></p>
+  <p>O aviso aparece na tela de quem recebe e <strong>insiste até a pessoa marcar «Estou fazendo»</strong>:
+  primeiro um sinal no botão <strong>Comunicação</strong> da coluna da direita, depois uma faixa no alto da tela
+  e, por fim, o aviso inteiro no canto superior direito. A pessoa continua trabalhando; o aviso não trava a tela.
+  Para conversar, use as <a href="{{ url_for('comunicacao_inicio') }}">conversas</a>.</p>
+  <form method="post" class="cm-form" data-cm-aviso-form>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="cm-a-titulo">O que precisa ser feito <span class="muted small">(é o que aparece na faixa)</span></label>
+    <input id="cm-a-titulo" name="titulo" maxlength="120" required value="{{ form.get('titulo', '') }}"
+           placeholder="Ex.: Conferir os selos do lote de ontem antes de fechar o caixa">
+    <label for="cm-a-texto">Detalhes <span class="muted small">(opcional; aparece no cartão)</span></label>
+    <textarea id="cm-a-texto" name="texto" rows="5" maxlength="3000">{{ form.get('texto', '') }}</textarea>
+
+    <fieldset class="cm-destino">
+      <legend>Para quem</legend>
+      {% set _d = form.get('destino_tipo', 'TODOS') %}
+      <label><input type="radio" name="destino_tipo" value="TODOS"{% if _d == 'TODOS' %} checked{% endif %}> Toda a equipe</label>
+      <label><input type="radio" name="destino_tipo" value="GRUPO"{% if _d == 'GRUPO' %} checked{% endif %}> Um grupo</label>
+      <select name="grupo_id" aria-label="Grupo">
+        <option value="">Escolha o grupo…</option>
+        {% for g in grupos %}<option value="{{ g.id }}"{% if form.get('grupo_id') == g.id|string %} selected{% endif %}>{{ g.nome }} ({{ g.quantos }})</option>{% endfor %}
+      </select>
+      <span class="small"><a href="{{ url_for('comunicacao_grupo_novo') }}">Criar um grupo</a> <span class="muted">(por atribuição: {{ nomes_de_atribuicao|join(', ') }})</span></span>
+      <label><input type="radio" name="destino_tipo" value="PESSOA"{% if _d == 'PESSOA' %} checked{% endif %}> Uma pessoa</label>
+      <select name="pessoa_id" aria-label="Pessoa">
+        <option value="">Escolha a pessoa…</option>
+        {% for p in pessoas %}<option value="{{ p.id }}"{% if form.get('pessoa_id') == p.id|string %} selected{% endif %}>{{ p.nome }}</option>{% endfor %}
+      </select>
+    </fieldset>
+
+    <fieldset class="cm-destino">
+      <legend>Urgência</legend>
+      {% set _u = form.get('urgencia', 'NORMAL') %}
+      {% for chave, rotulo in urgencias.items() %}
+      <label><input type="radio" name="urgencia" value="{{ chave }}"{% if _u == chave %} checked{% endif %}> {{ rotulo }}</label>
+      {% endfor %}
+    </fieldset>
+    <button class="button primary" type="submit">Enviar o aviso</button>
+  </form>
+</section>
+{% endblock %}

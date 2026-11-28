@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{# UM AVISO DA GERÊNCIA (T028): por pessoa, quando viu, quando marcou «estou
+   fazendo» e «feito», até que grau a tela chegou e quantas vezes recolheu; e a
+   trilha inteira, que só recebe linhas. #}
+{% block title %}{{ item.titulo }}{% endblock %}
+{% block heading %}<h1>{{ item.titulo }}</h1>{% endblock %}
+{% block content %}
+<section class="panel">
+  <p class="small"><a href="{{ url_for('comunicacao_avisos') }}">‹ Avisos da gerência</a></p>
+  <p>De <strong>{{ item.criado_por_nome }}</strong> · {{ item.criado_em[8:10] }}/{{ item.criado_em[5:7] }}/{{ item.criado_em[:4] }} {{ cm_hora(item.criado_em) }}
+    · para {{ item.destino_rotulo }} · urgência {{ CM_URGENCIA[item.urgencia]|lower }}</p>
+  {% if item.texto %}<div class="cm-aviso-texto">{{ item.texto|cm_texto }}</div>{% endif %}
+  {% if item.encerrado_em %}
+  <p class="notice">Encerrado por {{ item.encerrado_por_nome }} em {{ item.encerrado_em[8:10] }}/{{ item.encerrado_em[5:7] }} {{ cm_hora(item.encerrado_em) }}. Ele não aparece mais na tela de ninguém.</p>
+  {% elif pode_encerrar %}
+  <form method="post" action="{{ url_for('comunicacao_aviso_encerrar', aviso_id=item.id) }}"
+        onsubmit="return confirm('Encerrar o aviso? Ele sai da tela de todos; o histórico fica.')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button cm-b" type="submit">Encerrar o aviso</button>
+  </form>
+  {% endif %}
+</section>
+<section class="panel">
+  <div class="panel-head"><h2>Quem recebeu ({{ destinos|length }})</h2></div>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Pessoa</th><th>Situação</th><th>Viu</th><th>Estou fazendo</th><th>Feito</th><th>Grau a que chegou</th><th>Agora</th><th>Recolheu</th></tr>
+    {% for d in destinos %}
+    <tr>
+      <td>{{ d.nome }}</td>
+      <td><strong>{{ CM_SITUACAO[d.situacao] }}</strong></td>
+      <td class="small">{{ cm_hora(d.visto_em) or '—' }}{% if d.visto_em and d.visto_em[:10] != item.criado_em[:10] %} ({{ d.visto_em[8:10] }}/{{ d.visto_em[5:7] }}){% endif %}</td>
+      <td class="small">{{ cm_hora(d.fazendo_em) or '—' }}{% if d.fazendo_em and d.fazendo_em[:10] != item.criado_em[:10] %} ({{ d.fazendo_em[8:10] }}/{{ d.fazendo_em[5:7] }}){% endif %}</td>
+      <td class="small">{{ cm_hora(d.feito_em) or '—' }}{% if d.feito_em and d.feito_em[:10] != item.criado_em[:10] %} ({{ d.feito_em[8:10] }}/{{ d.feito_em[5:7] }}){% endif %}</td>
+      <td class="small">{{ CM_GRAU[d.grau_max] }}</td>
+      <td class="small">{{ CM_GRAU[d.grau_agora] if d.grau_agora else '—' }}</td>
+      <td class="small">{{ d.recolhidas }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+</section>
+<section class="panel">
+  <details>
+    <summary><strong>A trilha</strong> ({{ eventos|length }} registros)</summary>
+    <ul class="small">
+      {% for e in eventos %}<li>{{ e.em[8:10] }}/{{ e.em[5:7] }} {{ e.em[11:19] }} — {{ e.por_nome or '—' }} — {{ e.evento }}{% if e.grau %} (grau {{ e.grau }}){% endif %}</li>{% endfor %}
+    </ul>
+  </details>
+</section>
+{% endblock %}

@@ -24,6 +24,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ titulo_aba or unit_name }}{% endblock %} - {{ APP_NAME }}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}?v={{ VERSION }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='comunicacao.css') }}?v={{ VERSION }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='casca.css') }}?v={{ VERSION }}">
   <style>{{ cores_dos_modulos }}
   {% if modulo_cor %}:root{--mod-cor:{{ modulo_cor }};
@@ -47,6 +48,8 @@
   {# O PAPEL TI NÃO SELA (T015): o que sela fica desabilitado na tela; quem recusa é o servidor. #}
   {% if user and user.papel_real == 'TI' %}<script defer src="{{ url_for('static', filename='ti_nao_sela.js') }}?v={{ VERSION }}"></script>{% endif %}
   <script defer src="{{ url_for('static', filename='nu_avisos_modal.js') }}?v={{ VERSION }}"></script>
+  {# A COMUNICAÇÃO (T028): conversas e avisos da gerência, nas duas molduras. #}
+  <script defer src="{{ url_for('static', filename='comunicacao.js') }}?v={{ VERSION }}"></script>
   <script defer src="{{ url_for('static', filename='produtividade_rapida.js') }}?v={{ VERSION }}"></script>
   <script defer src="{{ url_for('static', filename='ri_partes_do_ato.js') }}"></script>
   <script defer src="{{ url_for('static', filename='casca.js') }}?v={{ VERSION }}"></script>
@@ -152,6 +155,9 @@
     {% include '_onr_pedidos_aviso.html' %}
     {% include '_selo_cancelamento_aviso.html' %}
     {% include '_cadeias_aviso.html' %}
+    {# OS AVISOS DA GERÊNCIA QUE INSISTEM (T028): a faixa (grau 2) aqui no alto, e o
+       cartão (grau 3) fixo no canto superior direito, sem travar a tela. #}
+    {% include '_comunicacao_insistencia.html' %}
 
     <header class="cg-topo">
       {% if nav.migalhas %}
@@ -258,6 +264,8 @@
   <aside class="cg-apoio" aria-label="Ferramentas de apoio">
     {# o superusuário logo acima do WhatsApp: pedido do titular (24/11/2026, S005) #}
     {% include '_superusuario_atalho.html' %}
+    {# a comunicação acima do WhatsApp: «de facil acesso na coluna da direita» (T028) #}
+    {% include '_comunicacao_atalho.html' %}
     {% include '_whatsapp_atalho.html' %}
     {% include '_produtividade_rapida.html' %}
     {% if ajuda_tela %}{% include '_ajuda.html' %}{% endif %}

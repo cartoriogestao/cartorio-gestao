@@ -9,13 +9,18 @@ O CAMINHO
 A CLASSE DE CADA FICHA
     PRONTA   a própria ficha tem o que o manual pede, com número, bairro e CEP, e o logradouro dela
              aparece no teor. Número «0» e CEP geral só saem com a regra da casa aceita.
-    TEOR     falta algo que o texto da ficha diz. Só vai se alguém marcar a classe.
+    TEOR     falta algo que o texto da ficha diz. Só vai se alguém marcar a classe. A via que vem
+             do teor tem de estar escrita inteira, com o tipo: «Área» + nome lido é regra da casa.
     REGRA    depende do padrão da casa (bairro, número «0», tipo pelo rural/urbano, CEP geral).
              Só vai com a opção explícita, porque esses valores iriam ao índice nacional.
     PESSOA   a leitura é fraca, contradiz a ficha ou falta o que nenhuma regra dá. Nunca vai.
 
 O ACERVO FICA DESLIGADO POR PADRÃO. Subir as fichas `ACERVO` é decisão do titular, e o
 `ri_onr_central.a_enviar` continua sem elas.
+
+ARQUIVO GERADO FORA DESTA TELA e já importado no portal entra no histórico por
+`registrar_arquivo_externo`: o arquivo é guardado como veio, com o hash, e as matrículas dele
+passam a contar como lote vivo. Sem isso a tela geraria as mesmas de novo e nunca as contaria.
 
 A MESMA MATRÍCULA NÃO SAI EM DOIS LOTES VIVOS. Reenviar com `TIPOENVIO` 1 (atualização) depende de
 saber o que o portal já tem, e fica para quando houver o primeiro «Importado».
@@ -144,6 +149,12 @@ def ficha_com_o_teor(m: Mapping[str, Any], proposta: Mapping[str, Any], casa: J.
     for c in _CAMPOS_DO_TEOR:
         if not _texto(saida.get(c)) and _texto(campos.get(c)) and _veio_do_texto(de_onde.get(c)):
             saida[c] = campos[c]
+    # A VIA INTEIRA TEM DE ESTAR ESCRITA. `propor` lê «denominada "Riacho Fundo"» e põe «Área» à frente:
+    # o nome é do livro, o tipo é da casa. Medido na réplica em 25/11/2026: 515 fichas entravam assim
+    # como «completa pelo teor». Com o tipo da casa, a ficha é REGRA.
+    if not _texto(m.get("logradouro")) and _texto(saida.get("logradouro")) \
+            and not _diz_no_teor(m.get("teor"), saida.get("logradouro")):
+        saida["logradouro"] = ""
     # O município da serventia já diz a UF: não é palpite, é a mesma informação.
     if not _texto(saida.get("uf")) and J.chave(saida.get("cidade")) in casa.municipios:
         saida["uf"] = casa.uf
@@ -363,6 +374,105 @@ def gerar(con, *, settings: Mapping[str, Any], filtros: Mapping[str, Any], por: 
                 (lote_id, GERADO, "Arquivo gerado. Nada foi enviado.", por, agora))
     return {"id": lote_id, "arquivo": arquivo, "sha256": J.sha256(conteudo), "registros": len(r["vao"]),
             "recusadas": len(r["recusadas"]), "para_o_proximo": r["para_o_proximo"]}
+
+
+# ------------------------------------------------------------ arquivo gerado fora desta tela
+
+
+EXTERNO = "EXTERNO"
+NOME_DA_CLASSE[EXTERNO] = "Gerado fora desta tela"
+#: O arquivo já foi ao portal: o que se registra é o que ele mostrou, nunca «Gerado».
+SITUACOES_DO_EXTERNO = (PROCESSANDO, IMPORTADO, NAO_IMPORTADO)
+MAIOR_ARQUIVO_EXTERNO = 20 * 1024 * 1024
+
+
+def _nome_do_arquivo(nome: Any) -> str:
+    limpo = re.sub(r"[^A-Za-z0-9._-]", "_", _texto(nome).replace("\\", "/").rsplit("/", 1)[-1])[:120]
+    return limpo if limpo.lower().endswith(".json") else (limpo or "IndicadorReal_externo") + ".json"
+
+
+def registrar_arquivo_externo(con, *, conteudo: bytes, nome: Any, situacao: str, visto_em: Any, observacao: Any,
+                              settings: Mapping[str, Any], por: str, agora: str) -> dict:
+    """Põe no histórico um arquivo que o oficial JÁ IMPORTOU no portal, gerado fora desta tela.
+
+    O ARQUIVO É GUARDADO COMO VEIO, byte a byte, para o hash ser o do que foi ao portal. Cada
+    registro é conferido contra o manual e contra uma ficha ativa. O teto do lote não vale aqui: o
+    arquivo já foi. Nada é enviado, e nenhuma ficha muda.
+    """
+    bd = banco(con)
+    bd.travar("onr_ir_lotes")
+    casa, faltam = J.serventia_de(settings)
+    if casa is None:
+        raise LoteError("Falta na configuração: " + "; ".join(faltam) + ".")
+    if situacao not in SITUACOES_DO_EXTERNO:
+        raise LoteError("Diga o que o portal mostrou: Processando, Importado ou Não importado.")
+    nota = _texto(observacao)
+    if len(nota) < MENOR_OBSERVACAO:
+        raise LoteError(f"Diga de onde veio o arquivo e quando foi importado, com pelo menos {MENOR_OBSERVACAO} letras.")
+    try:
+        dia = date.fromisoformat(_texto(visto_em))
+    except ValueError:
+        raise LoteError("Informe a data em que o arquivo foi importado no portal.") from None
+    if dia.isoformat() > agora[:10]:
+        raise LoteError("A data da importação não pode estar no futuro.")
+    if not conteudo or len(conteudo) > MAIOR_ARQUIVO_EXTERNO or b"\x00" in conteudo:
+        raise LoteError("Envie o arquivo .json do Indicador Real, como foi importado.")
+    try:
+        texto = conteudo.decode("utf-8")
+        corpo = json.loads(texto.lstrip("﻿"))
+        cns, registros = corpo["INDICADOR_REAL"]["CNS"], corpo["INDICADOR_REAL"]["REAL"]
+    except (UnicodeDecodeError, ValueError, KeyError, TypeError):
+        raise LoteError("O arquivo não é um JSON do Indicador Real (falta INDICADOR_REAL, CNS ou REAL).") from None
+    if _so_digitos(cns) != casa.cns:
+        raise LoteError(f"O CNS do arquivo ({_texto(cns)}) não é o desta serventia.")
+    if not isinstance(registros, list) or not registros or not all(isinstance(r, dict) for r in registros):
+        raise LoteError("O arquivo não tem registros.")
+    h = J.sha256(conteudo)
+    if bd.um("SELECT id FROM onr_ir_lotes WHERE sha256 = %s AND situacao <> %s", (h, DESCARTADO)):
+        raise LoteError("Este mesmo arquivo já está no histórico.")
+
+    problemas: list[str] = []
+    vistos: Counter = Counter(_texto(r.get("NUMERO_REGISTRO")) for r in registros)
+    for numero, vezes in vistos.items():
+        if vezes > 1:
+            problemas.append(f"{numero}: repetida {vezes} vezes no arquivo")
+    for r in registros:
+        try:
+            erros = J.validar_registro(r, casa)
+        except (AttributeError, TypeError):
+            erros = ["os blocos do registro não têm a forma do manual."]
+        for erro in erros:
+            problemas.append(f"{_texto(r.get('NUMERO_REGISTRO')) or '?'}: {erro}")
+    fichas: dict[str, list[dict]] = {}
+    for f in bd.ler("SELECT id, numero FROM ri_matriculas WHERE COALESCE(encerrada, 0) = 0 AND numero = ANY(%s)",
+                    (list(vistos),)):
+        fichas.setdefault(_texto(f["numero"]), []).append(f)
+    vivos = _em_lote_vivo(con)
+    for numero in vistos:
+        achadas = fichas.get(numero, [])
+        if len(achadas) != 1:
+            problemas.append(f"{numero}: {'nenhuma ficha ativa' if not achadas else f'{len(achadas)} fichas ativas'} com este número")
+        if numero in vivos:
+            problemas.append(f"{numero}: já está no lote {vivos[numero]}")
+    if problemas:
+        mais = f" (e mais {len(problemas) - 10})" if len(problemas) > 10 else ""
+        raise LoteError("O arquivo não entrou no histórico: " + "; ".join(problemas[:10]) + mais + ".")
+
+    arquivo = _nome_do_arquivo(nome)
+    origem = {"origem": "arquivo gerado fora desta tela", "nome_original": _texto(nome)[:200]}
+    lote_id = bd.valor(
+        """INSERT INTO onr_ir_lotes (arquivo, sha256, bytes, registros, recusadas, filtros, lista_recusadas,
+                                     conteudo, situacao, gerado_por, gerado_em)
+           VALUES (%s, %s, %s, %s, 0, %s, '[]', %s, %s, %s, %s) RETURNING id""",
+        (arquivo, h, len(conteudo), len(registros), json.dumps(origem, ensure_ascii=False), texto, situacao, por, agora))
+    for r in registros:
+        numero = _texto(r.get("NUMERO_REGISTRO"))
+        bd.escrever(
+            "INSERT INTO onr_ir_lote_itens (lote_id, numero, matricula_id, classe, sha256_registro) "
+            "VALUES (%s, %s, %s, %s, %s)", (lote_id, numero, fichas[numero][0]["id"], EXTERNO, _hash_registro(r)))
+    bd.escrever("INSERT INTO onr_ir_lote_eventos (lote_id, de, para, visto_em, observacao, por, em) "
+                "VALUES (%s, NULL, %s, %s, %s, %s, %s)", (lote_id, situacao, dia.isoformat(), nota, por, agora))
+    return {"id": lote_id, "arquivo": arquivo, "sha256": h, "registros": len(registros)}
 
 
 # ------------------------------------------------------------ o que o portal disse

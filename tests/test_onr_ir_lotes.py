@@ -252,3 +252,98 @@ def test_so_o_admin_entra(cg_casa, papel):
     cg_casa["db"].create_user("outra", "PESSOA DE TESTE", "Senha#12345", papel)
     cg_login(cg_casa["c"], "outra", "Senha#12345")
     assert cg_casa["c"].get(ROTA).status_code in (302, 403)
+
+
+# ------------------------------------------------------------ a via que vem do teor
+
+
+@pytest.mark.parametrize("teor, classe", [
+    ('IMÓVEL: uma área de terras denominada "Riacho Fundo", com 10,00,00 ha, situada neste município de Cidade Exemplo.',
+     L.REGRA),
+    ("IMÓVEL: uma área de terras na Fazenda Riacho Fundo, com 10,00,00 ha, situada neste município de Cidade Exemplo.",
+     L.TEOR),
+])
+def test_via_com_o_tipo_da_casa_nao_e_completa_pelo_teor(teor, classe):
+    import onr_ir_inteiro as INTEIRO
+    casa, _ = J.serventia_de(CONFIG)
+    m = {"numero": "95", "livro_norm": "2", "tipo_ficha": "ESTRUTURADA", "situacao": "ATIVA", "rural_urbano": "R",
+         "tipo_imovel": "Fazenda/Sítio/Chácara", "logradouro": "", "numero_predial": "", "bairro": "",
+         "cidade": "Cidade Exemplo", "uf": "SP", "cep": "", "teor": teor}
+    assert L.avaliar(m, casa, CONFIG, INTEIRO.padrao_do_arquivo(CONFIG))["classe"] == classe
+
+
+# ------------------------------------------------------------ arquivo gerado fora desta tela
+
+
+def _arquivo_de(*numeros, cns="000000", **mudar) -> bytes:
+    casa, _ = J.serventia_de({**CONFIG, "ri_cns": cns})
+    regs = []
+    for n in numeros:
+        r, motivos = J.montar_registro({"numero": str(n), "livro_norm": "2", "rural_urbano": "U", "tipo_imovel": "Casa",
+                                        "logradouro": "Rua das Flores", "cidade": "Cidade Exemplo", "uf": "SP"}, casa)
+        assert not motivos
+        regs.append({**r, **mudar})
+    import json as _json
+    return _json.dumps({"INDICADOR_REAL": {"CNS": cns, "REAL": regs}}, ensure_ascii=False, indent=2).encode()
+
+
+def _externo(db, conteudo, **mudar):
+    campos = {"nome": "../pasta/IndicadorReal_000000_A.json", "situacao": L.PROCESSANDO, "visto_em": "2026-11-23",
+              "observacao": "Gerado por outra sessão e importado no portal."}
+    campos.update(mudar)
+    with db.transaction() as con:
+        return L.registrar_arquivo_externo(con, conteudo=conteudo, settings=CONFIG, por="teste",
+                                           agora="2026-11-23 16:00:00", **campos)
+
+
+def test_arquivo_externo_entra_como_veio_e_segura_as_matriculas(casa):
+    db = casa["db"]
+    _semear(db, 91, 92)
+    conteudo = b"\xef\xbb\xbf" + _arquivo_de(91, 92)
+    feito = _externo(db, conteudo)
+    assert feito["arquivo"] == "IndicadorReal_000000_A.json" and feito["sha256"] == J.sha256(conteudo)
+    with db.connect() as con:
+        assert L.arquivo_do_lote(con, feito["id"])[1] == conteudo
+        assert L.lotes(con)[0]["situacao"] == L.PROCESSANDO and L.entregues(con) == 0
+    r = _conferir(db)
+    assert not r["vao"] and all("Já está no lote" in x["motivos"][0] for x in r["recusadas"])
+    with pytest.raises(L.LoteError):
+        _externo(db, conteudo)
+    with db.transaction() as con:
+        L.registrar_resultado(con, feito["id"], L.IMPORTADO, visto_em="2026-11-23", observacao="",
+                              por="teste", agora="2026-11-23 17:00:00")
+    with db.connect() as con:
+        assert L.entregues(con) == 2
+
+
+@pytest.mark.parametrize("arquivo, mudar, trecho", [
+    (lambda: _arquivo_de(93, cns="0" * 5 + "1"), {}, "CNS"),
+    (lambda: _arquivo_de(93, 99), {}, "nenhuma ficha ativa"),
+    (lambda: _arquivo_de(93, UF=0), {}, "UF fora da tabela"),
+    (lambda: _arquivo_de(93), {"situacao": L.GERADO}, "o que o portal mostrou"),
+    (lambda: _arquivo_de(93), {"observacao": "curta"}, "de onde veio"),
+    (lambda: _arquivo_de(93), {"visto_em": "2026-11-24"}, "futuro"),
+    (lambda: b"nao e json", {}, "não é um JSON"),
+])
+def test_arquivo_externo_torto_nao_entra(casa, arquivo, mudar, trecho):
+    db = casa["db"]
+    _semear(db, 93)
+    with pytest.raises(L.LoteError, match=trecho):
+        _externo(db, arquivo(), **mudar)
+    with db.connect() as con:
+        assert L.lotes(con) == []
+
+
+def test_a_tela_registra_o_arquivo_externo(casa):
+    import io
+    db, c = casa["db"], casa["c"]
+    _semear(db, 94)
+    token = casa.get("csrf") or _token(c)
+    r = c.post(f"{ROTA}/registrar-arquivo", content_type="multipart/form-data", data={
+        "csrf_token": token, "situacao": L.PROCESSANDO, "visto_em": "2026-11-23",
+        "observacao": "Importado no portal pelo oficial.", "arquivo": (io.BytesIO(_arquivo_de(94)), "A.json")})
+    assert r.status_code == 302
+    with db.connect() as con:
+        [lote] = L.lotes(con)
+    assert lote["registros"] == 1 and lote["situacao"] == L.PROCESSANDO
+    assert "Arquivo já importado" in c.get(ROTA).get_data(as_text=True)

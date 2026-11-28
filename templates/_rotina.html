@@ -1,7 +1,10 @@
 {# A ROTINA DA SERVENTIA (26/11/2026, `rotina_da_casa`): o mesmo item na
    Checklist do dia e em «Minha rotina» — quando vence, quem faz, a situação,
    o «Como fazer» recolhido e o botão «Feito». Importe `with context`: o
-   formulário usa o `csrf_token` e os `rotina_resultados` da tela. #}
+   formulário usa o `csrf_token` e os `rotina_resultados` da tela.
+   QUEM ESTÁ RESOLVENDO (26/11/2026): a marca vem com a situação, e «Eu
+   resolvo», «Largar» e «Assumir no lugar» ao lado do «Feito» (`_quem_resolve`). #}
+{% from '_quem_resolve.html' import marca as marca_de_quem, botoes as botoes_de_quem with context %}
 
 {% macro dia(iso) %}{% if iso %}{{ iso[8:10] }}/{{ iso[5:7] }}{% endif %}{% endmacro %}
 
@@ -11,6 +14,7 @@
   {% if r.responsavel %}<span>{{ r.responsavel }}</span>{% if r.responsavel_ativo == false %} <span class="badge alta">inativo</span>{% endif %}
   {% else %}<span class="badge alta" title="Ninguém responde por esta rotina: ela só aparece na Checklist do dia">sem responsável</span>{% endif %}
   {% if r.suplente %}<br><small class="muted">suplente: {{ r.suplente }}{% if r.suplente_ativo == false %} (inativo){% endif %}</small>{% endif %}
+  {% if r.destino == 'ESCREVENTE' %}<br><span class="badge" title="Não aparece na Checklist do dia da gestão: só em «Minha rotina» do responsável e do suplente">do escrevente</span>{% endif %}
 {% endmacro %}
 
 {% macro como_fazer(r) %}
@@ -49,6 +53,8 @@
   {% endif %}
   {% if r.referencia and r.prazo and r.referencia != r.prazo %}<br><small class="muted">vencimento de {{ dia(r.referencia) }}, que caiu em dia sem expediente</small>{% endif %}
   {% if r.n_sem_registro %}<br><span class="badge critica">{{ r.n_sem_registro }} sem registro desde {{ dia(r.sem_registro_desde) }}</span>{% endif %}
+  {% if r.volta_a_gestao == 'ATRASO' %}<br><span class="badge critica" title="Rotina do escrevente: voltou à Checklist do dia pelo atraso; continua em «Minha rotina» de quem responde">do escrevente — voltou à gestão: {{ r.dias_uteis_de_atraso }} dia(s) útil(eis) de atraso</span>
+  {% elif r.volta_a_gestao == 'SEM_NINGUEM' %}<br><span class="badge critica" title="Rotina do escrevente sem responsável nem suplente ativo: escolha outra pessoa no cadastro">do escrevente — sem ninguém ativo para fazer</span>{% endif %}
 {% endmacro %}
 
 {% macro feito(r, voltar, area) %}
@@ -81,12 +87,13 @@
   <tr><th>Situação</th><th>O que fazer</th><th>Quando</th><th>Quem faz</th><th></th></tr>
   {% for r in itens %}
   <tr id="rotina-{{ r.id }}">
-    <td class="small">{{ situacao(r) }}</td>
+    <td class="small">{{ situacao(r) }}{% if r.quem %}<br>{{ marca_de_quem(r) }}{% endif %}</td>
     <td><strong>{{ r.titulo }}</strong>{% if r.prioridade == 1 %} <span class="badge alta">prioridade alta</span>{% endif %}
       {{ como_fazer(r) }}</td>
     <td class="small">{{ r.quando }}</td>
     <td class="small">{{ quem(r) }}</td>
-    <td>{{ feito(r, voltar, area) }}</td>
+    <td>{{ feito(r, voltar, area) }}
+      {{ botoes_de_quem(r, 'ROTINA', {'rotina_id': r.id, 'referencia': r.referencia}, voltar, area) }}</td>
   </tr>
   {% endfor %}
 </table>

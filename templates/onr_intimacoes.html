@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% block title %}ONR — e-Intimação do RI{% endblock %}
+{% block heading %}<h1>ONR — pedidos de e-Intimação</h1>{% endblock %}
+{% block content %}
+<section class="panel">
+  <p>Os pedidos de intimação que o credor remeteu a esta serventia pela e-Intimação do ONR
+    (Ofício Eletrônico, <code>intimacoes.asmx</code>). Esta tela <strong>só lê</strong>: nada daqui é
+    respondido ao ONR. Quem cobra o pedido parado é o aviso na tela da
+    responsável pelos pedidos do ONR (<a href="{{ url_for('onr_pedidos_avisos') }}">ONR — pedidos parados</a>).</p>
+  <p class="small muted">Ambiente: <strong>{{ ambiente|lower }}</strong>. Processo da central:
+    <strong>{{ processo.codigo }}</strong>, a cada {{ processo.agenda.intervalo_min }} min nos dias úteis,
+    das {{ processo.agenda.janela[0] }} às {{ processo.agenda.janela[1] }} (nasce desligado).</p>
+  <p>Última leitura boa:
+    {% if q.ultima_boa %}<strong>{{ q.ultima_boa.terminada_em[:16]|replace('T', ' ') }}</strong>
+      ({{ q.ultima_boa.listados }} na lista, {{ q.ultima_boa.novos }} novo(s)){% else %}<strong>nenhuma ainda</strong>{% endif %}.
+    {% if q.ultima and q.ultima.situacao == 'ERRO' %}<span class="danger">A última tentativa falhou: {{ q.ultima.erro }}</span>{% endif %}</p>
+  {% if not credencial.tem_chave %}<p class="warning">Falta a credencial do Ofício Eletrônico (wsoficio.cred) neste ambiente.</p>{% endif %}
+  {% if user.role in ['ADMIN', 'MANAGER', 'USER'] %}
+  <form method="post" action="{{ url_for('onr_intimacoes_ler') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button" type="submit">Ler agora</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Pedidos ({{ q.pedidos|length }})</h2>
+  {% if q.pedidos %}
+  <table>
+    <thead><tr><th>Protocolo</th><th>Status no ONR</th><th>Desde</th><th>Pedido em</th><th></th></tr></thead>
+    <tbody>
+    {% for p in q.pedidos %}
+      <tr>
+        <td><a href="{{ url_for('onr_intimacao_ficha', pedido_id=p.id) }}"><code>{{ p.protocolo or p.id_pedido }}</code></a></td>
+        <td>{{ p.nome_status }}{% if p.parado %} <span class="badge critica">a vez é da casa</span>{% endif %}</td>
+        <td>{{ (p.data_status or '')[:10] }}</td>
+        <td>{{ (p.data_pedido or '')[:10] }}</td>
+        <td><a href="{{ url_for('onr_intimacao_ficha', pedido_id=p.id) }}">Abrir</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>{% if q.ultima_boa %}Nenhum pedido de intimação nos últimos dias.{% else %}Nada lido ainda.{% endif %}</p>
+  {% endif %}
+</section>
+
+<section class="panel" id="regra">
+  <h2>Quais status contam como parados</h2>
+  {% set r = q.regra %}
+  {% if r.de_onde == 'SEM_TABELA' %}
+  <p>A tabela de status ainda não veio do ONR: ela chega na primeira leitura. Até lá, a e-Intimação fica
+    «não medida» nos avisos.</p>
+  {% else %}
+  <p>{% if r.de_onde == 'SUGESTAO' %}<strong>Sugestão pelo nome do status</strong> — ninguém conferiu ainda.
+    Marque os status em que a vez é da casa e grave.{% else %}<strong>Conferido</strong> em Configurações.{% endif %}
+    O pedido num destes status vira aviso para a responsável (simples no 1º dia útil, faixa vermelha do 2º em diante).</p>
+  <form method="post" action="{{ url_for('onr_intimacoes_regra') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <ul style="list-style:none;padding:0">
+    {% for s in r.status %}
+      <li><label class="checkbox-label"><input type="checkbox" name="status" value="{{ s.id_status }}"
+        {% if s.id_status in r.ids %}checked{% endif %}{% if user.role != 'ADMIN' %} disabled{% endif %}>
+        {{ s.id_status }} — {{ s.nome }}</label></li>
+    {% endfor %}
+    </ul>
+    {% if user.role == 'ADMIN' %}
+    <button class="button primary" type="submit">Gravar os status parados</button>
+    {% if r.de_onde == 'CONFIGURADO' %}<button class="button" type="submit" name="acao" value="sugestao">Voltar à sugestão</button>{% endif %}
+    {% endif %}
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

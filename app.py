@@ -72,7 +72,7 @@ APP_NAME = "Gestão Integrada da Serventia"
 # servidor avisou «quem respondeu está na versão 3.6.137, e a instalada é
 # 3.6.138» sobre uma atualização que tinha funcionado (504 de 505 arquivos
 # batendo byte a byte). `tests/test_os_dois_carimbos_da_versao.py` guarda isso.
-VERSION = "3.7.22"
+VERSION = "3.7.23"
 # 3.6.286 - 06/10/2026 Release do sandbox para o oficial: centrais (fila/log/trava), A3, editor/motor de modelos, produtividade, selo robo, F10-F12 do RI, SIRC (cancelados)
 # 3.6.285 - CENPROT: POST /token com form usuario/senha (x-www-form-urlencoded)
 # 3.6.284 - Projetos lista: coluna Atualizado (DD/MM/AA - HH:MM, fuso local)
@@ -3808,6 +3808,9 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     # Os pedidos do ONR parados: o aviso na tela de quem faz o trabalho (A005).
     import onr_pedidos_avisos_web
     onr_pedidos_avisos_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+    # A e-Intimação do RI: a leitura dos pedidos, só leitura (A005, 27/11/2026).
+    import onr_intimacoes_web
+    onr_intimacoes_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
     # A CONFERENCIA DO ENDERECO QUE VAI AO ONR — o que o teor da ficha diz,
     # ao lado do que a ficha tem, com a frase de onde cada campo saiu.
@@ -3983,6 +3986,11 @@ def _montar_app(test_config: dict | None = None) -> Flask:
     # na Checklist do dia, no alto de cada área.
     import rotina_da_casa_web
     rotina_da_casa_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
+
+    # QUEM ESTÁ RESOLVENDO (26/11/2026): «Eu resolvo», «Largar» e «Assumir no
+    # lugar» na Checklist do dia, em «Minha rotina» e nas fases dos Projetos.
+    import quem_resolve_web
+    quem_resolve_web.registrar_rotas(app, db, login_required, roles_required, audit, fmt_date)
 
     # A PASTA DO PROCESSO e o rascunho que vira processo (12/10/2026) — fase 1
     # do módulo único de Processos.

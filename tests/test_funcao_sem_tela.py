@@ -776,6 +776,10 @@ ACHADAS_EM_26_11_2026: dict[str, str] = {
                           "test_rotina_da_casa guarda a trilha",
     "rodada_dos_avisos": "onr_pedidos_avisos — chamada pelo catálogo da central de "
                          "automação; test_onr_pedidos_avisos guarda o processo",
+    # 27/11/2026: a leitura da e-Intimação (A005), o mesmo caminho; a tela
+    # «ONR: e-Intimação» tem o «Ler agora», que chama a mesma leitura.
+    "rodada_das_intimacoes": "onr_intimacoes — chamada pelo catálogo da central de "
+                             "automação; test_onr_intimacoes guarda o processo",
 }
 
 
@@ -786,10 +790,10 @@ ACHADAS_EM_26_11_2026: dict[str, str] = {
 _B0 = ("onr_wsoficio — método do contrato WSOfício (RI013 B0), testado; a regra e a "
        "tela vêm nas fases P2, P3, I2, I3 e C2")
 ACHADAS_EM_27_11_2026: dict[str, str] = {
-    "ler_data_do_onr": _B0,
+    # `ler_data_do_onr` e `ler_pedidos_da_intimacao` saíram em 27/11/2026: a
+    # leitura da e-Intimação (A005, a I2) as chama, e a tela «ONR: e-Intimação» chega lá.
     "ler_detalhes_da_intimacao": _B0,
     "ler_pagamentos_da_intimacao": _B0,
-    "ler_pedidos_da_intimacao": _B0,
     "pedido_alterar_ac": _B0,
     "pedido_averbado_ac": _B0,
     "pedido_baixa_boleto_ac": _B0,

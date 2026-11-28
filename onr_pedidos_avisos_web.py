@@ -27,7 +27,8 @@ QUEM_VE = ("ADMIN", "MANAGER", "USER", "AUDITOR")
 QUEM_VERIFICA = ("ADMIN", "MANAGER", "USER")
 #: O nome do argumento de cada tela de pedido.
 ARGUMENTO = {"onr_auto_pedido": "pedido_id", "onr_certidao_ficha": "pedido_id",
-             "onr_eprotocolo_ficha": "pedido_id", "onr_saec_ficha": "atendimento_id"}
+             "onr_eprotocolo_ficha": "pedido_id", "onr_saec_ficha": "atendimento_id",
+             "onr_intimacao_ficha": "pedido_id"}
 #: Quantos pedidos a faixa lista; o resto vai na tela dos avisos.
 NA_FAIXA = 5
 

@@ -13,19 +13,22 @@
    contando os retirados; ao lado vem a cor «sem os retirados».
    A ROTINA DO DIA (26/11/2026, `rotina_da_casa`): o bloco «Rotina do dia»
    vem antes dos achados, por área (e «TI e sistema» para a TI), com o «Como
-   fazer» e o «Feito» de cada item. Não mexe nos achados nem na cor. #}
+   fazer» e o «Feito» de cada item. Não mexe nos achados nem na cor.
+   A ROTINA DO ESCREVENTE (27/11/2026, A011): o item de destino ESCREVENTE
+   não entra no bloco; a linha «Fora desta lista» diz quantos são. #}
 {% from '_rotina.html' import lista as lista_da_rotina with context %}
 {% block title %}Checklist de gestão do dia{% endblock %}
 {% block heading %}<h1>Checklist de gestão do dia</h1>{% endblock %}
 {% block content %}
 {% set m = ck.medicao %}
 {% set classe_cor = {'VERMELHO': 'critica', 'AMARELO': 'alta', 'VERDE': 'ok'} %}
+{% from '_quem_resolve.html' import marca as marca_de_quem, botoes as botoes_de_quem with context %}
 {% macro tabela(itens, retirados=false) %}
   <div class="table-wrap">
   <table>
     <tr><th>Gravidade</th><th>O que é</th><th>Regra</th><th>Prazo</th><th>Em aberto</th><th>Onde resolver</th>
       {% if retirados %}<th>Retirado</th><th>Motivo</th>{% if ck.pode_retirar %}<th></th>{% endif %}
-      {% elif ck.pode_retirar %}<th>Não cabe à gestão?</th>{% endif %}</tr>
+      {% else %}<th>Quem resolve</th>{% if ck.pode_retirar %}<th>Não cabe à gestão?</th>{% endif %}{% endif %}</tr>
     {% for x in itens %}
     <tr>
       <td><span class="badge {{ {'VENCIDO': 'critica', 'CRITICO': 'critica', 'PRAZO': 'alta', 'NAO_MEDIU': 'alta', 'OUTRA': 'alta'}.get(x.gravidade, '') }}">{{ gravidades[x.gravidade] }}</span></td>
@@ -44,7 +47,11 @@
           <input type="hidden" name="area" value="{{ ck.area or '' }}">
           <button type="submit" class="small">Devolver à lista</button>
         </form></td>{% endif %}
-      {% elif ck.pode_retirar %}
+      {% else %}
+      <td class="small">{{ marca_de_quem(x) }}
+        {{ botoes_de_quem(x, 'ACHADO', {'achado_id': x.id}, 'checklist', ck.area) }}
+        {% if not x.quem and not x.qr_pode_assumir %}<span class="muted">ninguém</span>{% endif %}</td>
+      {% if ck.pode_retirar %}
       <td>
         <details class="retirar-da-gestao"><summary class="small">Retirar</summary>
         <form method="post" action="{{ url_for('gestor_checklist_retirar') }}">
@@ -62,6 +69,7 @@
         </form>
         </details>
       </td>
+      {% endif %}
       {% endif %}
     </tr>
     {% endfor %}
@@ -81,6 +89,9 @@
   malote, prazos), com o passo a passo de cada item e quem o faz. «Feito» grava quem fez,
   quando e como foi; <strong>não resolve achado nem muda a cor</strong>. O cadastro é a
   <strong>Rotina da serventia</strong>{% if ck.abre_cadastro_rotina %} (<a href="{{ url_for('rotina_cadastro') }}">abrir</a>){% endif %}.</p>
+  <p>Para duas pessoas não fazerem o mesmo trabalho, «<strong>Eu resolvo</strong>» marca quem está cuidando
+  de cada item (e «Largar» o devolve); quem vê a marca fala com essa pessoa. O oficial e o gerente podem
+  «Assumir no lugar». A marca some quando o item é feito ou o achado se fecha.</p>
   <p>Os <strong>achados abertos</strong> do gestor, pela mesma área do semáforo do
   painel geral, e as <strong>conferências do dia</strong>. O botão «conferido hoje»
   grava quem olhou e quando — <strong>não resolve achado</strong>: o achado só sai
@@ -111,11 +122,14 @@
   </nav>
 </section>
 
+{% if ck.erro_quem_resolve %}<div class="notice">Não deu para ler quem está resolvendo cada item ({{ ck.erro_quem_resolve }}): a lista abaixo não mostra as marcas.</div>{% endif %}
 <section class="panel" id="rotina">
   <div class="panel-head"><h2>Rotina do dia{% if ck.area %} — {{ areas[ck.area] }}{% endif %} ({{ ck.total_rotina }})</h2>
     {% if ck.abre_cadastro_rotina %}<a class="small" href="{{ url_for('rotina_cadastro', area=ck.area) }}">Rotina da serventia (cadastro)</a>{% endif %}</div>
   {% if ck.erro_rotina %}
   <div class="notice critical">Não deu para ler a rotina: {{ ck.erro_rotina }}. Isto não quer dizer que não há rotina para hoje.</div>
+  {% elif ck.total_rotina_do_escrevente and not ck.rotina %}
+  <p class="small muted">Nada da rotina da gestão vence hoje nem está atrasado{% if ck.area %} em {{ areas[ck.area] }}{% endif %}.</p>
   {% elif ck.rotina_cadastrada == 0 %}
   <p class="small muted">Nenhuma rotina cadastrada ainda.{% if ck.abre_cadastro_rotina %} <a href="{{ url_for('rotina_cadastro') }}">Cadastrar a rotina da serventia</a>.{% endif %}</p>
   {% elif not ck.rotina %}
@@ -126,10 +140,12 @@
     <small class="muted">{{ lista|selectattr('situacao', 'equalto', 'ATRASADO')|list|length }} atrasado(s),
       {{ lista|rejectattr('situacao', 'in', ['ATRASADO', 'FEITO'])|list|length }} a fazer,
       {{ lista|selectattr('situacao', 'equalto', 'FEITO')|list|length }} feito(s){% set faltas = lista|sum(attribute='n_sem_registro') %}{% if faltas %},
-      <strong>{{ faltas }} sem registro</strong> nos últimos 30 dias{% endif %}</small></h3>
+      <strong>{{ faltas }} sem registro</strong> nos últimos 30 dias{% endif %}{% set em_resolucao = (ck.em_resolucao_rotina or {}).get(area, 0) %}{% if em_resolucao %},
+      <strong>{{ em_resolucao }} em resolução</strong>{% endif %}</small></h3>
   {{ lista_da_rotina(lista, 'checklist', ck.area) }}
   {% endfor %}
   {% endif %}
+  {% if ck.total_rotina_do_escrevente %}<p class="small muted" id="rotina-do-escrevente">Fora desta lista: {{ ck.total_rotina_do_escrevente }} item(ns) da rotina do escrevente{% if ck.area %} em {{ areas[ck.area] }}{% endif %}, que ficam só em «Minha rotina» do responsável e do suplente{% if ck.rotina_volta_apos %}; volta para cá, marcado, o que chegar a {{ ck.rotina_volta_apos }} dia(s) útil(eis) de atraso{% endif %}.</p>{% endif %}
 </section>
 
 <section class="panel" id="achados">
@@ -152,7 +168,7 @@
     {% if a %}<span class="badge {{ classe_cor.get(a.cor, '') }}" title="A cor oficial: a do painel geral e do retrato, que conta também os retirados">{{ cores[a.cor] }}</span>{% endif %}
     {% if n_retirados and cor_sem %}<span class="badge {{ classe_cor.get(cor_sem, '') }}" title="A cor que a área teria sem os achados retirados por não caberem à gestão">sem os retirados: {{ cores[cor_sem] }}</span>{% endif %}
     {% if cor_rotina %}<span class="badge {{ classe_cor.get(cor_rotina, '') }}" title="A cor que a área teria só com a rotina">só a rotina: {{ cores[cor_rotina] }}</span>{% endif %}
-    <small class="muted">{{ lista|length }} aberto(s): {{ da_rotina|length }} da rotina, {{ do_debito|length }} de débito passado{% if n_retirados %} · {{ n_retirados }} retirado(s) não conta(m) aqui; a cor oficial os conta{% endif %}</small></h3>
+    <small class="muted">{{ lista|length }} aberto(s): {{ da_rotina|length }} da rotina, {{ do_debito|length }} de débito passado{% set em_resolucao = (ck.em_resolucao_achados or {}).get(area, 0) %}{% if em_resolucao %} · <strong>{{ em_resolucao }} em resolução</strong>{% endif %}{% if n_retirados %} · {{ n_retirados }} retirado(s) não conta(m) aqui; a cor oficial os conta{% endif %}</small></h3>
   {% if not lista %}<p class="muted small">Nada aberto fora o(s) {{ n_retirados }} retirado(s) por não caber(em) à gestão.</p>
   {% else %}
   <h4 class="idade-rotina">Rotina <small class="muted">— visto há até {{ ck.rotina_dias_uteis }} dias úteis; vem primeiro</small></h4>

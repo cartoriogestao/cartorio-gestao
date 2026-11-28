@@ -25,8 +25,11 @@ O QUE ELE FAZ TODO DIA (`rodada`, chamada pela rodada das 07:30 do gestor)
        disso, estar na pasta não é estar no ONR.
     2. **Indicador Pessoal** — enquanto a carga inicial não foi levada pelo IPS,
        mantém a CARGA COMPLETA pronta (e só a regrava quando o conteúdo muda);
-       depois dela, gera o incremental do que se lavrou desde o último arquivo,
+       depois dela, gera o incremental do que se lançou desde o último arquivo
+       (ato desta casa ou de acervo, matrícula nova, e parte nova pelo `id`),
        com o nome que o E-Ofício usava (`IndicadorPessoal_ddmmaaaa_ddmmaaaa.XML`).
+       O que o incremental antigo deixou para trás sai UMA vez, pela linha de
+       comando (`--complemento-pessoal`), na pasta da carga inicial.
     3. **Indicador Real** — confere a fila do ONR, manda o indicador das
        matrículas novas desta casa, e **reenvia o que mudou**: até aqui, depois
        de ENVIADO, a matrícula nunca voltava à lista, por mais atos que
@@ -694,13 +697,25 @@ RE_QUAL = re.compile(
     r"^\s*([A-Z]{1,3}[-.\s]?\d+|ABERTURA)\s*·\s*(\d{2})/(\d{2})/(\d{4})\s*·\s*([^·]*)", re.I)
 
 
-def vinculos(con, *, desde: str | None = None) -> list[dict]:
+def vinculos(con, *, desde: str | None = None,
+             acima_da_parte: int | None = None) -> list[dict]:
     """Os vínculos pessoa × matrícula do Indicador Pessoal. SÓ LÊ.
 
-    Com `desde` (data-hora ISO), o INCREMENTAL: as partes de ato lavrado por
-    este sistema depois dela, e as das matrículas abertas depois dela. **O que
-    entra por importação de acervo (partes do teor) não aparece no incremental**
-    — não tem data de lançamento —, e vai na carga completa.
+    Com `desde` (data-hora ISO), o INCREMENTAL: as partes de ato lançado neste
+    sistema depois dela — **inclusive o ato de acervo** —, as das matrículas
+    abertas depois dela e, com `acima_da_parte`, toda parte com `id` maior.
+
+    O ATO DE ACERVO ENTRA (RI022, 27/11/2026). Até aqui o incremental pedia
+    `acervo = 0`, na ideia de que o acervo já tinha ido na carga completa. Isso
+    vale para o acervo importado ANTES dela, e não para o lançado depois: em
+    27/10/2026, 234 atos de acervo transcritos das fichas digitalizadas trouxeram
+    568 vínculos que nenhum arquivo levou ao ONR. `lavrado_em` é a hora do
+    lançamento no sistema, e não a data do ato: o que se lançou depois do último
+    arquivo não está em arquivo nenhum.
+
+    A PARTE SEM ATO EM MATRÍCULA ANTIGA (a corrigida à mão, a lida do teor) não
+    tem data de lançamento: o que a pega é o `id`, que só cresce. Cada arquivo
+    guarda em `detalhe.ate_parte_id` a maior parte que existia quando ele saiu.
     """
     sql = """SELECT p.nome, p.documento_numero AS documento, m.numero AS matricula,
                     p.origem, p.qualificacao, a.natureza_titulo, a.tipo, a.data_ato,
@@ -710,13 +725,42 @@ def vinculos(con, *, desde: str | None = None) -> list[dict]:
               WHERE TRIM(COALESCE(p.nome,'')) <> ''"""
     args: tuple = ()
     if desde:
-        sql += """ AND ((a.id IS NOT NULL AND COALESCE(a.acervo,0) = 0
-                         AND a.lavrado_em >= %s)
-                     OR (p.ato_id IS NULL AND m.criado_em >= %s))"""
+        sql += """ AND ((a.id IS NOT NULL AND a.lavrado_em >= %s)
+                     OR (p.ato_id IS NULL AND m.criado_em >= %s)"""
         args = (desde, desde)
-    sql += " ORDER BY m.numero, p.nome"
+        if acima_da_parte is not None:
+            sql += " OR p.id > %s"
+            args += (int(acima_da_parte),)
+        sql += ")"
+    return _montar_vinculos(_bd_de(con).ler(sql + " ORDER BY m.numero, p.nome", args))
+
+
+def vinculos_esquecidos(con, desde: str, *, acima_da_parte: int | None = None) -> list[dict]:
+    """O que o incremental ANTIGO deixou para trás desde `desde`. SÓ LÊ.
+
+    São as partes de ato de acervo lançado depois de `desde` e, com
+    `acima_da_parte`, as partes sem ato, de matrícula aberta antes, com `id`
+    maior. É o complemento de uma vez só (`--complemento-pessoal`): o
+    incremental de agora em diante já as pega.
+    """
+    sql = """SELECT p.nome, p.documento_numero AS documento, m.numero AS matricula,
+                    p.origem, p.qualificacao, a.natureza_titulo, a.tipo, a.data_ato,
+                    m.data_abertura
+               FROM ri_partes p JOIN ri_matriculas m ON m.id = p.matricula_id
+               LEFT JOIN ri_atos a ON a.id = p.ato_id
+              WHERE TRIM(COALESCE(p.nome,'')) <> ''
+                AND ((a.id IS NOT NULL AND COALESCE(a.acervo,0) <> 0 AND a.lavrado_em >= %s)"""
+    args: tuple = (desde,)
+    if acima_da_parte is not None:
+        sql += " OR (p.ato_id IS NULL AND m.criado_em < %s AND p.id > %s)"
+        args += (desde, int(acima_da_parte))
+    sql += ")"
+    return _montar_vinculos(_bd_de(con).ler(sql + " ORDER BY m.numero, p.nome", args))
+
+
+def _montar_vinculos(linhas) -> list[dict]:
     saida = []
-    for r in _bd_de(con).ler(sql, args):
+    for r in linhas:
         num = _numero(r["matricula"])
         if num is not None and num >= NUMERO_DE_FICHA_ARQUIVADA:
             continue
@@ -742,6 +786,25 @@ def vinculos(con, *, desde: str | None = None) -> list[dict]:
     return saida
 
 
+def _maior_parte(con) -> int:
+    return int(_bd_de(con).valor("SELECT COALESCE(MAX(id), 0) FROM ri_partes") or 0)
+
+
+def _ultima_parte_levada(con) -> int | None:
+    """A maior `ate_parte_id` dos arquivos já na pasta ou levados; `None` antes do 1º."""
+    maior = None
+    for r in _bd_de(con).ler(
+            "SELECT detalhe FROM ge_onr_cargas WHERE canal=%s AND tipo IN "
+            "('INCREMENTAL','COMPLEMENTO') AND situacao IN ('PROCESSADO','NA_PASTA') "
+            "AND detalhe LIKE %s", (CANAL_PESSOAL, '%ate_parte_id%')):
+        try:
+            v = int((json.loads(r["detalhe"] or "{}") or {}).get("ate_parte_id"))
+        except (TypeError, ValueError):
+            continue
+        maior = v if maior is None else max(maior, v)
+    return maior
+
+
 def xml_do_pessoal(con, lista: list[dict]) -> str:
     import ri_onr
     return ri_onr.gerar_indicador_pessoal(lista, _cns(con))
@@ -762,25 +825,33 @@ def _arquivos_do_ips(pasta: Path) -> dict[str, tuple[Path, str]]:
 
 
 def _conferir_o_ips(con, pasta_ips: Path) -> int:
-    """Marca PROCESSADO o arquivo nosso que o IPS levou (achado pelo sha)."""
+    """Marca PROCESSADO o arquivo nosso que o IPS levou (achado pelo sha).
+
+    Devolve quantos passaram a PROCESSADO NESTA conferência. Até 27/11/2026
+    contava também o arquivo que continuava na pasta, e o «levados» do livro de
+    cargas dizia 1 de um arquivo que o IPS ainda não tinha tocado. A hora de
+    `processado_em` é a em que o agente o viu em `Processados`: a do arquivo
+    (`st_mtime`) é a da gravação, porque mover não a muda.
+    """
     bd = _bd_de(con)
     abertos = bd.ler(
-        "SELECT id, sha256 FROM ge_onr_cargas WHERE canal=%s AND sha256 IS NOT NULL "
+        "SELECT id, sha256, situacao FROM ge_onr_cargas WHERE canal=%s AND sha256 IS NOT NULL "
         "AND situacao IN ('PREPARADO','NA_PASTA') ORDER BY id", (CANAL_PESSOAL,))
     if not abertos:
         return 0
     no_disco = _arquivos_do_ips(pasta_ips)
-    mudou = 0
+    levados = 0
     for aberto in abertos:
         rid, sha = aberto["id"], aberto["sha256"]
-        if sha in no_disco:
-            arq, onde = no_disco[sha]
-            quando = datetime.fromtimestamp(arq.stat().st_mtime).replace(
-                microsecond=0).isoformat()
-            bd.escrever("UPDATE ge_onr_cargas SET situacao=%s, processado_em=%s WHERE id=%s",
-                        (onde, quando if onde == "PROCESSADO" else None, rid))
-            mudou += 1
-    return mudou
+        if sha not in no_disco:
+            continue
+        _arq, onde = no_disco[sha]
+        if onde == aberto["situacao"]:
+            continue
+        bd.escrever("UPDATE ge_onr_cargas SET situacao=%s, processado_em=%s WHERE id=%s",
+                    (onde, _agora() if onde == "PROCESSADO" else None, rid))
+        levados += onde == "PROCESSADO"
+    return levados
 
 
 def _completa_levada(con):
@@ -834,7 +905,9 @@ def cuidar_do_pessoal(con, hoje: date, banco: Path | None = None) -> dict:
     desde = bd.valor(
         "SELECT MAX(periodo_ate) FROM ge_onr_cargas WHERE canal=%s "
         "AND situacao IN ('PROCESSADO','NA_PASTA')", (CANAL_PESSOAL,))
-    lista = vinculos(con, desde=desde)
+    acima = _ultima_parte_levada(con)
+    ate_parte = _maior_parte(con)
+    lista = vinculos(con, desde=desde, acima_da_parte=acima)
     if not lista:
         con.commit()
         return {"fase": "INCREMENTAL", "acao": "nada novo", "desde": desde,
@@ -852,10 +925,52 @@ def cuidar_do_pessoal(con, hoje: date, banco: Path | None = None) -> dict:
     arq.write_bytes(xml.encode("utf-8"))
     _registrar(con, CANAL_PESSOAL, "INCREMENTAL", situacao="NA_PASTA", arquivo=str(arq),
                sha256=_sha_texto(xml), quantos=len(lista), periodo_de=desde,
-               periodo_ate=agora)
+               periodo_ate=agora, detalhe={"ate_parte_id": ate_parte})
     con.commit()
     return {"fase": "INCREMENTAL", "acao": "arquivo gerado", "arquivo": str(arq),
             "vinculos": len(lista), "levados": levados}
+
+
+def gerar_complemento(con, hoje: date, banco: Path | None = None, *, desde: str | None = None,
+                      acima_da_parte: int | None = None) -> dict:
+    """O arquivo de UMA VEZ com o que o incremental antigo deixou para trás.
+
+    VAI PARA A PASTA DA CARGA INICIAL, E NÃO PARA A DO IPS: o IPS leva sozinho o
+    que cai na pasta dele, e pôr ali é mandar ao ONR. Quem move é o oficial, no
+    dia em que disser «pode». Movido, a rodada o acha pelo sha em `Processados`
+    e o marca PROCESSADO, como os outros.
+
+    `desde` padrão é o fim da carga completa levada. O registro não tem
+    `periodo_ate`: o complemento não pode empurrar o começo do próximo
+    incremental, que segue do último incremental.
+    """
+    bd = _bd_de(con)
+    if desde is None:
+        completa = _completa_levada(con)
+        if completa is None:
+            return {"acao": "sem carga completa levada: o complemento não se aplica"}
+        desde = completa["periodo_ate"]
+    ate_parte = _maior_parte(con)
+    lista = vinculos_esquecidos(con, desde, acima_da_parte=acima_da_parte)
+    if not lista:
+        return {"acao": "nada esquecido", "desde": desde}
+    pasta = pastas(con, banco)["carga_inicial"]
+    pasta.mkdir(parents=True, exist_ok=True)
+    arq = pasta / f"IndicadorPessoal_COMPLEMENTO_{hoje:%d%m%Y}.XML"
+    if arq.exists():
+        arq = arq.with_name(arq.stem + f"_{datetime.now():%H%M%S}" + arq.suffix)
+    xml = xml_do_pessoal(con, lista)
+    arq.write_bytes(xml.encode("utf-8"))
+    sha = _sha_texto(xml)
+    detalhe = {"ate_parte_id": ate_parte, "acima_da_parte": acima_da_parte,
+               "matriculas": len({v["matricula"] for v in lista}),
+               "sem_documento": sum(1 for v in lista if len(
+                   re.sub(r"\D", "", v["documento"] or "")) not in (11, 14))}
+    _registrar(con, CANAL_PESSOAL, "COMPLEMENTO", situacao="PREPARADO", arquivo=str(arq),
+               sha256=sha, quantos=len(lista), periodo_de=desde, detalhe=detalhe)
+    con.commit()
+    return {"acao": "complemento gerado", "arquivo": str(arq), "sha256": sha,
+            "vinculos": len(lista), "desde": desde, **detalhe}
 
 
 # ========================================================= 3. INDICADOR REAL
@@ -1265,6 +1380,15 @@ def main(argv=None) -> int:
     ap.add_argument("--so-medir", action="store_true",
                     help="não grava nem manda nada: só a conferência e o painel")
     ap.add_argument("--sem-imagens", action="store_true")
+    ap.add_argument("--complemento-pessoal", action="store_true",
+                    help="só gera, na pasta da carga inicial, o Indicador Pessoal que o "
+                         "incremental antigo deixou para trás (não põe na pasta do IPS)")
+    ap.add_argument("--desde", default=None,
+                    help="com --complemento-pessoal: data-hora ISO (padrão: fim da "
+                         "carga completa levada)")
+    ap.add_argument("--acima-da-parte", type=int, default=None,
+                    help="com --complemento-pessoal: inclui as partes sem ato de "
+                         "matrícula antiga com id maior que este")
     a = ap.parse_args(argv)
     try:
         sys.stdout.reconfigure(encoding="utf-8")
@@ -1281,6 +1405,15 @@ def main(argv=None) -> int:
             con.close()
         return 0
     con = banco_pg.conectar(a.banco, timeout=60)
+    if a.complemento_pessoal:
+        try:
+            init_gestor_schema(con)
+            r = gerar_complemento(con, hoje, Path(a.banco), desde=a.desde,
+                                  acima_da_parte=a.acima_da_parte)
+            print(json.dumps(r, ensure_ascii=False, indent=1, default=str))
+        finally:
+            con.close()
+        return 0
     try:
         rodada(con, Path(a.banco), hoje, imagens=not a.sem_imagens)
         for x in conferir(con, hoje):

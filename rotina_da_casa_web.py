@@ -14,6 +14,9 @@ TRÊS LUGARES, UMA ROTINA SÓ
     3. O CADASTRO «ROTINA DA SERVENTIA» (`rotina_cadastro`, em Gestão): o
        oficial e o gerente cadastram, editam, desativam (com motivo) e
        reativam; o auditor lê e não grava. O TI entra como o ADMIN (`papeis`).
+    O item de destino ESCREVENTE (A011, 27/11/2026) não vai ao lugar 1: fica
+    só em «Minha rotina» do responsável e do suplente. O destino se escolhe e
+    se troca no formulário, e o cadastro o mostra em cada linha.
 
 O «FEITO» NÃO MEXE NO SEMÁFORO
     Ele grava quem fez, quando, o resultado e a observação (e a prova, se
@@ -38,14 +41,15 @@ from flask import abort, flash, redirect, render_template, request, url_for
 
 import navegacao as NAV
 import papeis as PAP
+import quem_resolve_web as QRW
 import rotina_da_casa as RT
 from storage import save_upload
 
 #: Os campos do formulário que vão como vieram (as listas de caixa vão à parte).
 _CAMPOS_DO_FORMULARIO = ("codigo", "area", "titulo", "para_que", "como_fazer", "pronto_quando",
                          "se_der_errado", "prova", "onde_endpoint", "onde_url", "base_legal",
-                         "periodicidade", "dias_mes", "dia_util", "horario", "responsavel_id",
-                         "suplente_id", "prioridade", "ordem")
+                         "periodicidade", "dias_mes", "dia_util", "horario", "destino",
+                         "responsavel_id", "suplente_id", "prioridade", "ordem")
 
 
 def contexto() -> dict:
@@ -157,13 +161,14 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             "rotina_form.html", item=item, v=valores, problemas=problemas, pessoas=pessoas,
             pessoas_fora=list(fora.values()),
             areas=RT.AREAS, periodicidades=RT.PERIODICIDADES, dias_semana=RT.DIAS_DA_SEMANA,
+            destinos=RT.DESTINOS, destino_padrao=RT.TI_ADMIN,
             meses=RT.NOMES_DOS_MESES, prioridades=RT.PRIORIDADES, telas=telas_do_menu(),
             semana_marcada={int(x) for x in str(valores.get("dias_semana") or "").split(",") if x.strip().isdigit()},
             meses_marcados={int(x) for x in str(valores.get("meses") or "").split(",") if x.strip().isdigit()})
 
     def _detalhes(item: dict, **mais) -> dict:
         return {"codigo": item["codigo"], "titulo": item["titulo"], "area": item["area"],
-                "periodicidade": item["periodicidade"], **mais}
+                "periodicidade": item["periodicidade"], "destino": item.get("destino"), **mais}
 
     # ------------------------------------------------------------- o cadastro
 
@@ -200,7 +205,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             area = (request.args.get("area") or "").strip().upper()
             return _formulario(None, {**dict.fromkeys(RT.CAMPOS, ""),
                                       "area": area if area in RT.ROTULO_DA_AREA else "",
-                                      "periodicidade": "DIARIA", "prioridade": 2, "ordem": 100}, [])
+                                      "periodicidade": "DIARIA", "destino": RT.TI_ADMIN,
+                                      "prioridade": 2, "ordem": 100}, [])
         valores = _dados_do_formulario()
         erro = _conferir_tela(valores["onde_endpoint"])
         if erro:
@@ -213,11 +219,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
         except RT.RotinaError as recusa:
             return _formulario(None, valores, recusa.problemas)
         audit("ROTINA_CRIADA", "ge_rotina", rotina_id, _detalhes(item))
+        onde = ("só em «Minha rotina» do responsável e do suplente"
+                if item.get("destino") == RT.ESCREVENTE
+                else "na Checklist do dia e em «Minha rotina» de quem responde por ela")
         flash(f"Rotina «{item['titulo']}» cadastrada. Ela vale de hoje em diante: o que venceu "
               "antes não é cobrado." + (
-                  f" O primeiro vencimento é {primeiro:%d/%m/%Y}; a partir dele ela aparece na "
-                  "Checklist do dia e em «Minha rotina» de quem responde por ela."
-                  if primeiro else ""), "success")
+                  f" O primeiro vencimento é {primeiro:%d/%m/%Y}; a partir dele ela aparece "
+                  f"{onde}." if primeiro else ""), "success")
         return redirect(url_for("rotina_cadastro", area=item["area"]) + f"#rotina-{rotina_id}")
 
     @app.route("/administrativo/rotina/<int:rotina_id>/editar", methods=["GET", "POST"])
@@ -342,6 +350,8 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
               {"codigo": r["codigo"], "referencia": r["referencia"], "prazo": r["prazo"],
                "com_atraso": r["com_atraso"], "resultado": r["resultado"],
                "observacao": r["observacao"], "feito_id": r["id"], "com_prova": tem_arquivo})
+        QRW.auditar_conclusao(audit, "ROTINA", f"{int(rotina_id)}:{r['referencia']}", r["titulo"],
+                              r.get("quem_resolvia"))
         flash(f"«{r['titulo']}»: {RT.ROTULO_DO_RESULTADO[r['resultado']].lower()}, registrado"
               + (" com atraso" if r["com_atraso"] else "") + ".", "success")
         if tem_arquivo and archive_root is not None:
@@ -380,6 +390,13 @@ def registrar_rotas(app, db, login_required, roles_required, audit, fmt_date=str
             erro = str(falha) or falha.__class__.__name__
         preparar(itens, papel=papel, usuario_id=uid, abre=_abre_para(papel))
         preparar(toda, papel=papel, usuario_id=uid, abre=_abre_para(papel))
+        em_resolucao, erro_quem = 0, ""
+        try:
+            em_resolucao = QRW.preparar_rotina(db, itens, papel=papel, usuario_id=uid,
+                                               eh_robo=QRW.e_robo(u))
+        except Exception as falha:                         # noqa: BLE001 — a marca não derruba a tela
+            erro_quem = str(falha) or falha.__class__.__name__
         return render_template("rotina_minha.html", itens=itens, toda=toda, erro=erro,
+                               em_resolucao=em_resolucao, erro_quem=erro_quem,
                                hoje=date.today().isoformat(), so_ve=papel in RT.QUEM_SO_VE,
                                **contexto())

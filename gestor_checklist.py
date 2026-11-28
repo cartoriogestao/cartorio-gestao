@@ -80,6 +80,15 @@ A ROTINA DO DIA VEM PRIMEIRO (26/11/2026)
     sistema» (`?area=TI`). O cadastro é «Rotina da serventia». O «feito» não
     toca em `ge_achados` nem na cor oficial: a cor continua a do gestor.
 
+A ROTINA DO ESCREVENTE NÃO ENTRA (27/11/2026, A011)
+    «aparecem na Checklist do dia da gestão [...], mas são trabalho de
+    escrevente» — o titular. O item da rotina de destino ESCREVENTE
+    (`rotina_da_casa.na_checklist_da_gestao`) sai do bloco «Rotina do dia» e
+    fica só em «Minha rotina» do responsável e do suplente; a tela diz quantos
+    ficaram fora. Volta à lista, marcado, o que ficou sem ninguém ativo para
+    fazê-lo — e, se a volta estiver ligada (`volta_apos`, desligada por
+    padrão), o muito atrasado. Os achados do gestor não mudam.
+
 O SIGILO DO PLD
     O achado de PLD/COAF diz o número do caso; o detalhe é sigiloso (CNN,
     art. 154) e a tela do PLD é só do ADMIN. Para o gerente e o auditor o
@@ -182,6 +191,9 @@ def achados_por_area(con, hoje: date, *, papel: str, area: str | None = None,
         idade = CF.idade_do_achado(r["primeiro_visto_em"], hoje)
         grupos.setdefault(cod, []).append({
             "id": r["id"],
+            # a identidade estável do achado (a do «Retirar» e de «quem resolve»);
+            # a tela não a mostra — os formulários mandam o id
+            "chave": str(r["chave"]),
             "regra": regra,
             "gravidade": gravidade,
             "titulo": TITULO_SIGILOSO if sigiloso else GD.limpar(r["titulo"]),
@@ -395,13 +407,15 @@ def _medido(db, fn: Callable, *args) -> tuple[Any, str]:
 
 def montar(db, hoje: date | None = None, *, papel: str, area: str | None = None,
            abre: Callable[[str], bool] = lambda _endpoint: True,
-           pode_retirar: bool | None = None) -> dict:
+           pode_retirar: bool | None = None, volta_apos: int | None = None) -> dict:
     """Tudo o que a tela mostra. SÓ LÊ.
 
     `abre(endpoint)` diz se esta pessoa abre a tela do item (a rota manda);
     o item que ela não abre aparece sem link, para não levar à recusa.
     `pode_retirar` vem da rota (o TI passa onde o ADMIN passa); sem ele, vale
-    o papel.
+    o papel. `volta_apos` (dias úteis) liga a volta à gestão do item do
+    escrevente muito atrasado; sem ele vale `rotina_da_casa.VOLTA_A_GESTAO_DIAS_UTEIS`
+    (desligada), e 0 desliga.
     """
     import gestao_retirados as GR
     import rotina_da_casa as RT
@@ -440,7 +454,10 @@ def montar(db, hoje: date | None = None, *, papel: str, area: str | None = None,
     # A ROTINA DO DIA (26/11/2026): o que vence hoje e o atrasado, por área.
     # A leitura que quebra diz que quebrou: lista vazia seria «nada a fazer».
     do_dia, erro_rotina = _medido(db, lambda con: RT.do_dia(con, hoje, area=area))
-    do_dia = do_dia or []
+    # A011: o item do escrevente fica só em «Minha rotina» de quem responde.
+    if volta_apos is None:
+        volta_apos = RT.VOLTA_A_GESTAO_DIAS_UTEIS
+    do_dia, do_escrevente = RT.na_checklist_da_gestao(do_dia or [], volta_apos=volta_apos)
     rotina_cadastrada, _ = _medido(db, RT.contar)
     medido = bool(medicao and medicao["gestor"]["medido"])
     itens = []
@@ -482,5 +499,8 @@ def montar(db, hoje: date | None = None, *, papel: str, area: str | None = None,
             # marcar» de quem olha), por área, e quantos o cadastro tem.
             "rotina_itens": do_dia, "rotina": RT.por_area(do_dia),
             "erro_rotina": erro_rotina, "total_rotina": len(do_dia),
+            # A011: o que é do escrevente não entra na lista; só se conta.
+            "total_rotina_do_escrevente": len(do_escrevente),
+            "rotina_volta_apos": volta_apos or None,
             "rotina_cadastrada": rotina_cadastrada,
             "abre_cadastro_rotina": abre("rotina_cadastro")}
